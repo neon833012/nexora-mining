@@ -18,6 +18,7 @@ import {
   Lock
 } from 'lucide-react';
 import { MiningPlan } from '../types/mining';
+import { verifyBscTransaction, OFFICIAL_VAULT_ADDRESS } from '../services/blockchain';
 
 interface Props {
   isOpen: boolean;
@@ -54,8 +55,10 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
   const [countdownMinutes, setCountdownMinutes] = useState(14);
   const [countdownSeconds, setCountdownSeconds] = useState(59);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // Blockchain Verification Animation States (Matching Deposit Flow)
+  // Blockchain Verification Animation States
   const [verifyStage, setVerifyStage] = useState<number>(0);
   const [blockConfirmations, setBlockConfirmations] = useState<number>(0);
   const [verifiedTxHash, setVerifiedTxHash] = useState<string>('');
@@ -70,6 +73,8 @@ export const PlanCheckoutModal: React.FC<Props> = ({
       setVerifyStage(0);
       setBlockConfirmations(0);
       setEnteredTxHash('');
+      setVerificationError(null);
+      setIsVerifying(false);
       setCountdownMinutes(14);
       setCountdownSeconds(59);
       // If user has 0 or insufficient balance, automatically default to on-chain BEP20
@@ -101,20 +106,14 @@ export const PlanCheckoutModal: React.FC<Props> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  /**
-   * =========================================================================
-   * 🔌 FUTURE BACKEND INTEGRATION HOOK (PLAN PURCHASE / ON-CHAIN VERIFICATION):
-   * When your backend is ready, replace this simulation with:
-   * 1. If internal wallet:
-   *    POST /api/plans/subscribe { planId: plan.id, paymentMethod: 'internal' }
-   * 2. If on-chain BEP-20:
-   *    Connect WebSocket to /api/plans/listen-deposit/{orderId}
-   *    Backend RPC verifies inbound USDT Transfer event on BSC mempool
-   * =========================================================================
-   */
-  const startVerificationProcess = () => {
+  const startVerificationProcess = async () => {
+    setVerificationError(null);
+
     if (paymentMethod === 'internal') {
-      // Instant internal balance activation
+      if (availableBalance < payableCost) {
+        setVerificationError(`Insufficient deposit balance ($${availableBalance.toFixed(2)}). You need $${payableCost.toFixed(2)} USDT.`);
+        return;
+      }
       setCurrentStep(4);
       const generatedHash = `int_${Date.now().toString(16)}`;
       setVerifiedTxHash(generatedHash);
@@ -123,44 +122,57 @@ export const PlanCheckoutModal: React.FC<Props> = ({
     }
 
     // On-chain BEP-20 Verification Terminal
+    const cleanHash = enteredTxHash.trim().toLowerCase();
+    if (!cleanHash.startsWith('0x') || cleanHash.length !== 66) {
+      setVerificationError('Transaction Hash (TxID) is REQUIRED. Please transfer USDT to the wallet address and paste the 66-character hash from your wallet receipt (starts with 0x).');
+      return;
+    }
+
+    // Anti-replay check
+    try {
+      const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
+      if (usedHashes.includes(cleanHash)) {
+        setVerificationError('This transaction hash has already been redeemed for another order. Replay attacks are rejected.');
+        return;
+      }
+    } catch {}
+
+    setIsVerifying(true);
     setCurrentStep(3);
     setVerifyStage(1);
     setBlockConfirmations(0);
 
-    const generatedHash = enteredTxHash.trim().startsWith('0x') && enteredTxHash.trim().length >= 20
-      ? enteredTxHash.trim()
-      : '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    setVerifiedTxHash(generatedHash);
+    try {
+      const result = await verifyBscTransaction(cleanHash, payableCost, DEPOSIT_ADDRESS);
 
-    // Stage 1: BSC Node RPC Connection
-    setTimeout(() => {
-      setVerifyStage(2); // USDT Transfer detected in mempool
-    }, 1000);
+      if (!result.verified) {
+        setIsVerifying(false);
+        setCurrentStep(2);
+        setVerificationError(result.statusText || 'Verification failed on Binance Smart Chain.');
+        return;
+      }
 
-    // Stage 2: Automated Verification Checklist (Token, Network, Receiver, Amount, TxHash, Non-duplicate)
-    setTimeout(() => {
-      setVerifyStage(3); // All 6 checks passed
-    }, 2200);
+      // Record hash to prevent reuse
+      try {
+        const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
+        usedHashes.push(cleanHash);
+        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+      } catch {}
 
-    // Stage 3: BSC Block Confirmations (1/3 -> 2/3 -> 3/3)
-    setTimeout(() => {
-      setBlockConfirmations(1);
-    }, 3200);
+      setBlockConfirmations(result.confirmations || 3);
+      setVerifyStage(4);
+      setVerifiedTxHash(cleanHash);
+      setIsVerifying(false);
 
-    setTimeout(() => {
-      setBlockConfirmations(2);
-    }, 4200);
-
-    setTimeout(() => {
-      setBlockConfirmations(3);
-      setVerifyStage(4); // Node provisioned
-    }, 5400);
-
-    // Final Success Step
-    setTimeout(() => {
-      setCurrentStep(4);
-      onConfirmSuccess(plan, payableCost, 'bep20_chain', generatedHash);
-    }, 6200);
+      setTimeout(() => {
+        setCurrentStep(4);
+        onConfirmSuccess(plan, payableCost, 'bep20_chain', cleanHash);
+      }, 1500);
+    } catch (err: any) {
+      setIsVerifying(false);
+      setCurrentStep(2);
+      setVerificationError(`Blockchain verification error: ${err.message}`);
+    }
   };
 
   return (

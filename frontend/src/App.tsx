@@ -77,27 +77,16 @@ import {
 } from 'lucide-react';
 
 // Known development/testing user accounts to exclude from production admin directories
-export const KNOWN_TEST_USER_IDS: string[] = [
-  'NEON20164', 'NEON42021', 'NEON23761', 'NEON57756', 'NEON86232', 
-  'NEON15060', 'NEON48351', 'NEON92825', 'NEON10329', 'USR_782910', 'NEON10821'
-];
+export const KNOWN_TEST_USER_IDS: string[] = ['USR_782910'];
 
 export const isTestAccount = (id?: string, name?: string, email?: string): boolean => {
   const upperId = (id || '').toUpperCase();
-  const upperName = (name || '').toUpperCase();
   const lowerEmail = (email || '').toLowerCase();
   
-  if (KNOWN_TEST_USER_IDS.some((tid) => upperId === tid || upperName.includes(tid))) return true;
+  if (KNOWN_TEST_USER_IDS.some((tid) => upperId === tid)) return true;
   if (
-    lowerEmail.includes('semwalastha') ||
-    lowerEmail.includes('kanhiyagulati') ||
-    lowerEmail.includes('aastha@') ||
-    lowerEmail.includes('ghoda@') ||
-    lowerEmail.includes('nikhil.netedge') ||
-    lowerEmail.includes('sgyrf@') ||
-    lowerEmail.includes('hfdyjj@') ||
-    lowerEmail.includes('testcheck@') ||
-    lowerEmail.includes('test_user')
+    lowerEmail.includes('mock_sample') ||
+    lowerEmail.includes('test_dummy')
   ) {
     return true;
   }
@@ -176,18 +165,12 @@ export const App: React.FC = () => {
       'contact'
     ];
 
-    // One-time initialization: clean out test accounts from localStorage
+    // One-time initialization: ensure genuine NEON users are unblacklisted in localStorage
     try {
       const existingDeleted: string[] = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-      let updatedDeleted = false;
-      KNOWN_TEST_USER_IDS.forEach((id) => {
-        if (!existingDeleted.includes(id)) {
-          existingDeleted.push(id);
-          updatedDeleted = true;
-        }
-      });
-      if (updatedDeleted) {
-        localStorage.setItem('neon_deleted_user_ids', JSON.stringify(existingDeleted));
+      const sanitizedDeleted = existingDeleted.filter((id) => !id.startsWith('NEON'));
+      if (sanitizedDeleted.length !== existingDeleted.length) {
+        localStorage.setItem('neon_deleted_user_ids', JSON.stringify(sanitizedDeleted));
       }
 
       // Purge test accounts from neon_admin_users
@@ -306,10 +289,7 @@ export const App: React.FC = () => {
   // Enterprise Admin System State (Users, Orders, Telemetry, Rules) - Persisted in LocalStorage
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>(() => {
     const loaded = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
-    return (loaded || []).filter((u) => 
-      !isTestAccount(u.id, u.name, u.email) &&
-      ((u.stakedAmount && u.stakedAmount > 0) || (u.availableBalance && u.availableBalance > 0))
-    );
+    return (loaded || []).filter((u) => !isTestAccount(u.id, u.name, u.email));
   });
   const [adminOrders, setAdminOrders] = useState<AdminOrderRecord[]>(() => {
     const loaded = loadStorage<AdminOrderRecord[]>('neon_admin_orders', []);
@@ -689,32 +669,37 @@ export const App: React.FC = () => {
             if (isTestAccount(u.id, u.name, u.email)) return false;
             const uid = (u.id || '').toUpperCase();
             if (deletedIds.some((d: string) => d.toUpperCase() === uid)) return false;
-            const hasStake = Number(u.active_mining_power) > 0;
-            const hasBalance = Number(u.withdrawable_balance) > 0 || Number(u.deposit_balance) > 0;
-            return hasStake || hasBalance;
+            return true;
           });
 
-          const mappedUsers: AdminUserRecord[] = activeDbUsers.map((u: any) => ({
-            id: u.id,
-            name: u.name || u.id,
-            email: u.email || `${u.id.toLowerCase()}@nexora.io`,
-            mobile: u.mobile || '',
-            country: 'IN',
-            registeredAt: u.created_at || 'Recently',
-            status: u.status === 'active' ? 'active' : 'inactive',
-            currentPlanName: Number(u.active_mining_power) > 0 ? `Active Plan ($${u.active_mining_power})` : 'No Plan Purchased (Inactive)',
-            stakedAmount: Number(u.active_mining_power) || 0,
-            totalMinedYield: Number(u.total_mined_yield) || 0,
-            availableBalance: Number(u.withdrawable_balance) || 0,
-            totalWithdrawn: Number(u.total_withdrawn) || 0,
-            fundPin: '123456',
-            fundPinSet: true,
-            referralCode: u.referral_code || '',
-            invitedBy: u.upline_code || 'DIRECT',
-            directReferralsCount: 0,
-            lastLogin: 'Active',
-            walletAddress: '0x' + u.id
-          }));
+          const mappedUsers: AdminUserRecord[] = activeDbUsers.map((u: any) => {
+            const staked = Number(u.active_mining_power) || 0;
+            const depBal = Number(u.deposit_balance) || 0;
+            const withBal = Number(u.withdrawable_balance) || 0;
+            const available = depBal > 0 ? depBal : withBal;
+            return {
+              id: u.id,
+              name: u.name || u.id,
+              email: u.email || `${u.id.toLowerCase()}@nexora.io`,
+              mobile: u.mobile || '',
+              country: 'IN',
+              registeredAt: u.created_at || 'Recently',
+              status: (u.status as any) || 'active',
+              currentPlanName: staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)',
+              stakedAmount: staked,
+              totalMinedYield: Number(u.total_mined_yield) || 0,
+              availableBalance: available,
+              totalWithdrawn: Number(u.total_withdrawn) || 0,
+              fundPin: '123456',
+              fundPinSet: true,
+              referralCode: u.referral_code || '',
+              invitedBy: u.upline_code || 'DIRECT',
+              directReferralsCount: 0,
+              referralEarnings: Number(u.referral_balance) || 0,
+              lastLogin: 'Active',
+              walletAddress: '0x' + u.id
+            };
+          });
           setAdminUsers(mappedUsers);
         } else {
           setAdminUsers([]);
@@ -819,7 +804,7 @@ export const App: React.FC = () => {
         }
       }).catch(() => {});
     }
-  }, [isLoggedIn, userName]);
+  }, [isLoggedIn, userName, showAdminPortal]);
 
   // Automatically trigger promotional plan popup modal 3 seconds after opening
   useEffect(() => {
@@ -2067,7 +2052,7 @@ export const App: React.FC = () => {
           mobile: mobile,
           country: 'IN',
           registeredAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          status: 'inactive',
+          status: 'active',
           currentPlanName: 'No Plan Purchased (Inactive)',
           stakedAmount: 0,
           totalMinedYield: 0,
@@ -2081,7 +2066,7 @@ export const App: React.FC = () => {
           referralEarnings: 0,
           lastLogin: 'Just now'
         };
-        setAdminUsers((prev) => [newAccount, ...prev]);
+        setAdminUsers((prev) => [newAccount, ...prev.filter((u) => u.id !== name)]);
         setAdminTelemetry((prev) => ({ ...prev, totalRegisteredUsers: prev.totalRegisteredUsers + 1 }));
       }
     }

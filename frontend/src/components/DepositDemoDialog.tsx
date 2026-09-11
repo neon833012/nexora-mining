@@ -16,6 +16,7 @@ import {
   QrCode,
   AlertTriangle
 } from 'lucide-react';
+import { verifyBscTransaction, OFFICIAL_VAULT_ADDRESS } from '../services/blockchain';
 
 interface Props {
   isOpen: boolean;
@@ -49,6 +50,8 @@ export const DepositDemoDialog: React.FC<Props> = ({
   const [verifyStage, setVerifyStage] = useState<number>(0);
   const [blockConfirmations, setBlockConfirmations] = useState<number>(0);
   const [verifiedTxHash, setVerifiedTxHash] = useState<string>('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -57,6 +60,8 @@ export const DepositDemoDialog: React.FC<Props> = ({
       setVerifyStage(0);
       setBlockConfirmations(0);
       setUserTxHash('');
+      setVerificationError(null);
+      setIsVerifying(false);
       setTimeLeftSeconds(900);
       setOrderId(`DEP-BSC-${Math.floor(100000 + Math.random() * 900000)}`);
     }
@@ -87,21 +92,10 @@ export const DepositDemoDialog: React.FC<Props> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  /**
-   * =========================================================================
-   * 🔌 FUTURE BACKEND INTEGRATION HOOK (ORDER CREATION):
-   * When your backend is deployed, call:
-   * const res = await fetch('/api/deposit/create-order', {
-   *   method: 'POST',
-   *   headers: { 'Content-Type': 'application/json' },
-   *   body: JSON.stringify({ amount: numAmount, token: 'USDT', network: 'BEP20' })
-   * });
-   * const { orderId, receivingAddress, validForSeconds } = await res.json();
-   * =========================================================================
-   */
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (numAmount < 10) return;
+    setVerificationError(null);
     setOrderCreatedAt(Date.now());
     setTimeLeftSeconds(900);
     setStep('AWAITING_PAYMENT');
@@ -109,57 +103,75 @@ export const DepositDemoDialog: React.FC<Props> = ({
 
   /**
    * =========================================================================
-   * 🔌 FUTURE BACKEND INTEGRATION HOOK (ON-CHAIN MONITOR & VERIFICATION):
-   * When user clicks "I Have Sent Payment", backend monitors BNB Smart Chain:
-   * 1. Connect WebSocket to /api/deposit/stream/{orderId}
-   * 2. Backend RPC listens for Transfer(from, to, value) on USDT contract
-   * 3. Sends live events for:
-   *    - Transfer detected
-   *    - Verification checks passed
-   *    - Block confirmations 1/3 -> 2/3 -> 3/3
-   *    - Confirmed
+   * ⚡ REAL ON-CHAIN BLOCKCHAIN VERIFICATION (BNB SMART CHAIN BEP-20)
+   * Strictly queries public Binance Smart Chain RPC node for:
+   * 1. 66-char hex transaction receipt on BSC
+   * 2. Transaction success status (status === 0x1)
+   * 3. USDT contract Transfer event matching custody vault address
+   * 4. Amount transferred >= deposit order invoice
+   * 5. Anti-replay double-spending rejection
    * =========================================================================
    */
-  const handleStartVerification = () => {
+  const handleStartVerification = async () => {
+    setVerificationError(null);
+    const cleanHash = userTxHash.trim().toLowerCase();
+
+    // 1. Strict format check: Must be 66-character hex string starting with 0x
+    if (!cleanHash.startsWith('0x') || cleanHash.length !== 66) {
+      setVerificationError(
+        'Transaction Hash (TxID) is REQUIRED. Please transfer USDT (BEP-20) to the vault address and paste the 66-character hash from your wallet receipt (starts with 0x).'
+      );
+      return;
+    }
+
+    // 2. Anti-replay check to prevent double spending
+    try {
+      const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
+      if (usedHashes.includes(cleanHash)) {
+        setVerificationError(
+          'This transaction hash has already been redeemed for another deposit. Replay attacks are rejected.'
+        );
+        return;
+      }
+    } catch {}
+
+    setIsVerifying(true);
     setStep('BLOCKCHAIN_VERIFYING');
     setVerifyStage(1);
     setBlockConfirmations(0);
 
-    const generatedHash = userTxHash.trim().startsWith('0x') && userTxHash.trim().length >= 20
-      ? userTxHash.trim()
-      : '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    setVerifiedTxHash(generatedHash);
+    try {
+      // Connect and query Binance Smart Chain node
+      const result = await verifyBscTransaction(cleanHash, numAmount, vaultWalletAddress);
 
-    // Stage 1: Connect to BSC Mempool (0.8s)
-    setTimeout(() => {
-      setVerifyStage(2); // USDT Transfer detected
-    }, 1000);
+      if (!result.verified) {
+        setIsVerifying(false);
+        setStep('AWAITING_PAYMENT');
+        setVerificationError(result.statusText || 'Verification failed on Binance Smart Chain.');
+        return;
+      }
 
-    // Stage 2: Verification Checklist (Token, Network, Receiver, Amount, TxHash, Non-duplicate) (2.0s)
-    setTimeout(() => {
-      setVerifyStage(3); // Automated Checks Passed
-    }, 2200);
+      // Record hash to prevent reuse
+      try {
+        const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
+        usedHashes.push(cleanHash);
+        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+      } catch {}
 
-    // Stage 3: BSC Block Confirmations (1/3 -> 2/3 -> 3/3)
-    setTimeout(() => {
-      setBlockConfirmations(1);
-    }, 3200);
+      setBlockConfirmations(Math.min(3, Math.max(1, result.confirmations || 3)));
+      setVerifyStage(4);
+      setVerifiedTxHash(cleanHash);
+      setIsVerifying(false);
 
-    setTimeout(() => {
-      setBlockConfirmations(2);
-    }, 4200);
-
-    setTimeout(() => {
-      setBlockConfirmations(3);
-      setVerifyStage(4); // Fully Confirmed
-    }, 5400);
-
-    // Final Success Screen
-    setTimeout(() => {
-      setStep('PAYMENT_SUCCESS');
-      // Trigger balance update in App & record in Admin Orders
-      onDepositConfirmed(numAmount, generatedHash, orderId);
-    }, 6200);
+      setTimeout(() => {
+        setStep('PAYMENT_SUCCESS');
+        onDepositConfirmed(result.actualAmount || numAmount, cleanHash, orderId);
+      }, 1500);
+    } catch (err: any) {
+      setIsVerifying(false);
+      setStep('AWAITING_PAYMENT');
+      setVerificationError(`Blockchain verification error: ${err.message || 'Unable to connect to BSC RPC node'}`);
+    }
   };
 
   return (
@@ -398,27 +410,53 @@ export const DepositDemoDialog: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Optional TxHash Input */}
+            {/* Verification Error Banner */}
+            {verificationError && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11.5px] flex items-start gap-2.5 animate-fadeIn">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="flex-1 leading-snug">
+                  <span className="font-bold text-rose-200">On-Chain Verification Failed: </span>
+                  {verificationError}
+                </div>
+              </div>
+            )}
+
+            {/* Required TxHash Input */}
             <div className="space-y-1">
-              <label className="text-[11px] text-[#94A3B8] flex items-center justify-between">
-                <span>Transaction Hash / TxID (Optional):</span>
-                <span className="text-[10px] text-[#64748B]">Auto-detects if left blank</span>
+              <label className="text-[11px] text-[#94A3B8] flex items-center justify-between font-bold">
+                <span className="flex items-center gap-1">
+                  <span>Transaction Hash / TxID (Required):</span>
+                  <span className="text-rose-400">*</span>
+                </span>
+                <span className="text-[10px] text-[#00F0FF] font-mono">66-char (0x...)</span>
               </label>
               <input
                 type="text"
                 value={userTxHash}
-                onChange={(e) => setUserTxHash(e.target.value)}
+                onChange={(e) => {
+                  setUserTxHash(e.target.value);
+                  if (verificationError) setVerificationError(null);
+                }}
                 placeholder="e.g. 0x8a9b7c... (from your wallet transfer receipt)"
-                className="w-full rounded-xl bg-[#050D18] border border-[#14263E] px-3 py-2 text-[11.5px] font-mono text-[#CBD5E1] focus:outline-none focus:border-[#00F0FF]"
+                className={`w-full rounded-xl bg-[#050D18] border px-3 py-2 text-[11.5px] font-mono text-[#CBD5E1] focus:outline-none transition-colors ${
+                  verificationError ? 'border-rose-500/50 focus:border-rose-400' : 'border-[#14263E] focus:border-[#00F0FF]'
+                }`}
               />
+              <p className="text-[10px] text-[#64748B]">
+                Transfer USDT (BEP-20) to the address above, then paste the TxHash from BSCScan or your wallet receipt.
+              </p>
             </div>
 
             {/* Action Buttons */}
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setStep('SELECT_AMOUNT')}
-                className="flex-1 py-3 rounded-xl bg-[#0B1728] hover:bg-[#11233D] text-[#94A3B8] hover:text-white font-bold text-[12px] transition-colors cursor-pointer"
+                onClick={() => {
+                  setVerificationError(null);
+                  setStep('SELECT_AMOUNT');
+                }}
+                disabled={isVerifying}
+                className="flex-1 py-3 rounded-xl bg-[#0B1728] hover:bg-[#11233D] text-[#94A3B8] hover:text-white font-bold text-[12px] transition-colors cursor-pointer disabled:opacity-50"
               >
                 ← Change Amount
               </button>
@@ -426,10 +464,20 @@ export const DepositDemoDialog: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={handleStartVerification}
-                className="flex-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#031526] font-black text-[13px] flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all cursor-pointer active:scale-95"
+                disabled={isVerifying || !userTxHash.trim()}
+                className="flex-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-[#031526] font-black text-[13px] flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all cursor-pointer active:scale-95"
               >
-                <Zap className="w-4 h-4" />
-                <span>I Have Sent USDT (Verify)</span>
+                {isVerifying ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Querying BSC Node...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    <span>Verify On-Chain Payment</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
