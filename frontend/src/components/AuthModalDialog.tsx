@@ -126,16 +126,17 @@ export const AuthModalDialog: React.FC<Props> = ({
           setSignupSuccess(true);
           onAuthSuccess(assignedId, fullMobile, undefined, email.trim().toLowerCase(), referralCode.trim() || undefined);
         } else if (res?.message?.toLowerCase().includes('already registered')) {
-          // If this test account already existed from earlier testing, sync password and log the user in seamlessly!
+          // If this account already existed, sync password and log the user in seamlessly!
           try {
-            const checkUser = await nexoraApi.forgotPassword(fullMobile);
+            const identifier = email.trim().toLowerCase() || fullMobile;
+            const checkUser = await nexoraApi.forgotPassword(identifier);
             if (checkUser && checkUser.success && checkUser.userId) {
               await nexoraApi.resetPassword({
                 userId: checkUser.userId,
                 newPassword: loginPassword
               });
               const loginRes = await nexoraApi.login({
-                identifier: fullMobile,
+                identifier: identifier,
                 password: loginPassword
               });
               if (loginRes && loginRes.success && loginRes.user) {
@@ -154,7 +155,7 @@ export const AuthModalDialog: React.FC<Props> = ({
               }
             }
           } catch {}
-          setApiError('This mobile number is already registered. You can log in directly using your password.');
+          setApiError(res.message || 'This account is already registered. Please click "Sign In" below to log in.');
         } else {
           setApiError(res?.message || 'Registration failed. Please verify your details.');
         }
