@@ -1,18 +1,11 @@
 {
-  "name": "neon-mining",
+  "name": "nexora-mining",
   "version": "1.0.0",
   "private": true,
-  "description": "Neon Mining - High-End Web3 Cloud Mining Platform (Monorepo)",
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
+  "description": "Nexora Enterprise Web3 Cloud Mining Platform",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build && node -e \"const fs=require('fs'); fs.cpSync('frontend/dist', 'dist', {recursive: true, force: true});\"",
-    "preview": "npm --prefix frontend run preview",
-    "build:backend": "npm --prefix backend run build",
-    "deploy:backend": "npm --prefix backend run deploy",
-    "deploy:netlify": "npm --prefix frontend run deploy:netlify"
+    "build": "node build.js",
+    "preview": "npm --prefix frontend run preview"
   }
 }
