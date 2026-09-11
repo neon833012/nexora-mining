@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { NeonTopAppBar } from './components/NeonTopAppBar';
 import { BlockchainLiveTicker } from './components/BlockchainLiveTicker';
 import { FuturisticHeroSection } from './components/FuturisticHeroSection';
@@ -165,14 +165,12 @@ export const App: React.FC = () => {
       'contact'
     ];
 
-    // One-time initialization: ensure genuine NEON users are unblacklisted in localStorage
+    // One-time initialization: clear legacy deleted user id blacklist
     try {
-      const existingDeleted: string[] = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-      const sanitizedDeleted = existingDeleted.filter((id) => !id.startsWith('NEON'));
-      if (sanitizedDeleted.length !== existingDeleted.length) {
-        localStorage.setItem('neon_deleted_user_ids', JSON.stringify(sanitizedDeleted));
-      }
+      localStorage.removeItem('neon_deleted_user_ids');
+    } catch {}
 
+    try {
       // Purge test accounts from neon_admin_users
       const rawAdminUsers = localStorage.getItem('neon_admin_users');
       if (rawAdminUsers) {
@@ -654,60 +652,63 @@ export const App: React.FC = () => {
     selectedPlanForCheckout
   ]);
 
+  // Live Cloudflare D1 Backend Admin Miners Synchronizer
+  const fetchLiveAdminUsers = useCallback(async () => {
+    try {
+      const res = await nexoraApi.getAdminUsers();
+      if (res && res.success && Array.isArray(res.users)) {
+        const activeDbUsers = res.users.filter((u: any) => !isTestAccount(u.id, u.name, u.email));
+        const mappedUsers: AdminUserRecord[] = activeDbUsers.map((u: any) => {
+          const staked = Number(u.active_mining_power) || 0;
+          const depBal = Number(u.deposit_balance) || 0;
+          const withBal = Number(u.withdrawable_balance) || 0;
+          const available = depBal > 0 ? depBal : withBal;
+          return {
+            id: u.id,
+            name: u.name || u.id,
+            email: u.email || `${u.id.toLowerCase()}@nexora.io`,
+            mobile: u.mobile || '',
+            country: 'IN',
+            registeredAt: u.created_at || 'Recently',
+            status: (u.status as any) || 'active',
+            currentPlanName: staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)',
+            stakedAmount: staked,
+            totalMinedYield: Number(u.total_mined_yield) || 0,
+            availableBalance: available,
+            totalWithdrawn: Number(u.total_withdrawn) || 0,
+            fundPin: '123456',
+            fundPinSet: true,
+            referralCode: u.referral_code || '',
+            invitedBy: u.upline_code || 'DIRECT',
+            directReferralsCount: 0,
+            referralEarnings: Number(u.referral_balance) || 0,
+            lastLogin: 'Active',
+            walletAddress: '0x' + u.id
+          };
+        });
+        setAdminUsers(mappedUsers);
+        setAdminTelemetry((prev) => ({
+          ...prev,
+          totalRegisteredUsers: mappedUsers.length
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to sync admin users from D1:', err);
+    }
+  }, []);
+
   // Live Cloudflare D1 Backend Data Synchronization
   useEffect(() => {
-    // 1. Fetch real admin users from Cloudflare D1 database
-    nexoraApi.getAdminUsers().then((res) => {
-      if (res && res.success) {
-        if (Array.isArray(res.users) && res.users.length > 0) {
-          let deletedIds: string[] = [];
-          try {
-            deletedIds = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-          } catch {}
+    // 1. Initial fetch & periodic background polling every 12 seconds
+    fetchLiveAdminUsers();
+    const syncInterval = setInterval(() => {
+      fetchLiveAdminUsers();
+    }, 12000);
+    return () => clearInterval(syncInterval);
+  }, [fetchLiveAdminUsers]);
 
-          const activeDbUsers = res.users.filter((u: any) => {
-            if (isTestAccount(u.id, u.name, u.email)) return false;
-            const uid = (u.id || '').toUpperCase();
-            if (deletedIds.some((d: string) => d.toUpperCase() === uid)) return false;
-            return true;
-          });
-
-          const mappedUsers: AdminUserRecord[] = activeDbUsers.map((u: any) => {
-            const staked = Number(u.active_mining_power) || 0;
-            const depBal = Number(u.deposit_balance) || 0;
-            const withBal = Number(u.withdrawable_balance) || 0;
-            const available = depBal > 0 ? depBal : withBal;
-            return {
-              id: u.id,
-              name: u.name || u.id,
-              email: u.email || `${u.id.toLowerCase()}@nexora.io`,
-              mobile: u.mobile || '',
-              country: 'IN',
-              registeredAt: u.created_at || 'Recently',
-              status: (u.status as any) || 'active',
-              currentPlanName: staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)',
-              stakedAmount: staked,
-              totalMinedYield: Number(u.total_mined_yield) || 0,
-              availableBalance: available,
-              totalWithdrawn: Number(u.total_withdrawn) || 0,
-              fundPin: '123456',
-              fundPinSet: true,
-              referralCode: u.referral_code || '',
-              invitedBy: u.upline_code || 'DIRECT',
-              directReferralsCount: 0,
-              referralEarnings: Number(u.referral_balance) || 0,
-              lastLogin: 'Active',
-              walletAddress: '0x' + u.id
-            };
-          });
-          setAdminUsers(mappedUsers);
-        } else {
-          setAdminUsers([]);
-        }
-      }
-    }).catch(() => {});
-
-    // 2. If user is logged in, verify session & sync real wallet from D1
+  // 2. If user is logged in, verify session & sync real wallet from D1
+  useEffect(() => {
     if (isLoggedIn && userName) {
       nexoraApi.getUserProfile(userName).then((res) => {
         if (res && res.success && res.user && res.wallet) {
@@ -1907,55 +1908,29 @@ export const App: React.FC = () => {
 
   // Admin deletes user account
   const handleDeleteUser = (userId: string) => {
-    nexoraApi.deleteUser(userId).catch(() => {});
-    try {
-      const deleted: string[] = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-      if (!deleted.includes(userId)) {
-        deleted.push(userId);
-        localStorage.setItem('neon_deleted_user_ids', JSON.stringify(deleted));
-      }
-    } catch {}
-
+    nexoraApi.deleteUser(userId).then(() => {
+      fetchLiveAdminUsers();
+    }).catch(() => {});
     setAdminUsers((prev) => prev.filter((u) => u.id !== userId));
     showToast(`✓ Removed miner account ${userId} from directory.`);
   };
 
   // Admin purges all inactive test accounts (0 staked power & 0 balance)
   const handlePurgeInactiveUsers = () => {
-    nexoraApi.purgeInactiveUsers().catch(() => {});
-    const inactiveUsers = adminUsers.filter(
-      (u) => (!u.stakedAmount || u.stakedAmount === 0) && (!u.availableBalance || u.availableBalance === 0)
-    );
-    const inactiveIds = inactiveUsers.map((u) => u.id);
-
-    try {
-      const deleted: string[] = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-      inactiveIds.forEach((id) => {
-        if (!deleted.includes(id)) deleted.push(id);
-      });
-      localStorage.setItem('neon_deleted_user_ids', JSON.stringify(deleted));
-    } catch {}
-
+    nexoraApi.purgeInactiveUsers().then(() => {
+      fetchLiveAdminUsers();
+    }).catch(() => {});
     setAdminUsers((prev) =>
       prev.filter((u) => (u.stakedAmount && u.stakedAmount > 0) || (u.availableBalance && u.availableBalance > 0))
     );
-    showToast(`✓ Cleaned out ${inactiveIds.length} inactive test accounts from admin directory.`);
+    showToast(`✓ Cleaned out inactive test accounts from admin directory.`);
   };
 
   // Admin completely clears all users and resets directory to clean 0
   const handleClearAllUsers = () => {
-    nexoraApi.purgeInactiveUsers().catch(() => {});
-    try {
-      const deleted: string[] = JSON.parse(localStorage.getItem('neon_deleted_user_ids') || '[]');
-      adminUsers.forEach((u) => {
-        if (!deleted.includes(u.id)) deleted.push(u.id);
-      });
-      KNOWN_TEST_USER_IDS.forEach((id) => {
-        if (!deleted.includes(id)) deleted.push(id);
-      });
-      localStorage.setItem('neon_deleted_user_ids', JSON.stringify(deleted));
-    } catch {}
-
+    nexoraApi.purgeInactiveUsers().then(() => {
+      fetchLiveAdminUsers();
+    }).catch(() => {});
     localStorage.removeItem('neon_admin_users');
     localStorage.removeItem('neon_admin_orders');
     setAdminUsers([]);
@@ -1968,7 +1943,7 @@ export const App: React.FC = () => {
       totalPlatformRevenue: 0,
       activeMinersCount: 0
     }));
-    showToast('✓ All test users completely removed. Directory is clean (0 users)!');
+    showToast('✓ Cleared all accounts from directory.');
   };
 
   // Admin updates platform settings
@@ -2020,6 +1995,9 @@ export const App: React.FC = () => {
     }
     setIsLoggedIn(true);
     setShowAuthModal(false);
+
+    // Refresh real D1 admin users immediately
+    fetchLiveAdminUsers();
 
     // Sync with adminUsers if new registration or restore existing account
     const existing = adminUsers.find(
@@ -2874,6 +2852,7 @@ export const App: React.FC = () => {
             onDeleteUser={handleDeleteUser}
             onPurgeInactiveUsers={handlePurgeInactiveUsers}
             onClearAllUsers={handleClearAllUsers}
+            onRefreshMiners={fetchLiveAdminUsers}
             onResetAllData={() => {
               // Clear all localStorage keys
               const keysToRemove = [

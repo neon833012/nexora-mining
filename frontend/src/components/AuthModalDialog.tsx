@@ -124,38 +124,8 @@ export const AuthModalDialog: React.FC<Props> = ({
             referral: referralCode.trim() || ''
           });
           setSignupSuccess(true);
-          onAuthSuccess(assignedId, fullMobile, undefined, email.trim().toLowerCase(), referralCode.trim() || undefined);
         } else if (res?.message?.toLowerCase().includes('already registered')) {
-          // If this account already existed, sync password and log the user in seamlessly!
-          try {
-            const identifier = email.trim().toLowerCase() || fullMobile;
-            const checkUser = await nexoraApi.forgotPassword(identifier);
-            if (checkUser && checkUser.success && checkUser.userId) {
-              await nexoraApi.resetPassword({
-                userId: checkUser.userId,
-                newPassword: loginPassword
-              });
-              const loginRes = await nexoraApi.login({
-                identifier: identifier,
-                password: loginPassword
-              });
-              if (loginRes && loginRes.success && loginRes.user) {
-                const now = new Date();
-                const joiningDate = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
-                setSuccessData({
-                  userId: loginRes.user.id,
-                  email: email.trim().toLowerCase() || loginRes.user.email,
-                  mobile: fullMobile,
-                  joiningDate,
-                  referral: referralCode.trim() || ''
-                });
-                setSignupSuccess(true);
-                onAuthSuccess(loginRes.user.id, fullMobile, undefined, loginRes.user.email, referralCode.trim() || undefined);
-                return;
-              }
-            }
-          } catch {}
-          setApiError(res.message || 'This account is already registered. Please click "Sign In" below to log in.');
+          setApiError(res.message || 'This email or mobile number is already registered. Please click "Sign In" below to log in.');
         } else {
           setApiError(res?.message || 'Registration failed. Please verify your details.');
         }
@@ -221,7 +191,25 @@ export const AuthModalDialog: React.FC<Props> = ({
           {/* Top glow bar */}
           <div className="h-[3px] w-full bg-gradient-to-r from-[#00F0FF] via-[#10B981] to-[#0284C7]" />
 
-          <div className="bg-gradient-to-b from-[#071320] via-[#060E1C] to-[#040A14] border border-[#0D2540] border-t-0 p-6">
+          <div className="bg-gradient-to-b from-[#071320] via-[#060E1C] to-[#040A14] border border-[#0D2540] border-t-0 p-6 relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (successData) {
+                  onAuthSuccess(
+                    successData.userId,
+                    successData.mobile,
+                    undefined,
+                    successData.email,
+                    successData.referral || undefined
+                  );
+                }
+                onDismiss();
+              }}
+              className="absolute top-3.5 right-3.5 w-7 h-7 rounded-lg flex items-center justify-center text-[#64748B] hover:text-white hover:bg-[#142338] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
 
             {/* Icon + Header */}
             <div className="flex flex-col items-center text-center mb-5">
@@ -325,7 +313,18 @@ export const AuthModalDialog: React.FC<Props> = ({
 
             {/* Go to Dashboard button */}
             <button
-              onClick={onDismiss}
+              onClick={() => {
+                if (successData) {
+                  onAuthSuccess(
+                    successData.userId,
+                    successData.mobile,
+                    undefined,
+                    successData.email,
+                    successData.referral || undefined
+                  );
+                }
+                onDismiss();
+              }}
               className="mt-4 w-full h-[46px] rounded-xl bg-gradient-to-r from-[#00F0FF] via-[#0284C7] to-[#10B981] text-[#021024] font-extrabold text-[14px] tracking-wide flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.35)] hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
               <Zap className="w-4 h-4" />

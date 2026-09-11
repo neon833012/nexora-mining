@@ -94,6 +94,7 @@ interface Props {
   onDeleteUser?: (userId: string) => void;
   onPurgeInactiveUsers?: () => void;
   onClearAllUsers?: () => void;
+  onRefreshMiners?: () => void;
   onClose: () => void;
 }
 
@@ -128,6 +129,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
   onResetUserFundPin,
   onQuickResetUserPin,
   onToggleUserStatus,
+  onRefreshMiners,
   onAddSubAdmin,
   onDeleteSubAdmin,
   onUpdatePlatformSettings,
@@ -365,6 +367,14 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [userSearch, setUserSearch] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'inactive' | 'suspended'>('all');
   const [selectedUserDetail, setSelectedUserDetail] = useState<AdminUserRecord | null>(null);
+  const [isRefreshingMiners, setIsRefreshingMiners] = useState(false);
+
+  // Auto-refresh miners from live D1 database when switching to Users tab
+  useEffect(() => {
+    if (activeTab === 'users' && onRefreshMiners) {
+      onRefreshMiners();
+    }
+  }, [activeTab, onRefreshMiners]);
 
   // Order search & filters
   const [orderSearch, setOrderSearch] = useState('');
@@ -1729,6 +1739,27 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <option value="inactive">Inactive ({adminUsers.length - dynamicActiveMinersCount} No Plans)</option>
                     <option value="suspended">Suspended</option>
                   </select>
+
+                  {onRefreshMiners && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setIsRefreshingMiners(true);
+                        try {
+                          await onRefreshMiners();
+                          triggerNotice('✓ Database synchronized: Real accounts reloaded.');
+                        } finally {
+                          setIsRefreshingMiners(false);
+                        }
+                      }}
+                      disabled={isRefreshingMiners}
+                      className="py-1.5 px-3 rounded-xl bg-[#0C1F38] hover:bg-[#122A4A] border border-[#00F0FF]/30 text-cyan-300 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
+                      title="Fetch latest registered accounts from Cloudflare D1 SQL database"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingMiners ? 'animate-spin' : ''}`} />
+                      <span>{isRefreshingMiners ? 'Syncing...' : 'Sync Database'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
