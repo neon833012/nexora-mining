@@ -131,6 +131,40 @@ const loadStorageBool = (key: string, fallback: boolean = false): boolean => {
   }
 };
 
+export interface UserPersistentData {
+  activeMiningPower?: number;
+  currentPlanName?: string;
+  depositBalance?: number;
+  availableWithdrawal?: number;
+  totalBalance?: number;
+  totalRewards?: number;
+  referralIncome?: number;
+  referralBalance?: number;
+  yesterdaysIncome?: number;
+  isMiningActive?: boolean;
+  miningStartTime?: number;
+  secondsRemaining?: number;
+  unclaimedYield?: number;
+  transactions?: TransactionRecord[];
+  depositRecords?: DepositRecord[];
+}
+
+export const getUserStorageKey = (uid: string) => `neon_user_${uid.toUpperCase()}`;
+
+export const loadUserSavedData = (uid?: string): UserPersistentData | null => {
+  if (!uid) return null;
+  return loadStorage<UserPersistentData | null>(getUserStorageKey(uid), null);
+};
+
+export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>) => {
+  if (!uid) return;
+  try {
+    const key = getUserStorageKey(uid);
+    const existing = loadStorage<UserPersistentData | null>(key, null) || {};
+    localStorage.setItem(key, JSON.stringify({ ...existing, ...data }));
+  } catch (e) {}
+};
+
 export const App: React.FC = () => {
   // Navigation & Multi-Page View
   const [activeRoute, setActiveRoute] = useState<NavRoute>('home');
@@ -361,15 +395,55 @@ export const App: React.FC = () => {
     showToast('✓ Mining plans configuration updated across platform!');
   };
 
-  // Financial Dashboard State - Persisted in LocalStorage
-  const [totalBalance, setTotalBalance] = useState<number>(() => loadStorageNum('neon_total_balance', 0.0));
-  const [depositBalance, setDepositBalance] = useState<number>(() => loadStorageNum('neon_deposit_balance', 0.0));
-  const [activeMiningPower, setActiveMiningPower] = useState<number>(() => loadStorageNum('neon_mining_power', 0.0));
-  const [totalRewards, setTotalRewards] = useState<number>(() => loadStorageNum('neon_total_rewards', 0.0));
-  const [referralIncome, setReferralIncome] = useState<number>(() => loadStorageNum('neon_referral_income', 0.0));
-  const [referralBalance, setReferralBalance] = useState<number>(() => loadStorageNum('neon_referral_balance', 0.0));
-  const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(() => loadStorageNum('neon_yesterdays_income', 0.0));
-  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(() => loadStorageNum('neon_available_withdrawal', 0.0));
+  // Financial Dashboard State - Persisted in LocalStorage (User-scoped)
+  const [totalBalance, setTotalBalance] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.totalBalance !== undefined) return ud.totalBalance;
+    return loadStorageNum('neon_total_balance', 0.0);
+  });
+  const [depositBalance, setDepositBalance] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.depositBalance !== undefined) return ud.depositBalance;
+    return loadStorageNum('neon_deposit_balance', 0.0);
+  });
+  const [activeMiningPower, setActiveMiningPower] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.activeMiningPower !== undefined && ud.activeMiningPower > 0) return ud.activeMiningPower;
+    return loadStorageNum('neon_mining_power', 0.0);
+  });
+  const [totalRewards, setTotalRewards] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.totalRewards !== undefined) return ud.totalRewards;
+    return loadStorageNum('neon_total_rewards', 0.0);
+  });
+  const [referralIncome, setReferralIncome] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.referralIncome !== undefined) return ud.referralIncome;
+    return loadStorageNum('neon_referral_income', 0.0);
+  });
+  const [referralBalance, setReferralBalance] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.referralBalance !== undefined) return ud.referralBalance;
+    return loadStorageNum('neon_referral_balance', 0.0);
+  });
+  const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.yesterdaysIncome !== undefined) return ud.yesterdaysIncome;
+    return loadStorageNum('neon_yesterdays_income', 0.0);
+  });
+  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(() => {
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    if (ud?.availableWithdrawal !== undefined) return ud.availableWithdrawal;
+    return loadStorageNum('neon_available_withdrawal', 0.0);
+  });
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRecord[]>(() => {
     const saved = loadStorage<TransactionRecord[]>('neon_transactions', []);
@@ -380,7 +454,9 @@ export const App: React.FC = () => {
 
   // Team Turnover Volume Milestones ($1,000 -> 1.5%, $2,500 -> 2%) - Clean 0
   const [teamTurnover, setTeamTurnover] = useState<TeamTurnover>(() => {
-    const power = loadStorageNum('neon_mining_power', 0.0);
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    const power = (ud?.activeMiningPower && ud.activeMiningPower > 0) ? ud.activeMiningPower : loadStorageNum('neon_mining_power', 0.0);
     return {
       personalStaked: power,
       downlineL1: 0.0,
@@ -398,8 +474,10 @@ export const App: React.FC = () => {
   // By default, mining starts STOPPED (RED) with 0s remaining.
   // Only turns GREEN when user buys a plan AND taps Start Mining.
   const [isMiningActive, setIsMiningActive] = useState<boolean>(() => {
-    const savedActive = loadStorageBool('neon_mining_active', false);
-    const savedStartTime = loadStorageNum('neon_mining_start_time', 0);
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    const savedActive = ud?.isMiningActive ?? loadStorageBool('neon_mining_active', false);
+    const savedStartTime = ud?.miningStartTime ?? loadStorageNum('neon_mining_start_time', 0);
     if (savedActive && savedStartTime > 0) {
       const elapsed = Math.floor((Date.now() - savedStartTime) / 1000);
       return elapsed < 24 * 3600;
@@ -407,8 +485,10 @@ export const App: React.FC = () => {
     return false;
   });
   const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
-    const savedActive = loadStorageBool('neon_mining_active', false);
-    const savedStartTime = loadStorageNum('neon_mining_start_time', 0);
+    const u = loadStorageStr('neon_user_name', '');
+    const ud = loadUserSavedData(u);
+    const savedActive = ud?.isMiningActive ?? loadStorageBool('neon_mining_active', false);
+    const savedStartTime = ud?.miningStartTime ?? loadStorageNum('neon_mining_start_time', 0);
     if (savedActive && savedStartTime > 0) {
       const elapsed = Math.floor((Date.now() - savedStartTime) / 1000);
       return Math.max(0, 24 * 3600 - elapsed);
@@ -541,8 +621,32 @@ export const App: React.FC = () => {
     }
   }, [referredUsers]);
 
-  // Save User Session & Balance State to LocalStorage
+  // Save User Session & Balance State to LocalStorage (Only when user is active)
   useEffect(() => {
+    if (!isLoggedIn || !userName) return;
+
+    const cleanId = userName.toUpperCase();
+    const currentPlan = adminUsers.find((u) => u.id.toUpperCase() === cleanId)?.currentPlanName || 
+      (activeMiningPower > 0 ? `Active Plan ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+
+    saveUserSavedData(cleanId, {
+      activeMiningPower,
+      currentPlanName: currentPlan,
+      depositBalance,
+      availableWithdrawal,
+      totalBalance,
+      totalRewards,
+      referralIncome,
+      referralBalance,
+      yesterdaysIncome,
+      isMiningActive,
+      miningStartTime: loadStorageNum('neon_mining_start_time', 0),
+      secondsRemaining,
+      unclaimedYield,
+      transactions,
+      depositRecords
+    });
+
     try {
       localStorage.setItem('neon_is_logged_in', String(isLoggedIn));
       localStorage.setItem('neon_user_name', userName);
@@ -719,13 +823,43 @@ export const App: React.FC = () => {
           const power = Number(w.active_mining_power) || 0;
           const mined = Number(w.total_mined_yield) || 0;
 
-          setDepositBalance(dep);
+          // Check if local storage or adminUsers has active plan or deposit:
+          const cleanId = userName.toUpperCase();
+          const savedData = loadUserSavedData(cleanId);
+          const adminRec = adminUsers.find((u) => u.id.toUpperCase() === cleanId);
+
+          const localPower = Math.max(savedData?.activeMiningPower || 0, adminRec?.stakedAmount || 0);
+          const localDep = Math.max(savedData?.depositBalance || 0, adminRec?.availableBalance || 0);
+
+          const finalPower = Math.max(power, localPower);
+          const finalDep = Math.max(dep, localDep);
+
+          // If local has plan/deposit that D1 doesn't have yet, heal D1 immediately!
+          if (finalPower > power) {
+            nexoraApi.adjustUserBalance({
+              userId: userName,
+              balanceType: 'active_mining_power',
+              amount: finalPower,
+              reason: 'Auto-sync active mining power to D1'
+            }).catch(() => {});
+          }
+
+          if (finalDep > dep) {
+            nexoraApi.adjustUserBalance({
+              userId: userName,
+              balanceType: 'deposit_balance',
+              amount: finalDep,
+              reason: 'Auto-sync deposit balance to D1'
+            }).catch(() => {});
+          }
+
+          if (finalPower > 0) setActiveMiningPower(finalPower);
+          if (finalDep > 0) setDepositBalance(finalDep);
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
           setReferralIncome(ref);
-          setActiveMiningPower(power);
-          setTotalRewards(mined);
-          setTotalBalance(+(dep + withdr + ref).toFixed(2));
+          if (mined > 0) setTotalRewards(mined);
+          setTotalBalance(+(finalDep + withdr + ref).toFixed(2));
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setPreFilledRefCode(res.user.referralCode);
@@ -1014,14 +1148,42 @@ export const App: React.FC = () => {
       const now = Date.now();
       setIsMiningActive(true);
       setSecondsRemaining(cycleDuration);
+
       try {
         localStorage.setItem('neon_mining_active', 'true');
         localStorage.setItem('neon_mining_start_time', String(now));
         localStorage.setItem('neon_seconds_remaining', String(cycleDuration));
       } catch (e) {}
 
-      // Notify Cloudflare API backend
       if (userName) {
+        const cleanUserId = userName.toUpperCase();
+        saveUserSavedData(cleanUserId, {
+          isMiningActive: true,
+          miningStartTime: now,
+          secondsRemaining: cycleDuration
+        });
+
+        // Set user status to 'active' in adminUsers
+        setAdminUsers((prev) =>
+          prev.map((u) => {
+            if (u.id.toUpperCase() === cleanUserId || u.name.toUpperCase() === cleanUserId) {
+              return {
+                ...u,
+                status: 'active',
+                lastLogin: '🟢 Mining Active'
+              };
+            }
+            return u;
+          })
+        );
+
+        setAdminTelemetry((prev) => ({
+          ...prev,
+          activeMinersCount: Math.max(prev.activeMinersCount, prev.activeMinersCount + 1)
+        }));
+
+        // Notify Cloudflare API backend
+        nexoraApi.toggleUserStatus(userName, 'active').catch(() => {});
         nexoraApi.startMiningCycle({ userId: userName }).catch(() => {});
       }
 
@@ -1208,8 +1370,42 @@ export const App: React.FC = () => {
       });
     }
 
-    // Synchronize subscription with Cloudflare D1 database
+    // Update user persistent storage immediately
+    const cleanUserId = activeUser.toUpperCase();
+    const newDepBal = paymentMethod === 'internal' ? Math.max(0, depositBalance - paidCost) : depositBalance;
+    const newWithBal = paymentMethod === 'internal' && depositBalance < paidCost 
+      ? Math.max(0, availableWithdrawal - (paidCost - depositBalance)) 
+      : availableWithdrawal;
+    const newTotBal = +(newDepBal + newWithBal).toFixed(2);
+
+    saveUserSavedData(cleanUserId, {
+      activeMiningPower: plan.amount,
+      currentPlanName: `${plan.planNumber} ($${plan.amount} USD)`,
+      depositBalance: newDepBal,
+      availableWithdrawal: newWithBal,
+      totalBalance: newTotBal
+    });
+
+    // Synchronize subscription & active mining power directly with Cloudflare D1 database
     if (activeUser && !isTestAccount(activeUser, activeUser, userEmail)) {
+      nexoraApi.adjustUserBalance({
+        userId: activeUser,
+        balanceType: 'active_mining_power',
+        amount: plan.amount,
+        reason: `Purchased ${plan.planNumber} ($${plan.amount})`
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(() => {});
+
+      if (paymentMethod === 'internal') {
+        nexoraApi.adjustUserBalance({
+          userId: activeUser,
+          balanceType: 'deposit_balance',
+          amount: newDepBal,
+          reason: 'Plan purchase deduction'
+        }).catch(() => {});
+      }
+
       nexoraApi.subscribePlan({
         userId: activeUser,
         planId: plan.id,
@@ -1571,8 +1767,24 @@ export const App: React.FC = () => {
       );
     }
 
-    // 5. Synchronize deposit order & verify on Cloudflare D1 backend
+    // 5. Synchronize deposit balance & order directly with Cloudflare D1 backend
     if (userName && !isTestAccount(userName, userName, userEmail)) {
+      const cleanUserId = userName.toUpperCase();
+      const newDepBal = +(depositBalance + amount).toFixed(2);
+      saveUserSavedData(cleanUserId, {
+        depositBalance: newDepBal,
+        totalBalance: +(newDepBal + availableWithdrawal).toFixed(2)
+      });
+
+      nexoraApi.adjustUserBalance({
+        userId: userName,
+        balanceType: 'deposit_balance',
+        amount: newDepBal,
+        reason: 'BEP-20 USDT Deposit'
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(() => {});
+
       nexoraApi.createDepositOrder({
         userId: userName,
         amount,
@@ -1984,6 +2196,7 @@ export const App: React.FC = () => {
     email?: string,
     referralCode?: string
   ) => {
+    const cleanId = name.toUpperCase();
     setUserName(name);
     setUserMobile(mobile);
     if (email) setUserEmail(email);
@@ -1999,25 +2212,69 @@ export const App: React.FC = () => {
     // Refresh real D1 admin users immediately
     fetchLiveAdminUsers();
 
-    // Sync with adminUsers if new registration or restore existing account
+    // 1. RESTORE FROM USER'S PERSISTED PROFILE:
+    const savedData = loadUserSavedData(cleanId);
     const existing = adminUsers.find(
       (u) =>
-        u.id.toUpperCase() === name.toUpperCase() ||
-        u.name.toUpperCase() === name.toUpperCase() ||
+        u.id.toUpperCase() === cleanId ||
+        u.name.toUpperCase() === cleanId ||
         (mobile && u.mobile === mobile)
     );
 
+    const activePower = (savedData?.activeMiningPower && savedData.activeMiningPower > 0)
+      ? savedData.activeMiningPower
+      : (existing?.stakedAmount || 0);
+
+    const depBal = (savedData?.depositBalance !== undefined && savedData.depositBalance > 0)
+      ? savedData.depositBalance
+      : (existing?.availableBalance || 0);
+
+    const withBal = savedData?.availableWithdrawal || 0;
+
+    if (activePower > 0) {
+      setActiveMiningPower(activePower);
+    }
+    if (depBal > 0) {
+      setDepositBalance(depBal);
+    }
+    if (withBal > 0) {
+      setAvailableWithdrawal(withBal);
+    }
+    setTotalBalance(+(depBal + withBal).toFixed(2));
+
+    if (savedData?.totalRewards) setTotalRewards(savedData.totalRewards);
+    if (savedData?.referralIncome) setReferralIncome(savedData.referralIncome);
+    if (savedData?.referralBalance) setReferralBalance(savedData.referralBalance);
+    if (savedData?.transactions && savedData.transactions.length > 0) {
+      setTransactions(savedData.transactions);
+    }
+    if (savedData?.depositRecords && savedData.depositRecords.length > 0) {
+      setDepositRecords(savedData.depositRecords);
+    }
+
+    // 2. RESTORE 24H MINING CONTINUITY:
+    const miningActive = savedData?.isMiningActive ?? false;
+    const miningStart = savedData?.miningStartTime ?? 0;
+
+    if (miningActive && miningStart > 0) {
+      const elapsed = Math.floor((Date.now() - miningStart) / 1000);
+      const CYCLE_DURATION = 24 * 3600;
+      if (elapsed < CYCLE_DURATION) {
+        setIsMiningActive(true);
+        const rem = CYCLE_DURATION - elapsed;
+        setSecondsRemaining(rem);
+        try {
+          localStorage.setItem('neon_mining_active', 'true');
+          localStorage.setItem('neon_mining_start_time', String(miningStart));
+          localStorage.setItem('neon_seconds_remaining', String(rem));
+        } catch (e) {}
+      } else {
+        // Mining cycle finished while user was logged out! Credit yield
+        complete24HourMiningCycle(activePower);
+      }
+    }
+
     if (existing) {
-      if (existing.availableBalance > 0) {
-        setAvailableWithdrawal(existing.availableBalance);
-        setTotalBalance(existing.availableBalance);
-      }
-      if (existing.referralEarnings) {
-        setReferralIncome(existing.referralEarnings);
-      }
-      if (existing.stakedAmount > 0) {
-        setActiveMiningPower(existing.stakedAmount);
-      }
       if (existing.invitedBy && existing.invitedBy !== 'DIRECT') {
         setUserUplineCode(existing.invitedBy);
       }
@@ -2030,11 +2287,11 @@ export const App: React.FC = () => {
           mobile: mobile,
           country: 'IN',
           registeredAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          status: 'active',
-          currentPlanName: 'No Plan Purchased (Inactive)',
-          stakedAmount: 0,
+          status: activePower > 0 ? 'active' : 'inactive',
+          currentPlanName: activePower > 0 ? `Active Plan ($${activePower})` : 'No Plan Purchased (Inactive)',
+          stakedAmount: activePower,
           totalMinedYield: 0,
-          availableBalance: 0,
+          availableBalance: depBal,
           totalWithdrawn: 0,
           fundPin: fundPin || '',
           fundPinSet: !!fundPin,
@@ -2069,37 +2326,55 @@ export const App: React.FC = () => {
 
   // Dedicated Logout Handler
   const handleLogout = () => {
-    // Clear all session-related localStorage keys
-    const sessionKeys = [
-      'neon_is_logged_in', 'neon_user_name', 'neon_user_mobile', 'neon_user_email',
-      'neon_fund_password', 'neon_upline_code', 'neon_total_balance',
-      'neon_mining_power', 'neon_total_rewards', 'neon_referral_income',
-      'neon_referral_balance', 'neon_yesterdays_income', 'neon_available_withdrawal',
-      'neon_mining_active', 'neon_seconds_remaining', 'neon_unclaimed_yield',
-      'neon_transactions', 'neon_referred_users', 'neon_withdrawal_requests'
-    ];
-    sessionKeys.forEach((k) => localStorage.removeItem(k));
+    // 1. Save user state before session exit (NEVER delete user plan or mining)
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      const currentPlan = adminUsers.find((u) => u.id.toUpperCase() === cleanId)?.currentPlanName || 
+        (activeMiningPower > 0 ? `Active Plan ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+      
+      saveUserSavedData(cleanId, {
+        activeMiningPower,
+        currentPlanName: currentPlan,
+        depositBalance,
+        availableWithdrawal,
+        totalBalance,
+        totalRewards,
+        referralIncome,
+        referralBalance,
+        yesterdaysIncome,
+        isMiningActive,
+        miningStartTime: loadStorageNum('neon_mining_start_time', Date.now()),
+        secondsRemaining,
+        unclaimedYield,
+        transactions,
+        depositRecords
+      });
+    }
+
+    // 2. Clear ONLY active session auth flags
+    localStorage.removeItem('neon_is_logged_in');
+    localStorage.removeItem('neon_user_name');
+    localStorage.removeItem('neon_user_mobile');
+    localStorage.removeItem('neon_user_email');
+    localStorage.removeItem('neon_fund_password');
+    localStorage.removeItem('neon_upline_code');
+
+    // 3. Reset in-memory view to guest mode
     setIsLoggedIn(false);
-    setIsMiningActive(false);
-    setSecondsRemaining(24 * 3600);
-    setActiveMiningPower(0);
-    setUnclaimedYield(0);
-    setTotalBalance(0);
-    setAvailableWithdrawal(0);
-    setTotalRewards(0);
-    setReferralIncome(0);
-    setReferralBalance(0);
-    setYesterdaysIncome(0);
-    setUserUplineCode('');
-    setPreFilledRefCode('');
-    setPendingPlanAfterAuth(null);
     setUserName('');
     setUserMobile('');
     setUserEmail('');
     setUserFundPassword('');
-    setTransactions([]);
-    setReferredUsers([]);
-    setWithdrawalRequests([]);
+    setActiveMiningPower(0);
+    setIsMiningActive(false);
+    setSecondsRemaining(24 * 3600);
+    setDepositBalance(0);
+    setAvailableWithdrawal(0);
+    setTotalBalance(0);
+    setTotalRewards(0);
+    setReferralIncome(0);
+    setReferralBalance(0);
+    setYesterdaysIncome(0);
     showToast('Successfully logged out. See you soon! 👋');
   };
 
