@@ -182,30 +182,18 @@ export const AdminSystemPortal: React.FC<Props> = ({
       const cleanId = adminLoginId.trim().toLowerCase();
       const enteredPassword = adminLoginPassword.trim();
 
-      // 1. Super Admin Credentials Check
-      const superAdminIds = ['admin', 'superadmin', 'neon_admin', 'admin@neon.io'];
-      const customPassword = localStorage.getItem('neon_custom_admin_password');
-      const validSuperPasswords = ['admin123456', 'NeonAdmin@2026', 'admin@2026', 'admin123'];
-      if (customPassword) validSuperPasswords.push(customPassword);
+      // 1. Super Admin Credentials Check (Strict Single Production Admin)
+      const currentAdminPass = localStorage.getItem('neon_custom_admin_password') || 'admin123456';
+      const isSuperAdminMatch = (cleanId === 'admin' || cleanId === 'superadmin') && enteredPassword === currentAdminPass;
 
-      const isSuperAdminMatch = superAdminIds.includes(cleanId) && validSuperPasswords.includes(enteredPassword);
-
-      // 2. Sub Admin Credentials Check
-      // Accepts built-in "subadmin" / "subadmin123" OR any custom subadmin created in subAdmins list
+      // 2. Provisioned Staff Sub-Admin Check (Created only by Super Admin in Staff RBAC)
       const matchedDelegated = subAdmins.find(
         (sa) =>
           (sa.username && sa.username.toLowerCase() === cleanId) ||
-          (sa.email && sa.email.toLowerCase() === cleanId) ||
-          (sa.id && sa.id.toLowerCase() === cleanId)
+          (sa.email && sa.email.toLowerCase() === cleanId)
       );
-
-      const isDefaultSubMatch =
-        (cleanId === 'subadmin' || cleanId === 'sub_admin' || cleanId === 'subadmin@neon.io') &&
-        (enteredPassword === 'subadmin123' || enteredPassword === 'subadmin@2026' || enteredPassword === 'admin123456');
-
       const isDelegatedSubMatch =
-        matchedDelegated &&
-        (matchedDelegated.password ? matchedDelegated.password === enteredPassword : (enteredPassword === 'subadmin123' || enteredPassword === 'admin123456'));
+        Boolean(matchedDelegated && matchedDelegated.password && matchedDelegated.password === enteredPassword);
 
       if (isSuperAdminMatch) {
         try {
@@ -223,7 +211,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
         return;
       }
 
-      if (isDefaultSubMatch || isDelegatedSubMatch) {
+      if (isDelegatedSubMatch) {
         const staffName = matchedDelegated?.name || 'Staff Sub-Admin';
         try {
           sessionStorage.setItem('neon_admin_auth', 'true');
@@ -245,17 +233,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }, 450);
   };
 
-  const handleFillDemoAdmin = () => {
-    setAdminLoginId('admin');
-    setAdminLoginPassword('admin123456');
-    setAdminLoginError(null);
-  };
 
-  const handleFillDemoSubAdmin = () => {
-    setAdminLoginId('subadmin');
-    setAdminLoginPassword('subadmin123');
-    setAdminLoginError(null);
-  };
 
   const handleAdminSignOut = () => {
     try {
@@ -909,46 +887,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Dual Credentials Quick-Card */}
-            <div className="p-3 rounded-xl bg-[#050C18] border border-[#122033] space-y-2 text-[11px]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[#64748B] font-mono flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-red-400" />
-                    <span>SUPER ADMIN (FULL CONTROL):</span>
-                  </div>
-                  <div className="text-white font-mono font-bold text-[11px]">
-                    ID: <span className="text-cyan-400">admin</span> | Pass: <span className="text-amber-400">admin123456</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleFillDemoAdmin}
-                  className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  Auto Fill Super
-                </button>
-              </div>
 
-              <div className="border-t border-[#101E33] pt-2 flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[#64748B] font-mono flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span>SUB-ADMIN (AUDIT / READ-ONLY):</span>
-                  </div>
-                  <div className="text-white font-mono font-bold text-[11px]">
-                    ID: <span className="text-cyan-400">subadmin</span> | Pass: <span className="text-amber-400">subadmin123</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleFillDemoSubAdmin}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  Auto Fill Sub
-                </button>
-              </div>
-            </div>
 
             {/* Submit Button */}
             <button
