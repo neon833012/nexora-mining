@@ -384,7 +384,8 @@ app.post('/api/deposit/create-order', async (c) => {
     }
 
     const orderId = `DEP-BSC-${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
-    const vaultAddress = c.env.VAULT_ADDRESS || '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
+    const vaultSetting = await c.env.DB.prepare("SELECT value FROM platform_settings WHERE key = 'vault_address'").first() as any;
+    const vaultAddress = vaultSetting?.value || '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
 
     await c.env.DB.prepare(
       `INSERT INTO deposit_orders (order_id, user_id, amount, token, network, vault_address, status) 

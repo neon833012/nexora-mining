@@ -72,6 +72,3 @@ npm run build
 ```bash
 npm run deploy:cf
 ```
-
-
-<!-- trigger-deploy: 1789139244620 -->
