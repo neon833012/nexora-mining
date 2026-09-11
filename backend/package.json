@@ -1,0 +1,23 @@
+{
+  "name": "nexora-mining-backend",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers & D1 Database Serverless Backend for Nexora Mining",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init-local": "wrangler d1 execute nexora-production-db --local --file=schema.sql",
+    "db:init-remote": "wrangler d1 execute nexora-production-db --remote --file=schema.sql"
+  },
+  "keywords": ["cloudflare", "workers", "d1", "crypto", "bep20"],
+  "author": "Nexora Development Team",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
+  }
+}

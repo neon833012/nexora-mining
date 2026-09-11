@@ -1,0 +1,6 @@
+{
+  "name": "Neon Mining",
+  "description": "High-end Web3 cryptocurrency cloud-mining platform featuring real-time hashrate, staking pools, interactive projections calculator, and BEP-20 rewards dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

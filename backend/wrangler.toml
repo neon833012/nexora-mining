@@ -1,0 +1,21 @@
+name = "neon-mining-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+# Daily 24-Hour Yield Accrual Scheduled Cron (Runs at 00:00 UTC every day)
+[triggers]
+crons = ["0 0 * * *"]
+
+# Cloudflare D1 Serverless SQL Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "nexora-production-db"
+database_id = "3158b81e-7d95-41ae-8b20-0deb9090082c"
+
+# Public Environment Variables
+[vars]
+ENVIRONMENT = "production"
+VAULT_ADDRESS = "0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B"
+USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955"
+BSC_RPC_URL = "https://bsc-dataseed1.binance.org/"
+CHAIN_ID = "56"
