@@ -8,7 +8,8 @@ import {
   Copy,
   Check,
   ShieldCheck,
-  Send
+  Send,
+  ExternalLink
 } from 'lucide-react';
 import { WithdrawalRequest } from '../types/mining';
 
@@ -274,11 +275,25 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
                   <span>{req.timestamp}</span>
                   {req.txHash && (
                     <div className="flex items-center gap-1 font-mono text-[#00F0FF]">
-                      <span>Hash: {req.txHash}</span>
+                      {req.txHash.startsWith('0x') && req.txHash.length === 66 ? (
+                        <a
+                          href={`https://bscscan.com/tx/${req.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline flex items-center gap-0.5"
+                          title="View on BscScan Explorer"
+                        >
+                          <span>Ref: {req.txHash.substring(0, 10)}...{req.txHash.substring(req.txHash.length - 8)}</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                        </a>
+                      ) : (
+                        <span>Ref: {req.txHash.length > 22 ? `${req.txHash.substring(0, 10)}...${req.txHash.substring(req.txHash.length - 8)}` : req.txHash}</span>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleCopy(req.txHash || '', `tx_${req.id}`)}
                         className="hover:text-white cursor-pointer ml-0.5"
+                        title="Copy full reference hash"
                       >
                         {copiedId === `tx_${req.id}` ? (
                           <Check className="w-2.5 h-2.5 text-emerald-400" />

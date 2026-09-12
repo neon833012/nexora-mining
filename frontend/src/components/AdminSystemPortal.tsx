@@ -102,7 +102,6 @@ interface Props {
 type AdminTab =
   | 'overview'
   | 'users'
-  | 'orders'
   | 'plans'
   | 'mining'
   | 'withdrawals'
@@ -377,10 +376,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }
   }, [activeTab, onRefreshMiners]);
 
-  // Order search & filters
-  const [orderSearch, setOrderSearch] = useState('');
-  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'new_purchase' | 'upgrade_difference'>('all');
-
   // Real-Time Institutional Live Clock for Liability Desk
   const [livePortalTime, setLivePortalTime] = useState<string>(() => {
     const now = new Date();
@@ -498,20 +493,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
       return matchSearch && matchStatus;
     });
   }, [adminUsers, userSearch, userStatusFilter]);
-
-  // Filtered Orders
-  const filteredOrders = useMemo(() => {
-    return (adminOrders || []).filter((o) => {
-      const matchSearch =
-        o.orderId.toLowerCase().includes(orderSearch.toLowerCase()) ||
-        o.userName.toLowerCase().includes(orderSearch.toLowerCase()) ||
-        o.userId.toLowerCase().includes(orderSearch.toLowerCase()) ||
-        o.planName.toLowerCase().includes(orderSearch.toLowerCase()) ||
-        o.txHash.toLowerCase().includes(orderSearch.toLowerCase());
-      const matchType = orderTypeFilter === 'all' || o.paymentType === orderTypeFilter;
-      return matchSearch && matchType;
-    });
-  }, [adminOrders, orderSearch, orderTypeFilter]);
 
   // Plan Sales & Distribution Breakdown across real tiers
   const planSalesBreakdown = useMemo(() => {
@@ -813,7 +794,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const navItems = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, badge: null, category: 'Core' },
     { id: 'users', label: 'Miners', icon: Users, badge: adminUsers.length, category: 'Core' },
-    { id: 'orders', label: 'Orders', icon: Layers, badge: adminOrders.length, category: 'Core' },
     { id: 'plans', label: 'Plans & Rates', icon: Sparkles, badge: `${currentPlans.length}T`, category: 'Finance' },
     { id: 'mining', label: 'Global Yield', icon: Cpu, badge: null, category: 'Finance' },
     { id: 'withdrawals', label: 'Withdrawals', icon: ArrowUpRight, badge: pendingWithdrawals.length || null, alert: pendingWithdrawals.length > 0, category: 'Finance' },
@@ -1201,7 +1181,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
             <h2 className="text-sm font-black text-white tracking-wide flex items-center gap-2">
               {activeTab === 'overview' && 'Executive Overview & Solvency Desk'}
               {activeTab === 'users' && 'Registered Miners & Accounts Directory'}
-              {activeTab === 'orders' && 'Mining Plans & Staking Orders'}
               {activeTab === 'plans' && 'Mining Plans Governance & Rate Controls'}
               {activeTab === 'mining' && 'Global Mining Telemetry & Fleet Yield'}
               {activeTab === 'withdrawals' && 'Withdrawal Settlement & Compliance Desk'}
@@ -1368,10 +1347,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     </span>
                   </div>
                   <button
-                    onClick={() => setActiveTab('orders')}
+                    onClick={() => setActiveTab('plans')}
                     className="text-[10.5px] text-purple-400 font-bold hover:underline cursor-pointer"
                   >
-                    Orders →
+                    Plans →
                   </button>
                 </div>
 
@@ -2165,111 +2144,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* ==================== 3. PLANS & ORDERS LEDGER ==================== */}
-          {activeTab === 'orders' && (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#070E1B] border border-[#14233C]">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                    <Layers className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-black text-white">Staking Orders Ledger</h3>
-                    <p className="text-[10.5px] text-[#64748B]">
-                      Records of user plan activations, contract upgrades, and blockchain hashes
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search Order ID, User, Plan..."
-                      value={orderSearch}
-                      onChange={(e) => setOrderSearch(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 rounded-xl bg-[#040812] border border-[#14233C] text-[11.5px] text-white focus:outline-none focus:border-purple-400 w-52 sm:w-64"
-                    />
-                  </div>
-                  <select
-                    value={orderTypeFilter}
-                    onChange={(e) => setOrderTypeFilter(e.target.value as any)}
-                    className="py-1.5 px-3 rounded-xl bg-[#040812] border border-[#14233C] text-[11px] text-gray-300 focus:outline-none cursor-pointer"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="new_purchase">Full Purchase</option>
-                    <option value="upgrade_difference">Plan Upgrade</option>
-                  </select>
-                </div>
-              </div>
-
-              {filteredOrders.length === 0 ? (
-                <div className="py-12 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 p-6">
-                  <Layers className="w-10 h-10 mx-auto text-purple-400/50" />
-                  <h4 className="text-white font-bold text-sm">No Plan Orders Found</h4>
-                  <p className="text-gray-400 text-xs max-w-md mx-auto">
-                    When users purchase or upgrade mining plans, their verified transactions will stream here with BSC transaction hashes.
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-[#070E1B] border border-[#14233C] overflow-hidden shadow-xl">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[11.5px]">
-                      <thead>
-                        <tr className="border-b border-[#14233C] bg-[#050A14] text-[#64748B] uppercase text-[9.5px] tracking-wider font-mono">
-                          <th className="py-3 px-3">Order ID</th>
-                          <th className="py-3 px-3">User</th>
-                          <th className="py-3 px-3">Plan</th>
-                          <th className="py-3 px-3">Payment</th>
-                          <th className="py-3 px-3">Paid Amount</th>
-                          <th className="py-3 px-3">Daily Yield</th>
-                          <th className="py-3 px-3">Date</th>
-                          <th className="py-3 px-3 text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#0E1A2E]">
-                        {filteredOrders.map((order) => (
-                          <tr key={order.orderId} className="hover:bg-[#0A1324] transition-colors">
-                            <td className="py-3 px-3 font-mono font-bold text-purple-400">{order.orderId}</td>
-                            <td className="py-3 px-3">
-                              <span className="text-white font-bold block">{order.userName}</span>
-                              <span className="text-[10px] text-gray-500 font-mono">{order.userId}</span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className="text-white font-semibold">{order.planName}</span>
-                              <span className="text-[10px] text-gray-400 block">(${order.planAmount})</span>
-                            </td>
-                            <td className="py-3 px-3">
-                              {order.paymentType === 'upgrade_difference' ? (
-                                <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[10px] font-bold">
-                                  Upgrade Diff
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-bold">
-                                  Full Purchase
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 font-mono font-bold text-white">${order.amountPaid.toFixed(2)}</td>
-                            <td className="py-3 px-3 font-mono text-emerald-400">+${order.dailyYieldUSDT}/day</td>
-                            <td className="py-3 px-3 text-gray-400 text-[10.5px]">{order.orderDate}</td>
-                            <td className="py-3 px-3 text-right">
-                              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                                {order.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ==================== 4. MINING PLANS GOVERNANCE ==================== */}
+          {/* ==================== 3. MINING PLANS GOVERNANCE ==================== */}
           {activeTab === 'plans' && (
             <div className="space-y-4 animate-fadeIn">
               {planSuccessNotice && (
@@ -3585,6 +3460,35 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     )}
                   </div>
                 </div>
+
+                {/* 5. Clean Slate System Reset (Super Admin Only) */}
+                {isSuperadmin && (
+                  <div className="p-4 rounded-2xl bg-[#140606] border border-red-500/40 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-black text-red-400 flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-red-500" />
+                          <span>Clean Slate: Reset All Plans & Orders</span>
+                        </h4>
+                        <p className="text-[10.5px] text-gray-400">
+                          Resets all active bought plans to 0, purges orders and test data, restoring a fresh clean slate for production.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm('Are you sure you want to RESET ALL PLANS & ORDERS to a clean slate? This will clear all active mining plans and order history.')) {
+                            if (onResetAllData) onResetAllData();
+                            triggerNotice('✓ System Clean Slate: All active plans and orders reset to 0!');
+                          }
+                        }}
+                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs cursor-pointer transition-all shadow-md active:scale-95 whitespace-nowrap"
+                      >
+                        Reset to Clean Slate (0 Plans)
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

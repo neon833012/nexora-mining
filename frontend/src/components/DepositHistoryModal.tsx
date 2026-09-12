@@ -7,7 +7,8 @@ import {
   Check,
   ShieldCheck,
   Send,
-  Wallet
+  Wallet,
+  ExternalLink
 } from 'lucide-react';
 import { DepositRecord } from '../types/mining';
 
@@ -258,11 +259,25 @@ export const DepositHistoryModal: React.FC<Props> = ({
                     <span>{rec.timestamp}</span>
                     {rec.txHash && (
                       <div className="flex items-center gap-1 font-mono text-[#00F0FF]">
-                        <span>Hash: {rec.txHash.length > 22 ? `${rec.txHash.substring(0, 10)}...${rec.txHash.substring(rec.txHash.length - 8)}` : rec.txHash}</span>
+                        {rec.txHash.startsWith('0x') && rec.txHash.length === 66 ? (
+                          <a
+                            href={`https://bscscan.com/tx/${rec.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline flex items-center gap-0.5"
+                            title="View on BscScan Explorer"
+                          >
+                            <span>Hash: {rec.txHash.substring(0, 10)}...${rec.txHash.substring(rec.txHash.length - 8)}</span>
+                            <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                          </a>
+                        ) : (
+                          <span>Hash: {rec.txHash.length > 22 ? `${rec.txHash.substring(0, 10)}...${rec.txHash.substring(rec.txHash.length - 8)}` : rec.txHash}</span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleCopy(rec.txHash || '', `dep_tx_${rec.id}`)}
                           className="hover:text-white cursor-pointer ml-0.5"
+                          title="Copy full transaction hash"
                         >
                           {copiedId === `dep_tx_${rec.id}` ? (
                             <Check className="w-2.5 h-2.5 text-emerald-400" />

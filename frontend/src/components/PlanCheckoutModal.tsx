@@ -30,6 +30,7 @@ interface Props {
   availableBalance: number;
   vaultWalletAddress?: string;
   onDismiss: () => void;
+  onNavigateToDashboard?: () => void;
   onConfirmSuccess: (
     plan: MiningPlan,
     paidCost: number,
@@ -50,6 +51,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   availableBalance,
   vaultWalletAddress = DEPOSIT_ADDRESS,
   onDismiss,
+  onNavigateToDashboard,
   onConfirmSuccess
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -805,7 +807,13 @@ export const PlanCheckoutModal: React.FC<Props> = ({
 
               <button
                 type="button"
-                onClick={onDismiss}
+                onClick={() => {
+                  if (onNavigateToDashboard) {
+                    onNavigateToDashboard();
+                  } else {
+                    onDismiss();
+                  }
+                }}
                 className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[13.5px] transition-all cursor-pointer shadow-lg shadow-emerald-950/40 active:scale-95"
               >
                 Go to Dashboard

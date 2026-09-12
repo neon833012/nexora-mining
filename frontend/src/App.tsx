@@ -75,7 +75,9 @@ import {
   Users,
   TrendingUp,
   Send,
-  History
+  History,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 
 // Known development/testing user accounts to exclude from production admin directories
@@ -1245,20 +1247,15 @@ export const App: React.FC = () => {
     paymentMethod: 'internal' | 'bep20_chain',
     txHash?: string
   ) => {
-    // Anti-Replay: Verify that 66-character TxHash is not already used
+    // Anti-Replay: Ensure TxHash is recorded to prevent duplicate reuse
     if (txHash && txHash.startsWith('0x') && txHash.length === 66) {
       const cleanTx = txHash.trim().toLowerCase();
-      const alreadyUsedInAdmin = adminOrders.some(
-        (o) => o.txHash && o.txHash.toLowerCase() === cleanTx && o.userId?.toUpperCase() !== (userName || '').toUpperCase()
-      );
       try {
         const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
-        if (alreadyUsedInAdmin || usedHashes.includes(cleanTx)) {
-          showToast('🚫 This 66-character reference has ALREADY been used to activate a plan. Replay rejected.');
-          return;
+        if (!usedHashes.includes(cleanTx)) {
+          usedHashes.push(cleanTx);
+          localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
         }
-        usedHashes.push(cleanTx);
-        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
       } catch {}
     }
 
@@ -1446,6 +1443,8 @@ export const App: React.FC = () => {
       totalOrdersCount: prev.totalOrdersCount + 1,
       activeMinersCount: Math.max(prev.activeMinersCount, prev.activeMinersCount + (isUpgradeModal ? 0 : 1))
     }));
+
+    showToast(`🎉 Successfully activated ${plan.planNumber} ($${plan.amount} USD)! Mining rig is live.`);
 
     // ================= 10% DIRECT UPLINE REFERRAL COMMISSION =================
     const upline = userUplineCode || preFilledRefCode;
@@ -2980,7 +2979,37 @@ export const App: React.FC = () => {
                                       {tx.type}
                                     </td>
                                     <td className="py-3 px-3.5 font-mono text-[#38BDF8] text-[11px] whitespace-nowrap">
-                                      {tx.txHash}
+                                      {tx.txHash ? (
+                                        <div className="flex items-center gap-1">
+                                          {tx.txHash.startsWith('0x') && tx.txHash.length === 66 ? (
+                                            <a
+                                              href={`https://bscscan.com/tx/${tx.txHash}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="hover:underline flex items-center gap-0.5 text-[#00F0FF]"
+                                              title="View on BscScan"
+                                            >
+                                              <span>{tx.txHash.substring(0, 10)}...{tx.txHash.substring(tx.txHash.length - 8)}</span>
+                                              <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                                            </a>
+                                          ) : (
+                                            <span>{tx.txHash.length > 24 ? `${tx.txHash.substring(0, 10)}...${tx.txHash.substring(tx.txHash.length - 8)}` : tx.txHash}</span>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard?.writeText(tx.txHash || '');
+                                              showToast('✓ Hash copied to clipboard!');
+                                            }}
+                                            className="hover:text-white cursor-pointer ml-1 text-gray-500 hover:text-white transition-colors"
+                                            title="Copy transaction hash"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-500">N/A</span>
+                                      )}
                                     </td>
                                     <td className="py-3 px-3.5 text-right font-mono font-black text-[12.5px] whitespace-nowrap">
                                       <span className={tx.amount > 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
@@ -3100,6 +3129,10 @@ export const App: React.FC = () => {
           availableBalance={+(depositBalance + availableWithdrawal).toFixed(2)}
           vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
           onDismiss={() => setSelectedPlanForCheckout(null)}
+          onNavigateToDashboard={() => {
+            setSelectedPlanForCheckout(null);
+            navigateTo('dashboard');
+          }}
           onConfirmSuccess={handleCheckoutSuccess}
         />
 
@@ -3259,6 +3292,7 @@ export const App: React.FC = () => {
                 'neon_referral_balance', 'neon_yesterdays_income', 'neon_available_withdrawal',
                 'neon_mining_active', 'neon_seconds_remaining', 'neon_last_compound_time',
                 'neon_unclaimed_yield',
+                'neon_used_tx_hashes',
                 'neon_mining_plans'
               ];
               keysToRemove.forEach((k) => localStorage.removeItem(k));
