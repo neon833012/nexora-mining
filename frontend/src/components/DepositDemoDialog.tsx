@@ -94,7 +94,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
 
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (numAmount < 10) return;
+    if (numAmount < 2) return;
     setVerificationError(null);
     setOrderCreatedAt(Date.now());
     setTimeLeftSeconds(900);
@@ -246,7 +246,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
                 <label className="font-bold text-[#CBD5E1] uppercase tracking-wider">
                   2. Enter Deposit Amount (USDT)
                 </label>
-                <span className="text-[#94A3B8] font-mono text-[10.5px]">Min: 10.00 USDT</span>
+                <span className="text-[#94A3B8] font-mono text-[10.5px]">Min: 2.00 USDT</span>
               </div>
 
               <div className="relative rounded-xl bg-[#040912] border border-[#1E3452] focus-within:border-[#00F0FF] transition-colors shadow-inner">
@@ -260,7 +260,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
                     }
                   }}
                   required
-                  placeholder="100"
+                  placeholder="50"
                   className="w-full bg-transparent px-3.5 py-3 text-[19px] font-mono font-black text-white focus:outline-none"
                 />
                 <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[12px] font-bold text-[#00F0FF] font-mono">
@@ -270,8 +270,8 @@ export const DepositDemoDialog: React.FC<Props> = ({
               </div>
 
               {/* Quick Amount Pills */}
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1">
-                {[20, 50, 100, 150, 350, 700, 1500].map((amt) => (
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 pt-1">
+                {[2, 10, 20, 50, 100, 150, 350, 700].map((amt) => (
                   <button
                     key={amt}
                     type="button"
@@ -302,9 +302,9 @@ export const DepositDemoDialog: React.FC<Props> = ({
             {/* Submit */}
             <button
               type="submit"
-              disabled={numAmount < 10}
+              disabled={numAmount < 2}
               className={`w-full py-3.5 px-4 rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 shadow-lg ${
-                numAmount < 10
+                numAmount < 2
                   ? 'bg-[#122034] text-[#64748B] border border-[#1B2F4A] cursor-not-allowed'
                   : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/40 border border-emerald-400/30'
               }`}

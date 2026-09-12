@@ -48,7 +48,7 @@ class NeonApiService {
     } catch (err) {
       console.warn('[NexoraAPI] Failed to fetch settings, using defaults', err);
       return {
-        min_deposit: '10.0',
+        min_deposit: '2.0',
         min_withdrawal: '2.0',
         withdrawal_fee_percent: '5.0',
         p2p_fee_percent: '0.0',

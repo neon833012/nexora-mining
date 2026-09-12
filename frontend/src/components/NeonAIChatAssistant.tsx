@@ -357,7 +357,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       ) {
         aiResponse =
           "💳 **Official BEP-20 Deposit Rules:**\n\n" +
-          "• **Minimum Deposit**: **10.00 USDT**\n" +
+          "• **Minimum Deposit**: **2.00 USDT**\n" +
           "• **Accepted Token**: Tether USD (**USDT**) on Binance Smart Chain (**BEP-20**)\n" +
           "• **Deposit Fee**: **0% (Free)** — 100% of deposited funds are credited to your Deposit Balance\n" +
           "• **Verification**: Automatic on-chain BSC RPC verification within 15–60 seconds\n" +
@@ -497,7 +497,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           "• **7 Mining Plans** ($20 to $3,000 USD, 365-day contracts)\n" +
           "• **24H Proof-of-Activity Cycles** (Red stopped vs Green active)\n" +
           "• **Withdrawals**: $2.00 min cashout, 5% fee, BEP-20 network\n" +
-          "• **Deposits**: $10.00 min on BSC, instant automated credit\n" +
+          "• **Deposits**: $2.00 min on BSC, instant automated credit\n" +
           "• **0% P2P Transfers** & **Daily Compounding Auto-Upgrades**\n\n" +
           "How can I help you today? Or tap **'👤 Talk to Human Support'** below for live specialist assistance!";
       }

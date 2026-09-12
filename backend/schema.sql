@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 
 -- Seed Initial Default Settings
 INSERT OR IGNORE INTO platform_settings (key, value) VALUES
-  ('min_deposit', '10.0'),
+  ('min_deposit', '2.0'),
   ('min_withdrawal', '2.0'),
   ('withdrawal_fee_percent', '5.0'),
   ('p2p_fee_percent', '0.0'),
