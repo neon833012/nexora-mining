@@ -81,6 +81,11 @@ export const P2PTransferModal: React.FC<Props> = ({
       return;
     }
 
+    if (!matchedUser) {
+      setErrorMessage(`Recipient User ID "${cleanRecipientId}" does not exist in the system. P2P transfers are strictly restricted to registered members only.`);
+      return;
+    }
+
     if (currentUserId && cleanRecipientId === currentUserId.toUpperCase()) {
       setErrorMessage('You cannot transfer funds to your own User ID.');
       return;
@@ -243,11 +248,12 @@ export const P2PTransferModal: React.FC<Props> = ({
                 {matchedUser ? (
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Verified: {matchedUser.name} ({matchedUser.id})
+                    Verified Member: {matchedUser.id}
                   </span>
                 ) : (
-                  <span className="text-cyan-400 font-medium">
-                    → Will be credited directly to User ID: <strong className="font-mono">{cleanRecipientId}</strong>
+                  <span className="text-red-400 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    User ID not found in system (P2P blocked)
                   </span>
                 )}
               </div>
@@ -365,8 +371,8 @@ export const P2PTransferModal: React.FC<Props> = ({
             </button>
             <button
               type="submit"
-              disabled={numAmount <= 0 || !cleanRecipientId}
-              className="flex-[1.5] py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-[12.5px] flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              disabled={numAmount <= 0 || !cleanRecipientId || !matchedUser}
+              className="flex-[1.5] py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-[12.5px] flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Confirm & Transfer {numAmount > 0 ? `($${numAmount.toFixed(2)})` : ''}</span>

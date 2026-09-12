@@ -833,43 +833,14 @@ export const App: React.FC = () => {
           const power = Number(w.active_mining_power) || 0;
           const mined = Number(w.total_mined_yield) || 0;
 
-          // Check if local storage or adminUsers has active plan or deposit:
-          const cleanId = userName.toUpperCase();
-          const savedData = loadUserSavedData(cleanId);
-          const adminRec = adminUsers.find((u) => u.id.toUpperCase() === cleanId);
-
-          const localPower = Math.max(savedData?.activeMiningPower || 0, adminRec?.stakedAmount || 0);
-          const localDep = Math.max(savedData?.depositBalance || 0, adminRec?.availableBalance || 0);
-
-          const finalPower = Math.max(power, localPower);
-          const finalDep = Math.max(dep, localDep);
-
-          // If local has plan/deposit that D1 doesn't have yet, heal D1 immediately!
-          if (finalPower > power) {
-            nexoraApi.adjustUserBalance({
-              userId: userName,
-              balanceType: 'active_mining_power',
-              amount: finalPower,
-              reason: 'Auto-sync active mining power to D1'
-            }).catch(() => {});
-          }
-
-          if (finalDep > dep) {
-            nexoraApi.adjustUserBalance({
-              userId: userName,
-              balanceType: 'deposit_balance',
-              amount: finalDep,
-              reason: 'Auto-sync deposit balance to D1'
-            }).catch(() => {});
-          }
-
-          if (finalPower > 0) setActiveMiningPower(finalPower);
-          if (finalDep > 0) setDepositBalance(finalDep);
+          // Cloudflare D1 Database is the single source of truth
+          setActiveMiningPower(power);
+          setDepositBalance(dep);
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
           setReferralIncome(ref);
           if (mined > 0) setTotalRewards(mined);
-          setTotalBalance(+(finalDep + withdr + ref).toFixed(2));
+          setTotalBalance(+(dep + withdr + ref).toFixed(2));
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
@@ -1663,6 +1634,17 @@ export const App: React.FC = () => {
           return u;
         })
       );
+
+      // Persist upgraded plan name and new hashing power directly into Cloudflare D1 database
+      nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: yieldToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(() => {});
     }
 
     if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
@@ -1962,6 +1944,15 @@ export const App: React.FC = () => {
     fundPin: string,
     sourceWallet: 'deposit' | 'withdrawable' = 'deposit'
   ) => {
+    const cleanRecipient = recipientId.trim().toUpperCase();
+    const recipientExists = adminUsers.some(
+      (u) => u.id.toUpperCase() === cleanRecipient || u.name.toUpperCase() === cleanRecipient
+    );
+    if (!recipientExists) {
+      showToast(`✕ Error: Recipient User ID "${recipientId}" not found in system. P2P transfers are strictly restricted to registered members.`);
+      return;
+    }
+
     if (!userFundPassword && fundPin) {
       setUserFundPassword(fundPin);
       try {

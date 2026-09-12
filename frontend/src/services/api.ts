@@ -225,6 +225,25 @@ class NeonApiService {
     }
   }
 
+  async reinvestUpgradePlan(params: {
+    userId: string;
+    newPower: number;
+    upgradedPlanName: string;
+    yieldAmount: number;
+    dailyRatePercent?: number;
+  }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/plans/reinvest-upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
   // ==========================================================================
   // 24-Hour Proof-of-Activity Mining Cycles
   // ==========================================================================

@@ -727,6 +727,72 @@ app.post('/api/plans/subscribe', async (c) => {
   }
 });
 
+// Reinvestment & Auto-Upgrade Plan Endpoint (Saves upgraded plan name in database)
+app.post('/api/plans/reinvest-upgrade', async (c) => {
+  try {
+    const { userId, newPower, upgradedPlanName, yieldAmount, dailyRatePercent = 1.0 } = await c.req.json();
+    if (!userId || !newPower || Number(newPower) <= 0) {
+      return c.json({ success: false, message: 'Valid userId and newPower required' }, 400);
+    }
+
+    const numPower = Number(newPower);
+    const numYield = Number(yieldAmount) || 0;
+    const rate = Number(dailyRatePercent);
+    const dailyYieldUsdt = Number((numPower * (rate / 100)).toFixed(4));
+    const txId = `CMP-${Date.now().toString().slice(-6)}`;
+
+    // Update wallet power
+    const batchStatements: any[] = [
+      c.env.DB.prepare(
+        `UPDATE wallets 
+         SET active_mining_power = ?, updated_at = CURRENT_TIMESTAMP 
+         WHERE user_id = ?`
+      ).bind(numPower, userId),
+
+      c.env.DB.prepare(
+        `INSERT INTO transactions (id, user_id, type, amount, status) 
+         VALUES (?, ?, ?, ?, 'Settled')`
+      ).bind(txId, userId, `Plan Reinvestment (+${numYield.toFixed(2)} USDT) -> ${upgradedPlanName}`, numYield)
+    ];
+
+    // Check if active contract exists
+    const existingContract = await c.env.DB.prepare(
+      'SELECT id FROM mining_contracts WHERE user_id = ? AND status = "active"'
+    ).bind(userId).first() as any;
+
+    if (existingContract) {
+      batchStatements.push(
+        c.env.DB.prepare(
+          `UPDATE mining_contracts 
+           SET plan_name = ?, amount = ?, daily_rate_percent = ?, daily_yield_usdt = ?, updated_at = CURRENT_TIMESTAMP 
+           WHERE id = ?`
+        ).bind(upgradedPlanName, numPower, rate, dailyYieldUsdt, existingContract.id)
+      );
+    } else {
+      const contractId = `contract_${Date.now().toString().slice(-8)}`;
+      batchStatements.push(
+        c.env.DB.prepare(
+          `INSERT INTO mining_contracts 
+           (id, user_id, plan_id, plan_name, amount, daily_rate_percent, duration_days, compounding_enabled, daily_yield_usdt, expires_at, status) 
+           VALUES (?, ?, 'reinvested_plan', ?, ?, ?, 365, 1, ?, datetime('now', '+365 days'), 'active')`
+        ).bind(contractId, userId, upgradedPlanName, numPower, rate, dailyYieldUsdt)
+      );
+    }
+
+    await c.env.DB.batch(batchStatements);
+
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
+
+    return c.json({
+      success: true,
+      message: `Plan auto-upgraded to ${upgradedPlanName} with $${numPower.toFixed(2)} active hashing power!`,
+      updatedWallet
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 // ============================================================================
 // 4.5. 24-Hour Proof-of-Activity Mining Cycle Engine
 // ============================================================================
@@ -827,13 +893,23 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
       return c.json({ success: false, message: 'Incorrect 6-digit Fund PIN' }, 403);
     }
 
-    // Verify Recipient
+    // Verify Recipient strictly exists in users table
+    const cleanRecipient = recipientIdentifier.trim();
+    const cleanRecipientNoSpaces = cleanRecipient.replace(/\s+/g, '');
     const recipient = await c.env.DB.prepare(
-      'SELECT id, name, mobile FROM users WHERE (id = ? OR mobile = ?) AND status = "active"'
-    ).bind(recipientIdentifier.trim(), recipientIdentifier.trim()).first() as any;
+      `SELECT id, name, mobile, email FROM users 
+       WHERE (
+         UPPER(id) = UPPER(?) 
+         OR UPPER(name) = UPPER(?) 
+         OR mobile = ? 
+         OR REPLACE(mobile, ' ', '') = ? 
+         OR LOWER(email) = LOWER(?)
+       )
+       LIMIT 1`
+    ).bind(cleanRecipient, cleanRecipient, cleanRecipient, cleanRecipientNoSpaces, cleanRecipient).first() as any;
 
     if (!recipient) {
-      return c.json({ success: false, message: 'Recipient member ID or phone number not found' }, 404);
+      return c.json({ success: false, message: `Recipient User ID "${recipientIdentifier}" does not exist in the platform. P2P transfers are strictly restricted to registered members.` }, 404);
     }
 
     if (recipient.id === senderId) {
