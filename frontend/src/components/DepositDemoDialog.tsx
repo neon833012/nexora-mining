@@ -24,6 +24,7 @@ interface Props {
   onDismiss: () => void;
   onDepositConfirmed: (amount: number, txHash?: string, orderId?: string) => void;
   vaultWalletAddress?: string;
+  userId?: string;
 }
 
 // Official Binance Smart Chain BEP-20 Custody Vault Address
@@ -36,7 +37,8 @@ export const DepositDemoDialog: React.FC<Props> = ({
   isOpen,
   onDismiss,
   onDepositConfirmed,
-  vaultWalletAddress = DEFAULT_BEP20_VAULT
+  vaultWalletAddress = DEFAULT_BEP20_VAULT,
+  userId
 }) => {
   const [step, setStep] = useState<GatewayStep>('SELECT_AMOUNT');
   const [depositAmount, setDepositAmount] = useState<string>('');
@@ -177,11 +179,34 @@ export const DepositDemoDialog: React.FC<Props> = ({
         return;
       }
 
-      // Record hash to prevent reuse
+      // Synchronous Atomic Backend Claim before crediting user
+      const effectiveUserId = (userId && userId.trim()) || localStorage.getItem('neon_user_name') || 'DIRECT_MEMBER';
+      const actualAmt = result.actualAmount || numAmount;
+      const creditedAmount = (actualAmt >= numAmount - 0.30 && actualAmt <= numAmount + 0.30)
+        ? numAmount
+        : actualAmt;
+
+      const claimRes = await nexoraApi.claimDepositTx({
+        userId: effectiveUserId,
+        txHash: cleanHash,
+        amount: creditedAmount,
+        network: 'BEP-20'
+      });
+
+      if (!claimRes || !claimRes.success || claimRes.alreadyClaimed) {
+        setIsVerifying(false);
+        setStep('AWAITING_PAYMENT');
+        setVerificationError(claimRes?.message || 'This 66-character transaction reference has ALREADY been claimed on the platform. Duplicate redemption is strictly blocked.');
+        return;
+      }
+
+      // Record hash to prevent reuse locally as well
       try {
         const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
-        usedHashes.push(cleanHash);
-        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+        if (!usedHashes.includes(cleanHash)) {
+          usedHashes.push(cleanHash);
+          localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+        }
       } catch {}
 
       setBlockConfirmations(Math.min(3, Math.max(1, result.confirmations || 3)));
@@ -191,11 +216,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
 
       setTimeout(() => {
         setStep('PAYMENT_SUCCESS');
-        const actualAmt = result.actualAmount || numAmount;
-        const creditedAmount = (actualAmt >= numAmount - 0.30 && actualAmt <= numAmount + 0.30)
-          ? numAmount
-          : actualAmt;
-        onDepositConfirmed(creditedAmount, cleanHash, orderId);
+        onDepositConfirmed(creditedAmount, cleanHash, claimRes.orderId || orderId);
       }, 1500);
     } catch (err: any) {
       setIsVerifying(false);

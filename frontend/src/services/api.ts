@@ -218,6 +218,32 @@ class NeonApiService {
     }
   }
 
+  async claimDepositTx(params: {
+    userId: string;
+    txHash: string;
+    amount: number;
+    network?: string;
+  }): Promise<{ success: boolean; alreadyClaimed?: boolean; message: string; orderId?: string; updatedWallet?: any }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tx/claim-deposit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          alreadyClaimed: data.alreadyClaimed ?? (res.status === 409),
+          message: data.message || 'Transaction already claimed on the platform.'
+        };
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network communication error' };
+    }
+  }
+
   // ==========================================================================
   // Mining Plans & Staking
   // ==========================================================================

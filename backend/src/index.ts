@@ -452,18 +452,38 @@ app.post('/api/tx/check-claimable', async (c) => {
       }, 400);
     }
 
-    // Check transactions
+    // 1. Check permanent immutable claimed_tx_hashes table
+    const permanentClaim = await c.env.DB.prepare(
+      'SELECT tx_hash, claimed_by_user, purpose, claimed_at FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    if (permanentClaim) {
+      return c.json({
+        success: false,
+        claimed: true,
+        message: `This 66-character transaction hash has ALREADY been claimed on the platform (by ${permanentClaim.claimed_by_user || 'another member'}). Each transaction can only be redeemed once.`
+      }, 409);
+    }
+
+    // 2. Check transactions ledger
     const existingTx = await c.env.DB.prepare(
       'SELECT id, user_id, type FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
     ).bind(cleanTx).first() as any;
 
-    // Check confirmed deposit_orders
+    // 3. Check confirmed deposit_orders
     const existingOrder = await c.env.DB.prepare(
       'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
     ).bind(cleanTx).first() as any;
 
     if (existingTx || existingOrder) {
       const owner = existingTx?.user_id || existingOrder?.user_id || 'another member';
+      // Auto-populate into claimed_tx_hashes so it can never be lost
+      try {
+        await c.env.DB.prepare(
+          'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
+        ).bind(cleanTx, owner, 0, existingTx?.type || 'legacy_tx').run();
+      } catch {}
+
       return c.json({
         success: false,
         claimed: true,
@@ -475,6 +495,120 @@ app.post('/api/tx/check-claimable', async (c) => {
       success: true,
       claimed: false,
       message: 'Transaction hash is valid and unclaimed.'
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Dedicated Atomic Claim Endpoint for BEP-20 USDT Deposits
+app.post('/api/tx/claim-deposit', async (c) => {
+  try {
+    const { userId, txHash, amount, network = 'BEP-20' } = await c.req.json();
+    if (!userId || !txHash || !amount || Number(amount) <= 0) {
+      return c.json({ success: false, message: 'Valid userId, txHash, and amount are required' }, 400);
+    }
+
+    const cleanTx = String(txHash).trim().toLowerCase();
+    if (!cleanTx.startsWith('0x') || cleanTx.length !== 66) {
+      return c.json({ success: false, message: 'Invalid 66-character transaction hash. Must start with 0x and have exactly 66 characters.' }, 400);
+    }
+
+    const numAmount = Number(amount);
+
+    // 1. Strict Anti-Replay Check
+    const existingClaim = await c.env.DB.prepare(
+      'SELECT tx_hash, claimed_by_user FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    const existingTx = await c.env.DB.prepare(
+      'SELECT id, user_id FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    const existingOrder = await c.env.DB.prepare(
+      'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    if (existingClaim || existingTx || existingOrder) {
+      const owner = existingClaim?.claimed_by_user || existingTx?.user_id || existingOrder?.user_id || 'another member';
+      return c.json({
+        success: false,
+        alreadyClaimed: true,
+        message: `This 66-character transaction reference has ALREADY been claimed on the platform (by ${owner}). Duplicate redemption is strictly blocked.`
+      }, 409);
+    }
+
+    // 2. Fetch or resolve effective user ID
+    const cleanUserId = String(userId).trim();
+    const user = await c.env.DB.prepare(
+      'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(name) = UPPER(?) LIMIT 1'
+    ).bind(cleanUserId, cleanUserId).first() as any;
+
+    const effectiveUserId = user?.id || cleanUserId;
+
+    // Ensure wallet exists for user
+    await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power)
+       VALUES (?, 0, 0, 0, 0)`
+    ).bind(effectiveUserId).run();
+
+    const txId = `DEP-${Date.now().toString().slice(-6)}`;
+    const orderId = `DEP-BSC-${Date.now().toString().slice(-8)}`;
+
+    const batchStatements: any[] = [
+      // Permanent immutable anti-replay record
+      c.env.DB.prepare(
+        'INSERT INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
+      ).bind(cleanTx, effectiveUserId, numAmount, 'bep20_deposit'),
+
+      // Credit wallet deposit balance
+      c.env.DB.prepare(
+        'UPDATE wallets SET deposit_balance = deposit_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+      ).bind(numAmount, effectiveUserId),
+
+      // Ledger entry
+      c.env.DB.prepare(
+        `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, 'BEP-20 USDT Deposit (BSC)', ?, 'Settled', ?)`
+      ).bind(txId, effectiveUserId, numAmount, cleanTx),
+
+      // Deposit orders record
+      c.env.DB.prepare(
+        `INSERT INTO deposit_orders (order_id, user_id, amount, token, network, vault_address, tx_hash, block_confirmations, status, confirmed_at)
+         VALUES (?, ?, ?, 'USDT', ?, ?, ?, 3, 'confirmed', CURRENT_TIMESTAMP)`
+      ).bind(orderId, effectiveUserId, numAmount, network, c.env.VAULT_ADDRESS || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d', cleanTx)
+    ];
+
+    // Referral commission if upline exists
+    if (user && user.upline_code) {
+      const uplineUser = await c.env.DB.prepare(
+        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
+      ).bind(user.upline_code.toUpperCase(), user.upline_code.toUpperCase()).first() as any;
+
+      if (uplineUser) {
+        const uplineBonus = Number((numAmount * 0.10).toFixed(2));
+        if (uplineBonus > 0) {
+          batchStatements.push(
+            c.env.DB.prepare(
+              `UPDATE wallets SET referral_balance = referral_balance + ?, withdrawable_balance = withdrawable_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
+            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+            c.env.DB.prepare(
+              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, 'Referral Commission (L1)', ?, 'Settled', ?)`
+            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus, cleanTx)
+          );
+        }
+      }
+    }
+
+    await c.env.DB.batch(batchStatements);
+
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(effectiveUserId).first();
+
+    return c.json({
+      success: true,
+      message: `Successfully verified and claimed $${numAmount.toFixed(2)} USDT deposit on BNB Smart Chain!`,
+      orderId,
+      txHash: cleanTx,
+      updatedWallet
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -509,19 +643,24 @@ app.post('/api/deposit/verify-tx', async (c) => {
 
     // 2. Prevent Replay Attack: check if this txHash was already used anywhere
     const cleanTx = txHash.trim().toLowerCase();
+    const duplicateClaim = await c.env.DB.prepare(
+      'SELECT tx_hash, claimed_by_user FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
     const duplicateTx = await c.env.DB.prepare(
-      'SELECT order_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
-    ).bind(cleanTx).first();
+      'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
+    ).bind(cleanTx).first() as any;
 
     const duplicateLedger = await c.env.DB.prepare(
       'SELECT id, user_id FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
     ).bind(cleanTx).first() as any;
 
-    if (duplicateTx || duplicateLedger) {
+    if (duplicateClaim || duplicateTx || duplicateLedger) {
+      const owner = duplicateClaim?.claimed_by_user || duplicateTx?.user_id || duplicateLedger?.user_id || 'another member';
       return c.json({
         success: false,
         alreadyClaimed: true,
-        message: 'This transaction hash has already been redeemed on the platform. Replay attacks are rejected.'
+        message: `This transaction hash has already been redeemed on the platform (by ${owner}). Replay attacks are rejected.`
       }, 409);
     }
 
@@ -547,6 +686,11 @@ app.post('/api/deposit/verify-tx', async (c) => {
     const user = await c.env.DB.prepare('SELECT upline_code FROM users WHERE id = ?').bind(effectiveUserId).first() as any;
 
     const batchStatements: any[] = [
+      // Record in permanent immutable claimed_tx_hashes table
+      c.env.DB.prepare(
+        'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
+      ).bind(cleanTx, effectiveUserId, order.amount, 'bep20_deposit'),
+
       // Update order to confirmed
       c.env.DB.prepare(
         `UPDATE deposit_orders 
@@ -691,6 +835,10 @@ app.post('/api/plans/subscribe', async (c) => {
     // Anti-Replay: Prevent reusing 66-character TxHash across multiple accounts
     const cleanProvidedTx = body.txHash ? String(body.txHash).trim().toLowerCase() : null;
     if (cleanProvidedTx && cleanProvidedTx.startsWith('0x') && cleanProvidedTx.length === 66) {
+      const existingClaim = await c.env.DB.prepare(
+        'SELECT tx_hash, claimed_by_user FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
+      ).bind(cleanProvidedTx).first() as any;
+
       const existingTx = await c.env.DB.prepare(
         'SELECT id, user_id, type FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
       ).bind(cleanProvidedTx).first() as any;
@@ -699,8 +847,8 @@ app.post('/api/plans/subscribe', async (c) => {
         'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
       ).bind(cleanProvidedTx).first() as any;
 
-      if (existingTx || existingDeposit) {
-        const owner = existingTx?.user_id || existingDeposit?.user_id || 'another member';
+      if (existingClaim || existingTx || existingDeposit) {
+        const owner = existingClaim?.claimed_by_user || existingTx?.user_id || existingDeposit?.user_id || 'another member';
         return c.json({
           success: false,
           alreadyClaimed: true,
@@ -708,6 +856,12 @@ app.post('/api/plans/subscribe', async (c) => {
         }, 409);
       }
     }
+
+    // Ensure wallet exists for user
+    await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power)
+       VALUES (?, 0, 0, 0, 0)`
+    ).bind(userId).run();
 
     const planTxHash = cleanProvidedTx || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
 
@@ -727,6 +881,11 @@ app.post('/api/plans/subscribe', async (c) => {
         ).bind(chargedAmount, planCost, userId);
 
     const batchStatements: any[] = [
+      // Permanent immutable anti-replay record
+      c.env.DB.prepare(
+        'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
+      ).bind(planTxHash, userId, planCost, isUpgrade ? `Tier Upgrade to ${planName}` : `Plan Staked (${planName})`),
+
       // If upgrading, mark previous active contract as upgraded
       ...(existingActiveContract ? [
         c.env.DB.prepare(
@@ -1416,20 +1575,44 @@ app.post('/api/admin/users/adjust-balance', async (c) => {
         : `Admin Adjustment: ${cleanReason}`;
 
     const txHashToStore = (txHash && String(txHash).trim()) || (isDeposit ? ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')) : null);
+    const cleanStoreHash = txHashToStore ? txHashToStore.trim().toLowerCase() : null;
+
+    if (cleanStoreHash && cleanStoreHash.startsWith('0x') && cleanStoreHash.length === 66 && isDeposit) {
+      const existing = await c.env.DB.prepare(
+        'SELECT tx_hash, claimed_by_user FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
+      ).bind(cleanStoreHash).first() as any;
+      if (existing) {
+        return c.json({
+          success: false,
+          alreadyClaimed: true,
+          message: `This 66-character transaction reference has ALREADY been claimed on the platform (by ${existing.claimed_by_user}).`
+        }, 409);
+      }
+    }
 
     const txId = `ADJ-${Date.now().toString().slice(-6)}`;
-    await c.env.DB.batch([
+    const batchStatements: any[] = [
       c.env.DB.prepare(
         `UPDATE wallets SET ${balanceType} = MAX(0, ${balanceType} + ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
       ).bind(numAmount, userId),
 
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, 'Settled', ?)`
-      ).bind(txId, userId, txType, numAmount, txHashToStore)
-    ]);
+      ).bind(txId, userId, txType, numAmount, cleanStoreHash)
+    ];
+
+    if (cleanStoreHash && cleanStoreHash.startsWith('0x') && cleanStoreHash.length === 66) {
+      batchStatements.push(
+        c.env.DB.prepare(
+          'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
+        ).bind(cleanStoreHash, userId, numAmount, txType)
+      );
+    }
+
+    await c.env.DB.batch(batchStatements);
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
-    return c.json({ success: true, message: `Wallet ${balanceType} adjusted by $${numAmount}`, updatedWallet, txHash: txHashToStore });
+    return c.json({ success: true, message: `Wallet ${balanceType} adjusted by $${numAmount}`, updatedWallet, txHash: cleanStoreHash });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

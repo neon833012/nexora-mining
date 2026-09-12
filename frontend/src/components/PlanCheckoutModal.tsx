@@ -29,6 +29,8 @@ interface Props {
   diffAmount?: number;
   availableBalance: number;
   vaultWalletAddress?: string;
+  userId?: string;
+  fundPin?: string;
   onDismiss: () => void;
   onNavigateToDashboard?: () => void;
   onConfirmSuccess: (
@@ -50,6 +52,8 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   diffAmount,
   availableBalance,
   vaultWalletAddress = DEPOSIT_ADDRESS,
+  userId,
+  fundPin,
   onDismiss,
   onNavigateToDashboard,
   onConfirmSuccess
@@ -180,11 +184,36 @@ export const PlanCheckoutModal: React.FC<Props> = ({
         return;
       }
 
+      // Synchronous Atomic Backend Subscribe & Anti-Replay Claim
+      const effectiveUserId = (userId && userId.trim()) || localStorage.getItem('neon_user_name') || 'DIRECT_MEMBER';
+      const subRes = await nexoraApi.subscribePlan({
+        userId: effectiveUserId,
+        planId: plan.id,
+        planName: plan.planName || plan.planNumber || 'Mining Plan',
+        amount: plan.amount,
+        dailyRatePercent: plan.dailyRatePercent,
+        durationDays: plan.durationDays || 365,
+        compoundingEnabled: true,
+        fundPin: fundPin || '123456',
+        paymentMethod: 'crypto',
+        txHash: cleanHash,
+        isDirectPayment: true
+      });
+
+      if (!subRes || !subRes.success || subRes.alreadyClaimed) {
+        setIsVerifying(false);
+        setCurrentStep(2);
+        setVerificationError(subRes?.message || 'This transaction hash has ALREADY been claimed on the platform. It cannot be used again.');
+        return;
+      }
+
       // Record hash to prevent reuse
       try {
         const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
-        usedHashes.push(cleanHash);
-        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+        if (!usedHashes.includes(cleanHash)) {
+          usedHashes.push(cleanHash);
+          localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+        }
       } catch {}
 
       setBlockConfirmations(result.confirmations || 3);

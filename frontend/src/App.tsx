@@ -3128,6 +3128,8 @@ export const App: React.FC = () => {
           diffAmount={upgradeDiffAmount}
           availableBalance={+(depositBalance + availableWithdrawal).toFixed(2)}
           vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
+          userId={userName}
+          fundPin={userFundPassword}
           onDismiss={() => setSelectedPlanForCheckout(null)}
           onNavigateToDashboard={() => {
             setSelectedPlanForCheckout(null);
@@ -3142,6 +3144,7 @@ export const App: React.FC = () => {
           onDismiss={() => setShowDepositDialog(false)}
           onDepositConfirmed={handleDepositConfirmed}
           vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
+          userId={userName}
         />
 
         {/* P2P Member Transfer Modal */}
@@ -3281,7 +3284,7 @@ export const App: React.FC = () => {
             onClearAllUsers={handleClearAllUsers}
             onRefreshMiners={fetchLiveAdminUsers}
             onResetAllData={() => {
-              // Clear all localStorage keys
+              // Clear all localStorage keys (keep neon_used_tx_hashes permanently intact)
               const keysToRemove = [
                 'neon_admin_users', 'neon_admin_orders', 'neon_admin_telemetry',
                 'neon_withdrawal_requests', 'neon_transactions', 'neon_referred_users',
@@ -3292,7 +3295,6 @@ export const App: React.FC = () => {
                 'neon_referral_balance', 'neon_yesterdays_income', 'neon_available_withdrawal',
                 'neon_mining_active', 'neon_seconds_remaining', 'neon_last_compound_time',
                 'neon_unclaimed_yield',
-                'neon_used_tx_hashes',
                 'neon_mining_plans'
               ];
               keysToRemove.forEach((k) => localStorage.removeItem(k));
