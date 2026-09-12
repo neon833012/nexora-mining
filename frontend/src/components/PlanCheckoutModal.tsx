@@ -430,18 +430,30 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                     </span>
                   </div>
 
-                  {/* Optional TxHash Input */}
+                  {/* Required TxHash Input */}
                   <div>
-                    <label className="text-[10.5px] text-[#94A3B8] block mb-1">
-                      Transaction Hash / TxID (Optional):
+                    <label className="text-[11px] text-[#CBD5E1] font-bold flex items-center justify-between mb-1.5">
+                      <span className="flex items-center gap-1">
+                        <span>Transaction Hash / TxID (Required):</span>
+                        <span className="text-rose-400 font-black">*</span>
+                      </span>
+                      <span className="text-[10px] text-[#00F0FF] font-mono">66-char (0x...)</span>
                     </label>
                     <input
                       type="text"
                       value={enteredTxHash}
-                      onChange={(e) => setEnteredTxHash(e.target.value)}
-                      placeholder="0x... (from your wallet receipt)"
-                      className="w-full rounded-xl bg-[#040A14] border border-[#14263E] px-3 py-2 text-[11px] font-mono text-[#CBD5E1] focus:outline-none focus:border-[#00F0FF]"
+                      onChange={(e) => {
+                        setEnteredTxHash(e.target.value);
+                        if (verificationError) setVerificationError(null);
+                      }}
+                      placeholder="Paste 66-character TxHash (0x...) from your transfer receipt"
+                      className={`w-full rounded-xl bg-[#040A14] border px-3 py-2 text-[11.5px] font-mono text-[#CBD5E1] focus:outline-none transition-colors ${
+                        verificationError ? 'border-rose-500/60 focus:border-rose-400' : 'border-[#14263E] focus:border-[#00F0FF]'
+                      }`}
                     />
+                    <p className="text-[10px] text-[#64748B] mt-1">
+                      Transfer USDT (BEP-20) to the address above, then paste your wallet transaction receipt hash here to activate your node.
+                    </p>
                   </div>
                 </div>
               )}
@@ -488,11 +500,15 @@ export const PlanCheckoutModal: React.FC<Props> = ({
 
                 <button
                   type="button"
-                  disabled={paymentMethod === 'internal' && !hasEnoughInternalBalance}
+                  disabled={
+                    (paymentMethod === 'internal' && !hasEnoughInternalBalance) ||
+                    (paymentMethod === 'bep20_chain' && !enteredTxHash.trim())
+                  }
                   onClick={startVerificationProcess}
                   className={`flex-2 py-3 px-4 rounded-xl font-black text-[13px] flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-lg ${
-                    paymentMethod === 'internal' && !hasEnoughInternalBalance
-                      ? 'bg-[#122034] text-[#64748B] border border-[#1B2F4A] cursor-not-allowed'
+                    (paymentMethod === 'internal' && !hasEnoughInternalBalance) ||
+                    (paymentMethod === 'bep20_chain' && !enteredTxHash.trim())
+                      ? 'bg-[#122034] text-[#64748B] border border-[#1B2F4A] cursor-not-allowed opacity-60'
                       : 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#031526] shadow-[0_0_15px_rgba(0,240,255,0.3)]'
                   }`}
                 >
