@@ -1126,9 +1126,9 @@ export const App: React.FC = () => {
   const compoundCountdownText = formatCountdown(compoundSecondsLeft);
 
   // Visual Mining State:
-  // - Starts RED (STOPPED) for new users/guests until an active plan 24h cycle is tapped
-  // - GREEN only while a 24-hour cycle is actively running
-  const isVisualMiningActive = isMiningActive;
+  // - When NOT signed in (!isLoggedIn): Center mining core visual is GREEN (online showcase for guests)
+  // - As soon as signed in (isLoggedIn): Turns RED (stopped/inactive) until user purchases a plan and taps Start Mining
+  const isVisualMiningActive = !isLoggedIn ? true : isMiningActive;
 
   // Toggle / Start 24-Hour Mining Cycle with strict guards
   const handleToggleMining = () => {
