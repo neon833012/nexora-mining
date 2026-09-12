@@ -151,7 +151,27 @@ export const AuthModalDialog: React.FC<Props> = ({
         if (res && res.success && res.user) {
           onAuthSuccess(res.user.id, res.user.mobile || '', undefined, res.user.email || identifier, res.user.referralCode);
         } else {
-          setApiError(res?.message || 'Invalid credentials. Please verify your Email/Mobile and Password.');
+          if (res?.suspended || res?.message?.toLowerCase().includes('suspended')) {
+            setApiError('Your account has been suspended due to irregular mining activity and security policy violations. Please contact support@neon-mining.io for assistance.');
+            setIsLoading(false);
+            return;
+          }
+          // Secondary live check: verify if this user is marked suspended in D1 database
+          try {
+            const checkUser = await nexoraApi.getAdminUsers(identifier);
+            const matched = checkUser?.users?.find((u: any) => 
+              (u.email && u.email.toLowerCase() === identifier.toLowerCase()) || 
+              (u.id && u.id.toUpperCase() === identifier.toUpperCase()) ||
+              (u.mobile && u.mobile.replace(/\s+/g, '') === identifier.replace(/\s+/g, ''))
+            );
+            if (matched && matched.status === 'suspended') {
+              setApiError('Your account has been suspended due to irregular mining activity and security policy violations. Please contact support@neon-mining.io for assistance.');
+              setIsLoading(false);
+              return;
+            }
+          } catch {}
+
+          setApiError(res?.message || 'Invalid credentials. Please verify your Email/Username and Password.');
         }
       }
     } catch {
@@ -365,10 +385,16 @@ export const AuthModalDialog: React.FC<Props> = ({
 
         {/* API Error Notification */}
         {apiError && (
-          <div className="mt-3.5 p-3 rounded-xl bg-red-950/85 border border-red-500/50 text-red-200 text-[12px] flex items-start gap-2.5 animate-fadeIn shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+          <div className={`mt-3.5 p-3 rounded-xl ${
+            apiError.toLowerCase().includes('suspended')
+              ? 'bg-red-950/95 border-2 border-red-500 text-red-100 shadow-[0_0_25px_rgba(239,68,68,0.4)]'
+              : 'bg-red-950/85 border border-red-500/50 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+          } text-[12px] flex items-start gap-2.5 animate-fadeIn`}>
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <span className="font-bold text-red-400 block text-[11px] uppercase tracking-wider">Authentication Error</span>
+              <span className="font-bold text-red-400 block text-[11px] uppercase tracking-wider">
+                {apiError.toLowerCase().includes('suspended') ? '🚫 Account Suspended' : 'Authentication Error'}
+              </span>
               <span className="text-red-200 text-[11.5px] leading-relaxed">{apiError}</span>
             </div>
           </div>
@@ -481,7 +507,7 @@ export const AuthModalDialog: React.FC<Props> = ({
             {/* Email / Identifier */}
             <div>
               <label className="font-medium text-[#94A3B8] block mb-1">
-                {isSignUp ? 'Email Address' : 'Registered Email or Mobile Number'}
+                {isSignUp ? 'Email Address' : 'Email Address or Username'}
               </label>
               <div className="relative">
                 <Mail className="w-3.5 h-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -493,7 +519,7 @@ export const AuthModalDialog: React.FC<Props> = ({
                     setEmail(e.target.value);
                     if (apiError) setApiError('');
                   }}
-                  placeholder={isSignUp ? 'name@gmail.com' : 'name@gmail.com or 9876543210'}
+                  placeholder={isSignUp ? 'name@gmail.com' : 'Email or Username (e.g. name@gmail.com or NEON...)'}
                   className="w-full rounded-xl bg-[#050B14] border border-[#162740] pl-8 pr-3 py-2 text-[13px] text-white focus:outline-none focus:border-[#00F0FF]"
                 />
               </div>

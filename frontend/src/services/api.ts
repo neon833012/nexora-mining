@@ -371,12 +371,24 @@ class NeonApiService {
     }
   }
 
-  async deleteUser(userId: string) {
+  async deleteUser(userId: string, email?: string) {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/users/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
+        body: JSON.stringify({ userId, email })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async purgeAllUsers() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/users/purge-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
       });
       return await res.json();
     } catch (err: any) {

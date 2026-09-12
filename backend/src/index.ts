@@ -167,12 +167,19 @@ app.post('/api/auth/login', async (c) => {
         OR REPLACE(mobile, ' ', '') = ?
         OR (length(?) >= 6 AND mobile LIKE '%' || ?)
       )
-      AND status = 'active'
       LIMIT 1
     `).bind(cleanId, cleanId, cleanId, cleanNoSpaces, cleanNoSpaces, cleanNoSpaces).first() as any;
 
     if (!userRecord || userRecord.password_hash !== password) {
       return c.json({ success: false, message: 'Invalid mobile/email or password. Please check your credentials.' }, 401);
+    }
+
+    if (userRecord.status === 'suspended') {
+      return c.json({
+        success: false,
+        suspended: true,
+        message: 'Your account has been suspended due to policy violations and irregular mining activity. Please contact support@neon-mining.io for assistance.'
+      }, 403);
     }
 
     // Fetch user wallet
@@ -1032,22 +1039,51 @@ app.post('/api/admin/users/toggle-status', async (c) => {
   }
 });
 
-// Admin Delete User Account Permanently
+// Admin Delete User Account Permanently (By ID or Email)
 app.post('/api/admin/users/delete', async (c) => {
   try {
-    const { userId } = await c.req.json();
-    if (!userId) {
-      return c.json({ success: false, message: 'Valid userId required' }, 400);
+    const { userId, email } = await c.req.json();
+    if (!userId && !email) {
+      return c.json({ success: false, message: 'Valid userId or email required' }, 400);
     }
+
+    // Resolve target user record
+    let targetUser: any = null;
+    if (userId) {
+      targetUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?').bind(userId).first();
+    } else if (email) {
+      targetUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)').bind(email).first();
+    }
+
+    const effectiveId = targetUser?.id || userId;
+    const effectiveEmail = targetUser?.email || email || '';
+
     await c.env.DB.batch([
-      c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM mining_contracts WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM deposit_orders WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM withdrawal_requests WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId)
+      c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(effectiveId),
+      c.env.DB.prepare('DELETE FROM mining_contracts WHERE user_id = ?').bind(effectiveId),
+      c.env.DB.prepare('DELETE FROM deposit_orders WHERE user_id = ?').bind(effectiveId),
+      c.env.DB.prepare('DELETE FROM withdrawal_requests WHERE user_id = ?').bind(effectiveId),
+      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(effectiveId),
+      c.env.DB.prepare('DELETE FROM users WHERE id = ? OR (email != "" AND LOWER(email) = LOWER(?))').bind(effectiveId, effectiveEmail)
     ]);
-    return c.json({ success: true, message: `User ${userId} deleted successfully` });
+    return c.json({ success: true, message: `User ${effectiveId} permanently deleted from database. Email is now reusable.` });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Admin Purge ALL Users Completely (Full Platform Reset)
+app.post('/api/admin/users/purge-all', async (c) => {
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM wallets'),
+      c.env.DB.prepare('DELETE FROM mining_contracts'),
+      c.env.DB.prepare('DELETE FROM deposit_orders'),
+      c.env.DB.prepare('DELETE FROM withdrawal_requests'),
+      c.env.DB.prepare('DELETE FROM transactions'),
+      c.env.DB.prepare("DELETE FROM users WHERE role != 'admin' OR role IS NULL")
+    ]);
+    return c.json({ success: true, message: 'All users and related records completely wiped from database' });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

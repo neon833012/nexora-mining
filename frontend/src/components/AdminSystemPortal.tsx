@@ -1760,6 +1760,23 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       <span>{isRefreshingMiners ? 'Syncing...' : 'Sync Database'}</span>
                     </button>
                   )}
+
+                  {onClearAllUsers && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('⚠️ ATTENTION: Are you sure you want to permanently DELETE ALL registered users from the database? This will completely wipe all accounts, contracts, and wallets to a clean 0.')) {
+                          onClearAllUsers();
+                          triggerNotice('✓ All user accounts permanently purged.');
+                        }
+                      }}
+                      className="py-1.5 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-300 hover:text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                      title="Delete all users and reset directory to 0"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-400" />
+                      <span>Purge All Users</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1854,13 +1871,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onDeleteUser(user.id);
-                                  triggerNotice(`✓ Deleted account ${user.id}`);
+                                  if (window.confirm(`Permanently delete miner account ${user.id} (${user.email || user.name})? All database records will be wiped so this email can be re-used.`)) {
+                                    onDeleteUser(user.id);
+                                    triggerNotice(`✓ Deleted account ${user.id}`);
+                                  }
                                 }}
-                                className="p-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all text-[10px]"
+                                className="px-2 py-1 rounded bg-red-600/20 text-red-300 hover:bg-red-600 hover:text-white border border-red-500/40 transition-all font-bold text-[10px] flex items-center gap-1 cursor-pointer"
                                 title="Delete User"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-2.5 h-2.5 text-red-400" />
+                                <span>Delete</span>
                               </button>
                             )}
                           </div>
@@ -1984,13 +2004,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        onDeleteUser(user.id);
-                                        triggerNotice(`✓ Deleted user ${user.id}`);
+                                        if (window.confirm(`Are you sure you want to permanently delete miner ${user.id} (${user.email || user.name})? All database records and wallet data will be wiped so this email can be re-used.`)) {
+                                          onDeleteUser(user.id);
+                                          triggerNotice(`✓ Deleted user ${user.id}`);
+                                        }
                                       }}
-                                      className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500 text-red-400 hover:text-white transition-all text-[10.5px]"
-                                      title="Delete account"
+                                      className="px-2 py-1 rounded-lg bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 transition-all text-[10.5px] font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Delete account permanently"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <Trash2 className="w-3 h-3 text-red-400" />
+                                      <span>Delete</span>
                                     </button>
                                   )}
                                 </div>

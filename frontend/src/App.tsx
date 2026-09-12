@@ -2112,6 +2112,8 @@ export const App: React.FC = () => {
 
   // Admin toggles user status (active, inactive, suspended)
   const handleToggleUserStatus = (userId: string, newStatus: 'active' | 'inactive' | 'suspended') => {
+    const backendStatus = newStatus === 'suspended' ? 'suspended' : 'active';
+    nexoraApi.toggleUserStatus(userId, backendStatus).catch(() => {});
     setAdminUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
     );
@@ -2120,11 +2122,12 @@ export const App: React.FC = () => {
 
   // Admin deletes user account
   const handleDeleteUser = (userId: string) => {
-    nexoraApi.deleteUser(userId).then(() => {
+    const target = adminUsers.find((u) => u.id === userId);
+    nexoraApi.deleteUser(userId, target?.email).then(() => {
       fetchLiveAdminUsers();
     }).catch(() => {});
     setAdminUsers((prev) => prev.filter((u) => u.id !== userId));
-    showToast(`✓ Removed miner account ${userId} from directory.`);
+    showToast(`✓ Permanently deleted miner account ${userId} from database.`);
   };
 
   // Admin purges all inactive test accounts (0 staked power & 0 balance)
@@ -2140,7 +2143,7 @@ export const App: React.FC = () => {
 
   // Admin completely clears all users and resets directory to clean 0
   const handleClearAllUsers = () => {
-    nexoraApi.purgeInactiveUsers().then(() => {
+    nexoraApi.purgeAllUsers().then(() => {
       fetchLiveAdminUsers();
     }).catch(() => {});
     localStorage.removeItem('neon_admin_users');
@@ -2206,6 +2209,21 @@ export const App: React.FC = () => {
       setUserUplineCode(cleanRef);
       setPreFilledRefCode(cleanRef);
     }
+    // Check if account is suspended in admin directory
+    const existing = adminUsers.find(
+      (u) =>
+        u.id.toUpperCase() === cleanId ||
+        u.name.toUpperCase() === cleanId ||
+        (mobile && u.mobile === mobile)
+    );
+
+    if (existing && existing.status === 'suspended') {
+      showToast('🚫 Your account has been suspended due to irregular mining activity and security policy violations.');
+      setIsLoggedIn(false);
+      setShowAuthModal(false);
+      return;
+    }
+
     setIsLoggedIn(true);
     setShowAuthModal(false);
 
@@ -2214,12 +2232,6 @@ export const App: React.FC = () => {
 
     // 1. RESTORE FROM USER'S PERSISTED PROFILE:
     const savedData = loadUserSavedData(cleanId);
-    const existing = adminUsers.find(
-      (u) =>
-        u.id.toUpperCase() === cleanId ||
-        u.name.toUpperCase() === cleanId ||
-        (mobile && u.mobile === mobile)
-    );
 
     const activePower = (savedData?.activeMiningPower && savedData.activeMiningPower > 0)
       ? savedData.activeMiningPower
