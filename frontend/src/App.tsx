@@ -147,6 +147,7 @@ export interface UserPersistentData {
   unclaimedYield?: number;
   transactions?: TransactionRecord[];
   depositRecords?: DepositRecord[];
+  fundPin?: string;
 }
 
 export const getUserStorageKey = (uid: string) => `neon_user_${uid.toUpperCase()}`;
@@ -650,7 +651,8 @@ export const App: React.FC = () => {
       secondsRemaining,
       unclaimedYield,
       transactions,
-      depositRecords
+      depositRecords,
+      fundPin: userFundPassword
     });
 
     try {
@@ -2291,6 +2293,17 @@ export const App: React.FC = () => {
       setDepositRecords(savedData.depositRecords);
     }
 
+    // 2. RESTORE / INITIALIZE FUND PASSWORD (PIN) PER USER:
+    const userPin = savedData?.fundPin || (existing?.fundPinSet ? existing?.fundPin : '') || '';
+    setUserFundPassword(userPin);
+    try {
+      if (userPin) {
+        localStorage.setItem('neon_fund_password', userPin);
+      } else {
+        localStorage.removeItem('neon_fund_password');
+      }
+    } catch (e) {}
+
     // 2. RESTORE 24H MINING CONTINUITY:
     const miningActive = savedData?.isMiningActive ?? false;
     const miningStart = savedData?.miningStartTime ?? 0;
@@ -2387,7 +2400,8 @@ export const App: React.FC = () => {
         secondsRemaining,
         unclaimedYield,
         transactions,
-        depositRecords
+        depositRecords,
+        fundPin: userFundPassword
       });
     }
 
@@ -3118,6 +3132,17 @@ export const App: React.FC = () => {
                   try {
                     localStorage.setItem('neon_fund_password', newPin);
                   } catch (e) {}
+                  if (userName) {
+                    const cleanId = userName.toUpperCase();
+                    saveUserSavedData(cleanId, { fundPin: newPin });
+                    setAdminUsers((prev) =>
+                      prev.map((u) =>
+                        u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId
+                          ? { ...u, fundPin: newPin, fundPinSet: true }
+                          : u
+                      )
+                    );
+                  }
                   showToast(`🔒 6-digit Fund Password created successfully!`);
                 }}
                 onOpenHistoryModal={() => {

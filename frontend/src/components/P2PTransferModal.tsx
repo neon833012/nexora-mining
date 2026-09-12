@@ -301,16 +301,16 @@ export const P2PTransferModal: React.FC<Props> = ({
           {/* Fund Password / PIN */}
           <div>
             <label className="text-[11px] font-bold text-[#CBD5E1] block mb-1">
-              6-Digit Fund Password / Security PIN
+              {!userFundPassword ? 'Create 6-Digit Fund Password / Security PIN' : '6-Digit Fund Password / Security PIN'}
             </label>
             <div className="relative">
               <input
                 type="password"
                 maxLength={6}
-                placeholder="Enter Fund Password"
+                placeholder={!userFundPassword ? "Create 6-Digit PIN (e.g. 888888)" : "Enter 6-Digit Fund Password"}
                 value={fundPin}
                 onChange={(e) => {
-                  setFundPin(e.target.value);
+                  setFundPin(e.target.value.replace(/\D/g, ''));
                   setErrorMessage('');
                 }}
                 className="w-full pl-3 pr-9 py-2.5 rounded-xl bg-[#050B14] border border-[#1C3252] text-white font-mono text-[13px] tracking-widest focus:outline-none focus:border-purple-400"
@@ -321,7 +321,9 @@ export const P2PTransferModal: React.FC<Props> = ({
               </div>
             </div>
             <span className="text-[10px] text-[#64748B] mt-0.5 block">
-              Required to authorize peer-to-peer wallet transfers
+              {!userFundPassword
+                ? '🔒 First-Time Setup: Set your 6-digit PIN to authorize this transfer and secure your account.'
+                : 'Required to authorize peer-to-peer wallet transfers'}
             </span>
           </div>
 

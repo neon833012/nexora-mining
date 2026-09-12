@@ -39,12 +39,48 @@ export const WithdrawalSection: React.FC<Props> = ({
   const [amountText, setAmountText] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
   const [fundPin, setFundPin] = useState('');
+  const [confirmFundPin, setConfirmFundPin] = useState('');
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotQueryText, setForgotQueryText] = useState('');
   const [querySent, setQuerySent] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+  const [localFundPassword, setLocalFundPassword] = useState<string>(userFundPassword || '');
 
-  const hasFundPassword = Boolean(userFundPassword && userFundPassword.trim().length > 0);
+  useEffect(() => {
+    setLocalFundPassword(userFundPassword || '');
+  }, [userFundPassword]);
+
+  const hasFundPassword = Boolean(localFundPassword && localFundPassword.trim().length > 0);
+
+  // Directly set/save 6-digit fund password from setup card
+  const handleCreatePinDirectly = () => {
+    const cleanPin = fundPin.trim();
+    const cleanConfirm = confirmFundPin.trim();
+
+    if (!cleanPin || cleanPin.length !== 6 || !/^\d+$/.test(cleanPin)) {
+      setFeedback({
+        text: 'Fund Password must be exactly 6 numeric digits (e.g. 888888).',
+        isError: true
+      });
+      return;
+    }
+
+    if (cleanPin !== cleanConfirm) {
+      setFeedback({
+        text: 'Confirmation PIN does not match. Please re-enter both 6-digit fields carefully.',
+        isError: true
+      });
+      return;
+    }
+
+    onSetUserFundPassword?.(cleanPin);
+    setLocalFundPassword(cleanPin);
+    setFeedback({
+      text: '✓ 6-Digit Fund Password created successfully! You can now authorize your withdrawals.',
+      isError: false
+    });
+    setConfirmFundPin('');
+  };
 
   // Effective withdrawable balance combined from daily mining interest and referral income
   const effectiveBalance = (miningEarnings !== undefined && referralEarnings !== undefined)
@@ -103,27 +139,39 @@ export const WithdrawalSection: React.FC<Props> = ({
     }
 
     // 5. Fund Password (PIN) Validation / First-Time Creation
-    if (!fundPin || fundPin.trim().length < 4) {
-      setFeedback({
-        text: hasFundPassword
-          ? 'Please enter your 6-digit Fund Password (PIN).'
-          : 'Please create a 6-digit Fund Password (PIN) to authorize this withdrawal.',
-        isError: true
-      });
-      return;
-    }
-
     if (!hasFundPassword) {
-      if (fundPin.trim().length !== 6 || !/^\d+$/.test(fundPin.trim())) {
+      const cleanPin = fundPin.trim();
+      const cleanConfirm = confirmFundPin.trim();
+
+      if (!cleanPin || cleanPin.length !== 6 || !/^\d+$/.test(cleanPin)) {
         setFeedback({
-          text: 'Fund Password must be exactly 6 numeric digits (e.g. 888888).',
+          text: 'Please create a 6-digit numeric Fund Password (PIN) to authorize this withdrawal.',
           isError: true
         });
         return;
       }
-      onSetUserFundPassword?.(fundPin.trim());
+
+      if (cleanPin !== cleanConfirm) {
+        setFeedback({
+          text: 'Confirmation PIN does not match. Please verify both 6-digit PIN fields.',
+          isError: true
+        });
+        return;
+      }
+
+      onSetUserFundPassword?.(cleanPin);
+      setLocalFundPassword(cleanPin);
     } else {
-      if (fundPin !== userFundPassword && fundPin !== '888888' && fundPin !== '123456') {
+      const cleanPin = fundPin.trim();
+      if (!cleanPin || cleanPin.length < 4) {
+        setFeedback({
+          text: 'Please enter your 6-digit Fund Password (PIN).',
+          isError: true
+        });
+        return;
+      }
+
+      if (cleanPin !== localFundPassword && cleanPin !== '888888' && cleanPin !== '123456') {
         setFeedback({
           text: 'Incorrect Fund Password. Use "Forgot PIN?" to request a security reset.',
           isError: true
@@ -144,6 +192,7 @@ export const WithdrawalSection: React.FC<Props> = ({
     setAmountText('');
     setWalletAddress('');
     setFundPin('');
+    setConfirmFundPin('');
   };
 
   const handleSendQuery = (e: React.FormEvent) => {
@@ -292,36 +341,113 @@ export const WithdrawalSection: React.FC<Props> = ({
             />
           </div>
 
-          {/* Separate Fund Password (PIN) Input */}
-          <div>
-            <div className="flex items-center justify-between text-[12px]">
-              <label className="font-medium flex items-center gap-1">
-                <KeyRound className="w-3.5 h-3.5 text-[#FBBF24]" />
-                <span className="text-[#94A3B8]">Fund Password (PIN)</span>
-              </label>
+          {/* Fund Password Section: First-Time Setup vs. Configured Verification */}
+          {!hasFundPassword ? (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-[#0C1E34] to-[#081526] border border-[#00F0FF]/40 space-y-3 shadow-[0_0_20px_rgba(0,240,255,0.08)]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[#00F0FF]/15 border border-[#00F0FF]/30 flex items-center justify-center text-[#00F0FF]">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-[12.5px] font-black text-white flex items-center gap-1.5">
+                      <span>1st-Time Security Setup: Create 6-Digit Fund Password</span>
+                    </h4>
+                    <p className="text-[10.5px] text-[#94A3B8]">
+                      You have not set a withdrawal PIN yet. Create a 6-digit numeric PIN to authorize and secure your funds.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-[#00F0FF]/15 border border-[#00F0FF]/30 text-[#00F0FF] text-[9.5px] font-bold uppercase tracking-wider shrink-0 hidden sm:inline-block">
+                  First-Time Setup
+                </span>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setShowForgotModal(true)}
-                className="text-[11px] text-[#38BDF8] hover:text-[#00F0FF] underline cursor-pointer"
-              >
-                Forgot PIN?
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[10.5px] font-bold text-[#CBD5E1] block mb-1">
+                    Create 6-Digit PIN *
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    disabled={is24hLocked}
+                    value={fundPin}
+                    onChange={(e) => {
+                      setFundPin(e.target.value.replace(/\D/g, ''));
+                      setFeedback(null);
+                    }}
+                    placeholder="Enter 6 digits (e.g. 888888)"
+                    className="w-full rounded-xl bg-[#040A14] border border-[#1B2A40] focus:border-[#00F0FF] px-3 py-2 text-[13px] text-white focus:outline-none tracking-widest font-mono transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10.5px] font-bold text-[#CBD5E1] block mb-1">
+                    Confirm 6-Digit PIN *
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    disabled={is24hLocked}
+                    value={confirmFundPin}
+                    onChange={(e) => {
+                      setConfirmFundPin(e.target.value.replace(/\D/g, ''));
+                      setFeedback(null);
+                    }}
+                    placeholder="Re-enter same 6 digits"
+                    className="w-full rounded-xl bg-[#040A14] border border-[#1B2A40] focus:border-[#00F0FF] px-3 py-2 text-[13px] text-white focus:outline-none tracking-widest font-mono transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[10px] text-[#64748B]">
+                  🔒 Exactly 6 numeric digits required (remember this PIN).
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCreatePinDirectly}
+                  className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#021326] text-[11px] font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95 shrink-0"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Set & Activate PIN</span>
+                </button>
+              </div>
             </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between text-[12px]">
+                <label className="font-medium flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-[#FBBF24]" />
+                  <span className="text-[#94A3B8]">Fund Password (PIN)</span>
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9px] font-mono font-bold">
+                    ✓ Configured
+                  </span>
+                </label>
 
-            <input
-              type="password"
-              maxLength={6}
-              disabled={is24hLocked}
-              value={fundPin}
-              onChange={(e) => {
-                setFundPin(e.target.value.replace(/\D/g, ''));
-                setFeedback(null);
-              }}
-              placeholder="Enter 6-digit Fund Password"
-              className="mt-1.5 w-full rounded-xl bg-[#070E1A] border border-[#1B2A40] focus:border-[#FBBF24] px-3 py-2.5 text-[14px] text-[#F8FAFC] focus:outline-none tracking-widest transition-colors font-mono"
-            />
-          </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(true)}
+                  className="text-[11px] text-[#38BDF8] hover:text-[#00F0FF] underline cursor-pointer"
+                >
+                  Forgot PIN?
+                </button>
+              </div>
+
+              <input
+                type="password"
+                maxLength={6}
+                disabled={is24hLocked}
+                value={fundPin}
+                onChange={(e) => {
+                  setFundPin(e.target.value.replace(/\D/g, ''));
+                  setFeedback(null);
+                }}
+                placeholder="Enter your 6-digit Fund Password"
+                className="mt-1.5 w-full rounded-xl bg-[#070E1A] border border-[#1B2A40] focus:border-[#FBBF24] px-3 py-2.5 text-[14px] text-[#F8FAFC] focus:outline-none tracking-widest transition-colors font-mono"
+              />
+            </div>
+          )}
 
           {/* Fee & Net Breakdown */}
           <div className="flex gap-2">
