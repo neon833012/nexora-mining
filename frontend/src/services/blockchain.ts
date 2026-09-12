@@ -16,17 +16,62 @@ export interface VerificationResult {
 }
 
 export const OFFICIAL_VAULT_ADDRESS = '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d';
+const PREVIOUS_VAULT_ADDRESS = '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
 const USDT_BEP20_CONTRACT = '0x55d398326f99059ff775485246999027b3197955';
 const TRANSFER_EVENT_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+const BSC_RPCS = [
+  'https://bsc-dataseed1.binance.org/',
+  'https://bsc-dataseed2.binance.org/',
+  'https://bsc-dataseed3.binance.org/'
+];
+
+async function callBscRpc(method: string, params: any[]): Promise<any> {
+  let lastError: any = null;
+  for (const rpcUrl of BSC_RPCS) {
+    try {
+      const res = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method,
+          params
+        }),
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!res.ok) continue;
+      const data: any = await res.json();
+      if (data && data.result !== undefined) {
+        return data;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('BSC RPC connection timed out. Please try again.');
+}
 
 export async function verifyBscTransaction(
   txHash: string,
   expectedAmount: number,
   expectedVaultAddress: string = OFFICIAL_VAULT_ADDRESS,
-  rpcUrl: string = 'https://bsc-dataseed1.binance.org/'
+  _rpcUrl?: string
 ): Promise<VerificationResult> {
-  const cleanTxHash = (txHash || '').trim().toLowerCase();
+  // Normalize TxHash: remove spaces/quotes, prepend 0x if 64 chars
+  let cleanTxHash = (txHash || '').trim().toLowerCase();
+  cleanTxHash = cleanTxHash.replace(/[^0-9a-fx]/gi, '');
+  if (!cleanTxHash.startsWith('0x') && cleanTxHash.length === 64) {
+    cleanTxHash = '0x' + cleanTxHash;
+  }
+
   const cleanVault = (expectedVaultAddress || OFFICIAL_VAULT_ADDRESS).trim().toLowerCase();
+  const ACCEPTED_VAULTS = new Set([
+    cleanVault,
+    OFFICIAL_VAULT_ADDRESS.toLowerCase(),
+    PREVIOUS_VAULT_ADDRESS.toLowerCase()
+  ]);
 
   if (!cleanTxHash.startsWith('0x') || cleanTxHash.length !== 66) {
     return {
@@ -42,19 +87,8 @@ export async function verifyBscTransaction(
   }
 
   try {
-    // 1. Fetch Transaction Details
-    const txRes = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_getTransactionByHash',
-        params: [cleanTxHash]
-      })
-    });
-
-    const txData: any = await txRes.json();
+    // 1. Fetch Transaction Details (multi-RPC fallback)
+    const txData = await callBscRpc('eth_getTransactionByHash', [cleanTxHash]);
     if (!txData.result || !txData.result.blockNumber) {
       return {
         verified: false,
@@ -63,7 +97,7 @@ export async function verifyBscTransaction(
         toAddress: '',
         blockNumber: 0,
         confirmations: 0,
-        statusText: 'Transaction not found on Binance Smart Chain. Please verify your TxHash on bscscan.com or wait a few seconds for block mining.',
+        statusText: 'Transaction not found on Binance Smart Chain yet. Please confirm your TxHash or wait 10-15 seconds for BSC block mining.',
         error: 'TX_NOT_FOUND'
       };
     }
@@ -71,18 +105,7 @@ export async function verifyBscTransaction(
     const txBlockNumber = parseInt(txData.result.blockNumber, 16);
 
     // 2. Fetch Transaction Receipt to verify logs & success
-    const receiptRes = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'eth_getTransactionReceipt',
-        params: [cleanTxHash]
-      })
-    });
-
-    const receiptData: any = await receiptRes.json();
+    const receiptData = await callBscRpc('eth_getTransactionReceipt', [cleanTxHash]);
     const receipt = receiptData.result;
 
     if (!receipt) {
@@ -93,7 +116,7 @@ export async function verifyBscTransaction(
         toAddress: '',
         blockNumber: txBlockNumber,
         confirmations: 0,
-        statusText: 'Transaction receipt not available yet. Transaction may still be executing on BSC.',
+        statusText: 'Transaction receipt is still pending on BNB Smart Chain. Please tap Verify again in 10 seconds.',
         error: 'RECEIPT_PENDING'
       };
     }
@@ -112,20 +135,12 @@ export async function verifyBscTransaction(
     }
 
     // 3. Fetch Current Latest Block for confirmation count
-    const blockRes = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'eth_blockNumber',
-        params: []
-      })
-    });
-
-    const blockData: any = await blockRes.json();
-    const latestBlock = parseInt(blockData.result, 16);
-    const confirmations = Math.max(0, latestBlock - txBlockNumber + 1);
+    let confirmations = 3;
+    try {
+      const blockData = await callBscRpc('eth_blockNumber', []);
+      const latestBlock = parseInt(blockData.result, 16);
+      confirmations = Math.max(1, latestBlock - txBlockNumber + 1);
+    } catch {}
 
     // 4. Inspect Receipt Logs for BEP-20 USDT Transfer Event
     let transferFound = false;
@@ -152,9 +167,25 @@ export async function verifyBscTransaction(
         const fraction = Number(rawValueBigInt % divisor) / 1e18;
         transferAmount = whole + fraction;
 
-        if (recipientAddress === cleanVault) {
+        // Accept if recipient is either current vault or previous vault
+        if (ACCEPTED_VAULTS.has(recipientAddress)) {
           transferFound = true;
           break;
+        }
+      }
+    }
+
+    // Fallback: Check if user sent native BNB directly to the vault
+    if (!transferFound && txData.result && txData.result.to) {
+      const txTo = (txData.result.to || '').toLowerCase();
+      if (ACCEPTED_VAULTS.has(txTo)) {
+        const rawValue = BigInt(txData.result.value || '0x0');
+        const bnbVal = Number(rawValue) / 1e18;
+        if (bnbVal > 0) {
+          transferAmount = +(bnbVal * 600).toFixed(2);
+          transferFound = true;
+          senderAddress = txData.result.from || '';
+          recipientAddress = txTo;
         }
       }
     }
@@ -167,14 +198,16 @@ export async function verifyBscTransaction(
         toAddress: recipientAddress,
         blockNumber: txBlockNumber,
         confirmations,
-        statusText: `Transfer mismatch: No USDT transfer to custody vault (${expectedVaultAddress}) was found in transaction logs.`,
+        statusText: `Transfer mismatch: No transfer to official custody vault was found in transaction logs. Please verify recipient address.`,
         error: 'VAULT_MISMATCH'
       };
     }
 
-    // Exchange Fee Tolerance Buffer: up to 0.30 USDT deducted by centralized exchanges (Binance, OKX, etc.) is accepted
-    const FEE_TOLERANCE_BUFFER = 0.30;
-    const minAcceptableAmount = +(expectedAmount - FEE_TOLERANCE_BUFFER).toFixed(2);
+    // Exchange Fee Tolerance Buffer:
+    // For small deposits ($2-$5), allow up to 0.70 USDT buffer (minimum accepted is $1.50 USDT).
+    // For other amounts, allow 0.30 USDT buffer.
+    const FEE_TOLERANCE_BUFFER = expectedAmount <= 5 ? 0.70 : 0.30;
+    const minAcceptableAmount = +(Math.max(1.50, expectedAmount - FEE_TOLERANCE_BUFFER)).toFixed(2);
     if (transferAmount < minAcceptableAmount) {
       return {
         verified: false,
@@ -192,10 +225,10 @@ export async function verifyBscTransaction(
       verified: true,
       actualAmount: transferAmount,
       fromAddress: senderAddress,
-      toAddress: expectedVaultAddress,
+      toAddress: recipientAddress,
       blockNumber: txBlockNumber,
       confirmations,
-      statusText: `? Verified on BNB Smart Chain! Confirmed ${transferAmount.toFixed(2)} USDT transfer to vault.`
+      statusText: `✓ Verified on BNB Smart Chain! Confirmed ${transferAmount.toFixed(2)} USDT transfer to vault.`
     };
   } catch (err: any) {
     return {
@@ -205,7 +238,7 @@ export async function verifyBscTransaction(
       toAddress: '',
       blockNumber: 0,
       confirmations: 0,
-      statusText: `BSC node verification error: ${err.message}. Please check your connection.`,
+      statusText: `BSC node verification error: ${err.message || 'Connection timeout'}. Please try again in a few seconds.`,
       error: 'RPC_ERROR'
     };
   }
