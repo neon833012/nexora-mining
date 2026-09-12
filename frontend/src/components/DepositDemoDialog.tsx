@@ -26,7 +26,7 @@ interface Props {
 }
 
 // Official Binance Smart Chain BEP-20 Custody Vault Address
-const DEFAULT_BEP20_VAULT = '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
+const DEFAULT_BEP20_VAULT = '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d';
 const USDT_BEP20_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
 
 type GatewayStep = 'SELECT_AMOUNT' | 'AWAITING_PAYMENT' | 'BLOCKCHAIN_VERIFYING' | 'PAYMENT_SUCCESS';
@@ -165,7 +165,11 @@ export const DepositDemoDialog: React.FC<Props> = ({
 
       setTimeout(() => {
         setStep('PAYMENT_SUCCESS');
-        onDepositConfirmed(result.actualAmount || numAmount, cleanHash, orderId);
+        const actualAmt = result.actualAmount || numAmount;
+        const creditedAmount = (actualAmt >= numAmount - 0.30 && actualAmt <= numAmount + 0.30)
+          ? numAmount
+          : actualAmt;
+        onDepositConfirmed(creditedAmount, cleanHash, orderId);
       }, 1500);
     } catch (err: any) {
       setIsVerifying(false);
@@ -407,6 +411,9 @@ export const DepositDemoDialog: React.FC<Props> = ({
               <div className="flex items-center justify-between pt-1 text-[10px] text-[#64748B]">
                 <span>Send from: Trust Wallet, MetaMask, Binance, OKX</span>
                 <span className="text-[#10B981] font-mono font-bold">BEP20 Only</span>
+              </div>
+              <div className="text-[9.5px] text-emerald-400/90 font-medium">
+                ⚡ Exchange Fee Buffer: Transfers with up to 0.30 USDT deducted by exchange withdrawal fees (e.g. Binance/OKX) are automatically accepted with 100% full deposit credit!
               </div>
             </div>
 

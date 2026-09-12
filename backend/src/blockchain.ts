@@ -163,9 +163,10 @@ export async function verifyBscTransaction(
       };
     }
 
-    // Check amount tolerance (within 0.01 USDT for gas rounding)
-    const amountDifference = Math.abs(transferAmount - expectedAmount);
-    if (amountDifference > 0.05) {
+    // Check amount tolerance: allow up to 0.30 USDT exchange fee deduction buffer (e.g. Binance/OKX withdrawal fee)
+    const FEE_TOLERANCE_BUFFER = 0.30;
+    const minAcceptableAmount = +(expectedAmount - FEE_TOLERANCE_BUFFER).toFixed(2);
+    if (transferAmount < minAcceptableAmount) {
       return {
         verified: false,
         actualAmount: transferAmount,
@@ -173,7 +174,7 @@ export async function verifyBscTransaction(
         toAddress: recipientAddress,
         blockNumber: txBlockNumber,
         confirmations,
-        statusText: `Transferred amount (${transferAmount.toFixed(2)} USDT) does not match invoice amount (${expectedAmount.toFixed(2)} USDT).`,
+        statusText: `Transferred amount (${transferAmount.toFixed(2)} USDT) is less than invoice amount (${expectedAmount.toFixed(2)} USDT with 0.30 fee tolerance: min ${minAcceptableAmount.toFixed(2)} USDT).`,
         error: 'AMOUNT_MISMATCH'
       };
     }

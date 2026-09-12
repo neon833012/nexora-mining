@@ -15,7 +15,7 @@ database_id = "3158b81e-7d95-41ae-8b20-0deb9090082c"
 # Public Environment Variables
 [vars]
 ENVIRONMENT = "production"
-VAULT_ADDRESS = "0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B"
+VAULT_ADDRESS = "0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d"
 USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955"
 BSC_RPC_URL = "https://bsc-dataseed1.binance.org/"
 CHAIN_ID = "56"

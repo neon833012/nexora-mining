@@ -52,7 +52,7 @@ class NeonApiService {
         min_withdrawal: '2.0',
         withdrawal_fee_percent: '5.0',
         p2p_fee_percent: '0.0',
-        vault_address: '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B'
+        vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
       };
     }
   }
@@ -176,7 +176,7 @@ class NeonApiService {
           amount: params.amount,
           token: 'USDT',
           network: 'BEP-20',
-          vaultAddress: '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B',
+          vaultAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
           status: 'pending'
         }
       };

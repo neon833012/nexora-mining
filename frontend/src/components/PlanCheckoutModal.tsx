@@ -37,7 +37,7 @@ interface Props {
 }
 
 // Official Binance Smart Chain BEP-20 Custody Vault Address
-const DEPOSIT_ADDRESS = '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
+const DEPOSIT_ADDRESS = '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d';
 
 export const PlanCheckoutModal: React.FC<Props> = ({
   isOpen,
@@ -427,6 +427,9 @@ export const PlanCheckoutModal: React.FC<Props> = ({
 
                     <span className="text-[9.5px] text-[#64748B] block">
                       Send via: Trust Wallet, MetaMask, Binance, OKX · BEP-20 Only
+                    </span>
+                    <span className="text-[9.5px] text-emerald-400/90 font-medium block">
+                      ⚡ Exchange Fee Buffer: Transfers with up to 0.30 USDT deducted by exchange withdrawal fees (e.g. Binance/OKX) are automatically accepted with full plan value!
                     </span>
                   </div>
 

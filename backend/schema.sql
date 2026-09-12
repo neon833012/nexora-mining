@@ -125,5 +125,5 @@ INSERT OR IGNORE INTO platform_settings (key, value) VALUES
   ('referral_l1_percent', '10.0'),
   ('referral_l2_percent', '5.0'),
   ('referral_l3_percent', '2.0'),
-  ('vault_address', '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B'),
+  ('vault_address', '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'),
   ('usdt_contract', '0x55d398326f99059fF775485246999027B3197955');

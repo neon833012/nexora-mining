@@ -15,7 +15,7 @@ export interface VerificationResult {
   error?: string;
 }
 
-export const OFFICIAL_VAULT_ADDRESS = '0x77A594DC9afF2F2fcbF49Ee8c1714772e8A8E79B';
+export const OFFICIAL_VAULT_ADDRESS = '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d';
 const USDT_BEP20_CONTRACT = '0x55d398326f99059ff775485246999027b3197955';
 const TRANSFER_EVENT_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
@@ -172,7 +172,10 @@ export async function verifyBscTransaction(
       };
     }
 
-    if (transferAmount < expectedAmount - 0.05) {
+    // Exchange Fee Tolerance Buffer: up to 0.30 USDT deducted by centralized exchanges (Binance, OKX, etc.) is accepted
+    const FEE_TOLERANCE_BUFFER = 0.30;
+    const minAcceptableAmount = +(expectedAmount - FEE_TOLERANCE_BUFFER).toFixed(2);
+    if (transferAmount < minAcceptableAmount) {
       return {
         verified: false,
         actualAmount: transferAmount,
@@ -180,7 +183,7 @@ export async function verifyBscTransaction(
         toAddress: recipientAddress,
         blockNumber: txBlockNumber,
         confirmations,
-        statusText: `Insufficient amount: Transferred amount is ${transferAmount.toFixed(2)} USDT, but required invoice is ${expectedAmount.toFixed(2)} USDT.`,
+        statusText: `Insufficient amount: Transferred amount is ${transferAmount.toFixed(2)} USDT, but required invoice is ${expectedAmount.toFixed(2)} USDT (minimum accepted with fee buffer: ${minAcceptableAmount.toFixed(2)} USDT).`,
         error: 'AMOUNT_MISMATCH'
       };
     }
