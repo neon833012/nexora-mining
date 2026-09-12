@@ -16,15 +16,13 @@ interface Props {
   onDismiss: () => void;
   depositRecords: DepositRecord[];
   onOpenDepositDialog?: () => void;
-  onSimulateIncomingP2P?: (senderId: string, amount: number) => void;
 }
 
 export const DepositHistoryModal: React.FC<Props> = ({
   isOpen,
   onDismiss,
   depositRecords,
-  onOpenDepositDialog,
-  onSimulateIncomingP2P
+  onOpenDepositDialog
 }) => {
   const [filter, setFilter] = useState<'all' | 'bep20' | 'p2p'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -288,23 +286,6 @@ export const DepositHistoryModal: React.FC<Props> = ({
             <span>Audited by Binance Smart Chain Smart Contract</span>
           </div>
           <div className="flex items-center gap-2">
-            {onSimulateIncomingP2P && (
-              <button
-                type="button"
-                onClick={() => {
-                  const sampleSenders = ['NX8829', 'VIP_MINER_01', 'SARAH_CRYPTO', 'CRYPTO_WHALE_77'];
-                  const randomSender = sampleSenders[Math.floor(Math.random() * sampleSenders.length)];
-                  const sampleAmounts = [25, 50, 100, 250];
-                  const randomAmount = sampleAmounts[Math.floor(Math.random() * sampleAmounts.length)];
-                  onSimulateIncomingP2P(randomSender, randomAmount);
-                }}
-                className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 hover:border-purple-500/60 text-purple-300 text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
-                title="Test incoming P2P transfer credited directly to Deposit Balance"
-              >
-                <Send className="w-3 h-3 text-purple-400" />
-                <span>+ Receive P2P</span>
-              </button>
-            )}
             {onOpenDepositDialog && (
               <button
                 type="button"

@@ -2064,40 +2064,6 @@ export const App: React.FC = () => {
     showToast(`✓ Transferred $${amount.toFixed(2)} USDT from ${sourceLabel} to @${recipientId}! (0% fee, credited to recipient Deposit Balance).`);
   };
 
-  // Helper for simulating incoming P2P transfer credited directly into Deposit Balance
-  const handleReceiveP2PTransfer = (senderId: string, amount: number) => {
-    setDepositBalance((prev) => +(prev + amount).toFixed(2));
-    setTotalBalance((prev) => +(prev + amount).toFixed(2));
-
-    const formattedTimestamp = getFormattedTimestamp();
-    const p2pHash = 'p2p_in_' + Date.now().toString(36) + '_' + Math.random().toString(16).substring(2, 8);
-
-    const newDepRecord: DepositRecord = {
-      id: `dep_p2p_${Date.now()}`,
-      type: 'p2p_received',
-      amount: amount,
-      senderId: senderId,
-      txHash: p2pHash,
-      timestamp: formattedTimestamp,
-      timestampMs: Date.now(),
-      status: 'completed',
-      network: 'Internal P2P Network'
-    };
-    setDepositRecords((prev) => [newDepRecord, ...prev]);
-
-    const p2pTx: TransactionRecord = {
-      id: `tx_p2p_in_${Date.now()}`,
-      type: `Incoming P2P Transfer from @${senderId} (0% Fee)`,
-      amount: amount,
-      date: formattedTimestamp,
-      status: 'Settled',
-      txHash: p2pHash
-    };
-    setTransactions((prev) => [p2pTx, ...prev]);
-
-    showToast(`🎉 Received +$${amount.toFixed(2)} USDT via P2P from @${senderId}! Credited directly to Deposit Balance.`);
-  };
-
   // Forgot Fund Password Support Ticket Submit
   const handleCompanyQuery = (subject: string, details: string) => {
     const newTicket: SupportTicket = {
@@ -3160,7 +3126,6 @@ export const App: React.FC = () => {
           onDismiss={() => setShowDepositHistoryModal(false)}
           depositRecords={depositRecords}
           onOpenDepositDialog={() => setShowDepositDialog(true)}
-          onSimulateIncomingP2P={handleReceiveP2PTransfer}
         />
 
         {/* Enterprise Full-System Admin Portal */}
