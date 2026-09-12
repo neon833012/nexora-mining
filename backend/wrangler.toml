@@ -1,4 +1,4 @@
-name = "neon-mining-api"
+name = "nexora-mining-api"
 main = "src/index.ts"
 compatibility_date = "2024-12-30"
 
