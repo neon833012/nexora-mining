@@ -180,6 +180,11 @@ export const App: React.FC = () => {
     }
     setActiveRoute(route);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isLoggedIn && (route === 'dashboard' || route === 'wallet')) {
+      showToast('🔒 Please Sign In or Create an Account to access your personal dashboard & wallet!');
+      setIsSignUpMode(false);
+      setShowAuthModal(true);
+    }
     setTimeout(() => {
       retriggerGoogleTranslate();
     }, 60);
@@ -1120,9 +1125,9 @@ export const App: React.FC = () => {
   const compoundCountdownText = formatCountdown(compoundSecondsLeft);
 
   // Visual Mining State:
-  // - Guest (Not logged in): Always GREEN ('ONLINE' - live interactive demo)
-  // - Logged in: Follows user's personal 24-hour cycle (RED when stopped, GREEN when mining is active)
-  const isVisualMiningActive = !isLoggedIn ? true : isMiningActive;
+  // - Starts RED (STOPPED) for new users/guests until an active plan 24h cycle is tapped
+  // - GREEN only while a 24-hour cycle is actively running
+  const isVisualMiningActive = isMiningActive;
 
   // Toggle / Start 24-Hour Mining Cycle with strict guards
   const handleToggleMining = () => {
@@ -2949,11 +2954,12 @@ export const App: React.FC = () => {
               )
             ) : (
               <ReferralNetworkSection
-                referralLink={`https://neoncryptomining.com/ref/${userName.toUpperCase()}`}
+                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${userName.toUpperCase()}`}
                 isAccountActive={activeMiningPower > 0}
                 onCopyReferral={() => {
-                  navigator.clipboard?.writeText(`https://neoncryptomining.com/ref/${userName.toUpperCase()}`);
-                  showToast('Referral link copied to clipboard!');
+                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${userName.toUpperCase()}`;
+                  navigator.clipboard?.writeText(link);
+                  showToast('✓ Referral link copied to clipboard!');
                 }}
                 referralIncome={referralIncome}
                 referredUsers={referredUsers}
