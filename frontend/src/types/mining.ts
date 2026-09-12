@@ -234,4 +234,5 @@ export interface PlatformSettings {
   popupEnabled: boolean;
   popupImageUrl: string;
   popupLinkUrl: string;
+  vaultWalletAddress?: string;
 }

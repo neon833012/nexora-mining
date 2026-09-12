@@ -27,6 +27,7 @@ interface Props {
   activeMiningPower: number;
   diffAmount?: number;
   availableBalance: number;
+  vaultWalletAddress?: string;
   onDismiss: () => void;
   onConfirmSuccess: (
     plan: MiningPlan,
@@ -46,11 +47,13 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   activeMiningPower,
   diffAmount,
   availableBalance,
+  vaultWalletAddress = DEPOSIT_ADDRESS,
   onDismiss,
   onConfirmSuccess
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [paymentMethod, setPaymentMethod] = useState<'internal' | 'bep20_chain'>('internal');
+  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'raw_address'>('auto_amount');
   const [enteredTxHash, setEnteredTxHash] = useState('');
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
   const [countdownMinutes, setCountdownMinutes] = useState(14);
@@ -364,74 +367,137 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                   </div>
 
                   {/* Real Scannable Dynamic QR Code */}
-                  <div className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#040A14] border border-[#122135] text-center space-y-2.5 shadow-inner">
-                    <div className="p-2 bg-white rounded-xl shadow-lg relative">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${DEPOSIT_ADDRESS}&margin=2`}
-                        alt="BEP-20 USDT Deposit QR Code"
-                        className="w-[130px] h-[130px] block select-none"
-                      />
-                      <div className="absolute inset-0 m-auto w-7 h-7 rounded-full bg-[#F0B90B] border-2 border-white flex items-center justify-center text-black font-black text-[8.5px] shadow-md pointer-events-none">
-                        BSC
-                      </div>
-                    </div>
+                  {(() => {
+                    const activeVault = vaultWalletAddress || DEPOSIT_ADDRESS;
+                    const toWeiUSDT = (amt: number): string => {
+                      const whole = Math.floor(amt);
+                      const frac = Math.round((amt - whole) * 1000000);
+                      const wholeWei = BigInt(whole) * (BigInt(10) ** BigInt(18));
+                      const fracWei = BigInt(frac) * (BigInt(10) ** BigInt(12));
+                      return (wholeWei + fracWei).toString();
+                    };
+                    const eip681Uri = `ethereum:0x55d398326f99059fF775485246999027B3197955@56/transfer?address=${activeVault}&uint256=${toWeiUSDT(payableCost)}`;
+                    const trustWalletDeepLink = `https://link.trustwallet.com/send?asset=c56_t0x55d398326f99059fF775485246999027B3197955&address=${activeVault}&amount=${payableCost}`;
+                    const qrData = qrFormat === 'auto_amount' ? eip681Uri : activeVault;
 
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">
-                        Exact Amount to Transfer:
-                      </span>
-                      <div className="flex items-baseline justify-center gap-1 mt-0.5">
-                        <span className="text-[22px] font-black font-mono text-white">
-                          {payableCost.toFixed(2)}
-                        </span>
-                        <span className="text-[12px] font-bold text-[#00F0FF] font-mono">
-                          USDT (BEP-20)
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(payableCost.toFixed(2), 'amount')}
-                          className="ml-1 p-1 rounded hover:bg-[#0E1E34] text-[#94A3B8] hover:text-[#00F0FF] transition-colors cursor-pointer"
-                          title="Copy Amount"
-                        >
-                          {copiedField === 'amount' ? (
-                            <Check className="w-3 h-3 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                    return (
+                      <div className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#040A14] border border-[#122135] text-center space-y-2.5 shadow-inner">
+                        {/* QR Format Selector Toggle */}
+                        <div className="flex items-center p-1 rounded-xl bg-[#02060E] border border-[#14263E] text-[10.5px] w-full max-w-xs">
+                          <button
+                            type="button"
+                            onClick={() => setQrFormat('auto_amount')}
+                            className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                              qrFormat === 'auto_amount'
+                                ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                                : 'text-[#94A3B8] hover:text-white'
+                            }`}
+                          >
+                            ⚡ Auto-Fill Amount
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQrFormat('raw_address')}
+                            className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                              qrFormat === 'raw_address'
+                                ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                                : 'text-[#94A3B8] hover:text-white'
+                            }`}
+                          >
+                            📋 Raw Address
+                          </button>
+                        </div>
 
-                    <div className="w-full flex items-center justify-between p-2 rounded-lg bg-[#081220] border border-[#14263D]">
-                      <span className="font-mono text-[10.5px] text-[#00F0FF] truncate mr-2">
-                        {DEPOSIT_ADDRESS}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(DEPOSIT_ADDRESS, 'address')}
-                        className="px-2 py-1 rounded bg-[#0D1F36] hover:bg-[#152E50] text-[#00F0FF] text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
-                      >
-                        {copiedField === 'address' ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span className="text-emerald-400">Copied</span>
-                          </>
+                        <div className="p-2 bg-white rounded-xl shadow-lg relative">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}&margin=2`}
+                            alt="BEP-20 USDT Deposit QR Code"
+                            className="w-[130px] h-[130px] block select-none"
+                          />
+                          <div className="absolute inset-0 m-auto w-7 h-7 rounded-full bg-[#F0B90B] border-2 border-white flex items-center justify-center text-black font-black text-[8.5px] shadow-md pointer-events-none">
+                            BSC
+                          </div>
+                        </div>
+
+                        {qrFormat === 'auto_amount' ? (
+                          <div className="text-[9.5px] text-[#10B981] font-mono bg-[#10B981]/10 px-2.5 py-0.5 rounded-full border border-[#10B981]/30">
+                            ✓ Auto-fills ${payableCost.toFixed(2)} USDT in Trust Wallet & MetaMask!
+                          </div>
                         ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy</span>
-                          </>
+                          <div className="text-[9.5px] text-[#94A3B8] font-mono bg-[#14263E]/40 px-2.5 py-0.5 rounded-full border border-[#14263E]">
+                            Raw Address Mode: For Binance / CEX withdrawal camera
+                          </div>
                         )}
-                      </button>
-                    </div>
 
-                    <span className="text-[9.5px] text-[#64748B] block">
-                      Send via: Trust Wallet, MetaMask, Binance, OKX · BEP-20 Only
-                    </span>
-                    <span className="text-[9.5px] text-emerald-400/90 font-medium block">
-                      ⚡ Exchange Fee Buffer: Transfers with up to 0.30 USDT deducted by exchange withdrawal fees (e.g. Binance/OKX) are automatically accepted with full plan value!
-                    </span>
-                  </div>
+                        {/* 1-Click Pay Link */}
+                        <a
+                          href={trustWalletDeepLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full max-w-xs py-1.5 px-3 rounded-lg bg-[#F0B90B]/15 hover:bg-[#F0B90B]/25 border border-[#F0B90B]/40 text-[#F0B90B] text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>1-Click Pay in Trust Wallet</span>
+                        </a>
+
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">
+                            Exact Amount to Transfer:
+                          </span>
+                          <div className="flex items-baseline justify-center gap-1 mt-0.5">
+                            <span className="text-[22px] font-black font-mono text-white">
+                              {payableCost.toFixed(2)}
+                            </span>
+                            <span className="text-[12px] font-bold text-[#00F0FF] font-mono">
+                              USDT (BEP-20)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(payableCost.toFixed(2), 'amount')}
+                              className="ml-1 p-1 rounded hover:bg-[#0E1E34] text-[#94A3B8] hover:text-[#00F0FF] transition-colors cursor-pointer"
+                              title="Copy Amount"
+                            >
+                              {copiedField === 'amount' ? (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="w-full flex items-center justify-between p-2 rounded-lg bg-[#081220] border border-[#14263D]">
+                          <span className="font-mono text-[10.5px] text-[#00F0FF] truncate mr-2">
+                            {activeVault}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(activeVault, 'address')}
+                            className="px-2 py-1 rounded bg-[#0D1F36] hover:bg-[#152E50] text-[#00F0FF] text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                          >
+                            {copiedField === 'address' ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                <span className="text-emerald-400">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        <span className="text-[9.5px] text-[#64748B] block">
+                          Send via: Trust Wallet, MetaMask, Binance, OKX · BEP-20 Only
+                        </span>
+                        <span className="text-[9.5px] text-emerald-400/90 font-medium block">
+                          ⚡ Exchange Fee Buffer: Transfers with up to 0.30 USDT deducted by exchange withdrawal fees (e.g. Binance/OKX) are automatically accepted with full plan value!
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Required TxHash Input */}
                   <div>
