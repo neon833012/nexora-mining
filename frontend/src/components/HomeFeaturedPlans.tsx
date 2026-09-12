@@ -1,5 +1,5 @@
 import React from 'react';
-import { MINING_PLANS, getTranslation } from '../data/miningPlans';
+import { MINING_PLANS, getTranslation, getPlanForAmount } from '../data/miningPlans';
 import { MiningPlan, LanguageCode } from '../types/mining';
 import { Zap, ArrowRight, ShieldCheck, Cpu, Flame, Calculator } from 'lucide-react';
 
@@ -62,12 +62,14 @@ export const HomeFeaturedPlans: React.FC<HomeFeaturedPlansProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 lg:gap-5">
-        {plansToShow.map((plan, idx) => {
-          const isPro = idx === 1; // Plan 04 is the middle Pro card
-          const isUpgradable = activeMiningPower > 0 && activeMiningPower < plan.amount;
-          const upgradeCost = isUpgradable ? plan.amount - activeMiningPower : 0;
-          const isCurrentActive = activeMiningPower === plan.amount;
-          const isLowerActive = activeMiningPower > 0 && activeMiningPower > plan.amount;
+        {(() => {
+          const currentActivePlan = getPlanForAmount(activeMiningPower, miningPlans);
+          return plansToShow.map((plan, idx) => {
+            const isPro = idx === 1; // Plan 04 is the middle Pro card
+            const isCurrentActive = currentActivePlan?.id === plan.id;
+            const isUpgradable = activeMiningPower > 0 && activeMiningPower < plan.amount;
+            const upgradeCost = isUpgradable ? +(plan.amount - activeMiningPower).toFixed(2) : 0;
+            const isLowerActive = activeMiningPower > 0 && !isCurrentActive && activeMiningPower > plan.amount;
 
           return (
             <div
@@ -185,8 +187,9 @@ export const HomeFeaturedPlans: React.FC<HomeFeaturedPlansProps> = ({
               </button>
             </div>
           );
-        })}
-      </div>
+        });
+      })()}
+    </div>
     </section>
   );
 };

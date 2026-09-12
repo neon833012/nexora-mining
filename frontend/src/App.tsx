@@ -48,7 +48,7 @@ import {
 } from './types/mining';
 
 const DEFAULT_INITIAL_REFERRED_USERS: ReferredUserItem[] = [];
-import { MINING_PLANS, INITIAL_TRANSACTIONS, INITIAL_WITHDRAWAL_REQUESTS, getTranslation } from './data/miningPlans';
+import { MINING_PLANS, INITIAL_TRANSACTIONS, INITIAL_WITHDRAWAL_REQUESTS, getTranslation, getPlanForAmount } from './data/miningPlans';
 import { getSavedLanguage, applyLanguageChange, retriggerGoogleTranslate } from './utils/languageManager';
 import {
   INITIAL_ADMIN_USERS,
@@ -631,8 +631,9 @@ export const App: React.FC = () => {
     if (!isLoggedIn || !userName) return;
 
     const cleanId = userName.toUpperCase();
-    const currentPlan = adminUsers.find((u) => u.id.toUpperCase() === cleanId)?.currentPlanName || 
-      (activeMiningPower > 0 ? `Active Plan ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+    const planObj = getPlanForAmount(activeMiningPower, miningPlans);
+    const planLabel = planObj ? `${planObj.planName} ($${planObj.amount} Tier)` : (activeMiningPower > 0 ? `Active Node ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+    const currentPlan = planLabel;
 
     saveUserSavedData(cleanId, {
       activeMiningPower,
@@ -699,13 +700,13 @@ export const App: React.FC = () => {
   // Total Cumulative Income (Total Mined + Total Referral Earned)
   const totalCumulativeIncome = +(totalRewards + referralIncome).toFixed(2);
 
-  // Active Plan Name calculation
-  const activePlanObj = miningPlans.find((p) => p.amount === activeMiningPower);
+  // Active Plan Name calculation (Tiered Threshold System: 20-49.99 = Neon Lite, 50-149.99 = Cryptera, etc.)
+  const activePlanObj = getPlanForAmount(activeMiningPower, miningPlans);
   const activePlanDisplayName = (isLoggedIn && activeMiningPower > 0)
     ? (activePlanObj ? (activePlanObj.planName || activePlanObj.planNumber) : `Node $${activeMiningPower}`)
     : '';
   const activePlanName = activeMiningPower > 0
-    ? (activePlanObj ? `${activePlanObj.planName || activePlanObj.planNumber} ($${activePlanObj.amount} USD)` : `Mining Node ($${activeMiningPower} USD)`)
+    ? (activePlanObj ? `${activePlanObj.planName || activePlanObj.planNumber} ($${activePlanObj.amount} Tier)` : `Mining Node ($${activeMiningPower} USD)`)
     : 'No Active Plan';
 
   // Support Tickets Queue
@@ -987,8 +988,8 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Find active plan daily yield rate (1.0%, 1.1%, 1.2%, etc.)
-    const currentPlan = miningPlans.find((p) => p.amount === stakedAmount);
+    // Find active plan daily yield rate (Tiered: 20 -> 1.0%, 50 -> 1.1%, 150 -> 1.2%, etc.)
+    const currentPlan = getPlanForAmount(stakedAmount, miningPlans);
     const dailyRate = currentPlan?.dailyRatePercent || (teamTurnover.boostedRate || 1.0);
     const cycleYield = +(stakedAmount * (dailyRate / 100)).toFixed(2);
 
@@ -1229,17 +1230,18 @@ export const App: React.FC = () => {
 
     // 3. Single Active Plan Guard: Only 1 active plan permitted
     if (activeMiningPower > 0) {
-      if (plan.amount === activeMiningPower) {
-        showToast(`✓ You already have the ${plan.planName} ($${plan.amount}) active! Only 1 plan can run at a time.`);
+      const currentPlan = getPlanForAmount(activeMiningPower, miningPlans);
+      if (currentPlan && plan.id === currentPlan.id) {
+        showToast(`✓ You already have the ${currentPlan.planName} plan active! To upgrade your hash rate, choose a higher tier plan or reinvest your daily earnings.`);
         return;
       }
-      if (plan.amount < activeMiningPower) {
-        showToast(`🔒 You currently have a $${activeMiningPower} plan active. You cannot purchase a lower tier plan. You can only upgrade to a higher tier plan!`);
+      if (plan.amount <= activeMiningPower) {
+        showToast(`🔒 You currently have $${activeMiningPower.toFixed(2)} active power (${currentPlan?.planName || 'Active Tier'}). You cannot purchase a lower tier plan. You can only upgrade to a higher tier plan!`);
         return;
       }
       // If plan.amount > activeMiningPower, this is an UPGRADE!
       isUpgrade = true;
-      diffAmount = plan.amount - activeMiningPower;
+      diffAmount = +(plan.amount - activeMiningPower).toFixed(2);
     }
 
     setSelectedPlanForCheckout(plan);
@@ -1576,10 +1578,11 @@ export const App: React.FC = () => {
       navigateTo('plans');
       return;
     }
-    const nextPlan = miningPlans.find((p) => !p.isComingSoon && p.amount > activeMiningPower);
+    const currentPlan = getPlanForAmount(activeMiningPower, miningPlans);
+    const nextPlan = miningPlans.find((p) => !p.isComingSoon && p.amount > (currentPlan ? currentPlan.amount : activeMiningPower));
     if (nextPlan) {
-      const diff = nextPlan.amount - activeMiningPower;
-      handleSelectPlan(nextPlan, true, diff);
+      const diff = +(nextPlan.amount - activeMiningPower).toFixed(2);
+      handleSelectPlan(nextPlan, true, diff > 0 ? diff : undefined);
     } else {
       navigateTo('plans');
     }
@@ -1629,15 +1632,34 @@ export const App: React.FC = () => {
     setTransactions((prev) => [newTx, ...prev]);
 
     // CHECK FOR AUTOMATIC TIER UPGRADE ON COMPOUNDING
-    const previousPlan = miningPlans.find((p) => p.amount === activeMiningPower);
-    const upgradedPlan = [...miningPlans].reverse().find((p) => updatedPlanPower >= p.amount && !p.isComingSoon);
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+
+    // Sync admin users directory with updated power and upgraded plan name
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+      setAdminUsers((prev) =>
+        prev.map((u) => {
+          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+            return {
+              ...u,
+              stakedAmount: updatedPlanPower,
+              currentPlanName: newPlanName,
+              status: 'active'
+            };
+          }
+          return u;
+        })
+      );
+    }
 
     if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
       showToast(
         `🚀 AUTO-UPGRADE TRIGGERED! Reinvested balance reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
       );
     } else {
-      showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${updatedPlanPower.toFixed(2)} USD.`);
+      showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${updatedPlanPower.toFixed(2)} USD (${previousPlan?.planName || 'Active Node'}).`);
     }
   };
 
@@ -2346,8 +2368,9 @@ export const App: React.FC = () => {
     // 1. Save user state before session exit (NEVER delete user plan or mining)
     if (userName) {
       const cleanId = userName.toUpperCase();
-      const currentPlan = adminUsers.find((u) => u.id.toUpperCase() === cleanId)?.currentPlanName || 
-        (activeMiningPower > 0 ? `Active Plan ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+      const planObj = getPlanForAmount(activeMiningPower, miningPlans);
+      const planLabel = planObj ? `${planObj.planName} ($${planObj.amount} Tier)` : (activeMiningPower > 0 ? `Active Node ($${activeMiningPower})` : 'No Plan Purchased (Inactive)');
+      const currentPlan = planLabel;
       
       saveUserSavedData(cleanId, {
         activeMiningPower,
@@ -3212,7 +3235,7 @@ export const App: React.FC = () => {
             name: userName || 'Guest Miner',
             mobile: userMobile || '',
             email: userEmail || '',
-            planName: activeMiningPower > 0 ? (miningPlans.find((p) => p.amount === activeMiningPower)?.planName || `$${activeMiningPower} Active Rig`) : 'No Active Plan',
+            planName: activeMiningPower > 0 ? (getPlanForAmount(activeMiningPower, miningPlans)?.planName || `$${activeMiningPower} Active Rig`) : 'No Active Plan',
             availableBalance: availableWithdrawal
           }}
           onDispatchEmergencyTicket={(ticket) => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Zap, ArrowRight, ChevronDown, ChevronUp, Sparkles, CheckCircle2, Lock } from 'lucide-react';
 import { MiningPlan } from '../types/mining';
-import { MINING_PLANS } from '../data/miningPlans';
+import { MINING_PLANS, getPlanForAmount } from '../data/miningPlans';
 
 interface Props {
   activeMiningPower: number;
@@ -68,13 +68,16 @@ export const MiningPlanCards: React.FC<Props> = ({
       </div>
 
       {/* Plans List - Responsive Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {plansToRender.map((plan) => {
-          const isExpanded = expandedPlanId === plan.id;
-          const isCurrentPlan = activeMiningPower === plan.amount;
-          const isUpgrade = activeMiningPower > 0 && plan.amount > activeMiningPower;
-          const isLowerPlan = activeMiningPower > 0 && plan.amount < activeMiningPower;
-          const diffAmount = isUpgrade ? plan.amount - activeMiningPower : plan.amount;
+      {(() => {
+        const currentActivePlan = getPlanForAmount(activeMiningPower, plansToRender);
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {plansToRender.map((plan) => {
+              const isExpanded = expandedPlanId === plan.id;
+              const isCurrentPlan = currentActivePlan?.id === plan.id;
+              const isUpgrade = activeMiningPower > 0 && plan.amount > activeMiningPower;
+              const isLowerPlan = activeMiningPower > 0 && !isCurrentPlan && plan.amount < (currentActivePlan ? currentActivePlan.amount : activeMiningPower);
+              const diffAmount = isUpgrade ? +(plan.amount - activeMiningPower).toFixed(2) : plan.amount;
 
           return (
             <div
@@ -309,6 +312,8 @@ export const MiningPlanCards: React.FC<Props> = ({
           );
         })}
       </div>
-    </section>
-  );
+    );
+  })()}
+</section>
+);
 };

@@ -100,6 +100,25 @@ export const MINING_PLANS: MiningPlan[] = [
   }
 ];
 
+/**
+ * Resolves the active mining plan based on staked amount / compounding tier.
+ * Rules:
+ * - $20.00 to $49.99 -> Plan 01 (Neon Lite)
+ * - $50.00 to $149.99 -> Plan 02 (Cryptera)
+ * - $150.00 to $349.99 -> Plan 03 (Novacore)
+ * - $350.00 to $699.99 -> Plan 04 (Hypervex)
+ * - $700.00+ -> Plan 05 (Vantamine)
+ * Does not match 'isComingSoon' plans for active mining.
+ */
+export function getPlanForAmount(amount: number, plans: MiningPlan[] = MINING_PLANS): MiningPlan | undefined {
+  if (!amount || amount <= 0) return undefined;
+  const sorted = [...plans]
+    .filter((p) => !p.isComingSoon)
+    .sort((a, b) => b.amount - a.amount);
+  return sorted.find((p) => amount >= p.amount);
+}
+
+
 
 export const COUNTRY_CODES: CountryCode[] = [
   { code: '+1', name: 'Canada', flag: '🇨🇦' },
