@@ -40,7 +40,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
 }) => {
   const [step, setStep] = useState<GatewayStep>('SELECT_AMOUNT');
   const [depositAmount, setDepositAmount] = useState<string>('');
-  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'raw_address'>('auto_amount');
+  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'web3_eip' | 'raw_address'>('auto_amount');
   const [selectedNetwork, setSelectedNetwork] = useState<'BEP20'>('BEP20');
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
   const [userTxHash, setUserTxHash] = useState<string>('');
@@ -357,33 +357,44 @@ export const DepositDemoDialog: React.FC<Props> = ({
               };
               const eip681Uri = `ethereum:0x55d398326f99059fF775485246999027B3197955@56/transfer?address=${vaultWalletAddress}&uint256=${toWeiUSDT(numAmount)}`;
               const trustWalletDeepLink = `https://link.trustwallet.com/send?asset=c56_t0x55d398326f99059fF775485246999027B3197955&address=${vaultWalletAddress}&amount=${numAmount}`;
-              const qrData = qrFormat === 'auto_amount' ? eip681Uri : vaultWalletAddress;
+              const qrData = qrFormat === 'auto_amount' ? trustWalletDeepLink : (qrFormat === 'web3_eip' ? eip681Uri : vaultWalletAddress);
 
               return (
                 <div className="p-4 rounded-2xl bg-[#050D18] border border-[#14263D] flex flex-col items-center text-center space-y-3 shadow-inner">
                   {/* QR Mode Selector Toggle */}
-                  <div className="flex items-center p-1 rounded-xl bg-[#030812] border border-[#14263E] text-[11px] w-full max-w-xs">
+                  <div className="flex items-center p-1 rounded-xl bg-[#030812] border border-[#14263E] text-[10.5px] w-full max-w-sm">
                     <button
                       type="button"
                       onClick={() => setQrFormat('auto_amount')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                      className={`flex-1 py-1.5 px-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                         qrFormat === 'auto_amount'
                           ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_10px_rgba(0,240,255,0.4)]'
                           : 'text-[#94A3B8] hover:text-white'
                       }`}
                     >
-                      ⚡ Auto-Fill Amount
+                      ⚡ Trust Wallet
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrFormat('web3_eip')}
+                      className={`flex-1 py-1.5 px-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                        qrFormat === 'web3_eip'
+                          ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_10px_rgba(0,240,255,0.4)]'
+                          : 'text-[#94A3B8] hover:text-white'
+                      }`}
+                    >
+                      🦊 MetaMask
                     </button>
                     <button
                       type="button"
                       onClick={() => setQrFormat('raw_address')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                      className={`flex-1 py-1.5 px-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                         qrFormat === 'raw_address'
                           ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_10px_rgba(0,240,255,0.4)]'
                           : 'text-[#94A3B8] hover:text-white'
                       }`}
                     >
-                      📋 Raw Address
+                      📋 Binance / CEX
                     </button>
                   </div>
 
@@ -400,13 +411,19 @@ export const DepositDemoDialog: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {qrFormat === 'auto_amount' ? (
+                  {qrFormat === 'auto_amount' && (
                     <div className="text-[10px] text-[#10B981] font-mono bg-[#10B981]/10 px-3 py-1 rounded-full border border-[#10B981]/30">
-                      ✓ Amount (${numAmount.toFixed(2)} USDT) & Address auto-filled in Trust Wallet / MetaMask!
+                      ✓ Auto-Fills ${numAmount.toFixed(2)} USDT in Trust Wallet & Phone Camera!
                     </div>
-                  ) : (
+                  )}
+                  {qrFormat === 'web3_eip' && (
+                    <div className="text-[10px] text-[#38BDF8] font-mono bg-[#38BDF8]/10 px-3 py-1 rounded-full border border-[#38BDF8]/30">
+                      ✓ EIP-681 Web3 Mode for MetaMask & Web3 Browsers
+                    </div>
+                  )}
+                  {qrFormat === 'raw_address' && (
                     <div className="text-[10px] text-[#94A3B8] font-mono bg-[#14263E]/40 px-3 py-1 rounded-full border border-[#14263E]">
-                      Raw Address Mode: For Binance / Bybit / CEX withdrawal camera
+                      Raw Address Mode: For Binance / Bybit / CEX withdrawal camera (Enter amount manually)
                     </div>
                   )}
 

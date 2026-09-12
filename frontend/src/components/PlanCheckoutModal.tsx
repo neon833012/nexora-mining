@@ -54,7 +54,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [paymentMethod, setPaymentMethod] = useState<'internal' | 'bep20_chain'>('internal');
-  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'raw_address'>('auto_amount');
+  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'web3_eip' | 'raw_address'>('auto_amount');
   const [enteredTxHash, setEnteredTxHash] = useState('');
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
   const [countdownMinutes, setCountdownMinutes] = useState(14);
@@ -401,33 +401,44 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                     };
                     const eip681Uri = `ethereum:0x55d398326f99059fF775485246999027B3197955@56/transfer?address=${activeVault}&uint256=${toWeiUSDT(payableCost)}`;
                     const trustWalletDeepLink = `https://link.trustwallet.com/send?asset=c56_t0x55d398326f99059fF775485246999027B3197955&address=${activeVault}&amount=${payableCost}`;
-                    const qrData = qrFormat === 'auto_amount' ? eip681Uri : activeVault;
+                    const qrData = qrFormat === 'auto_amount' ? trustWalletDeepLink : (qrFormat === 'web3_eip' ? eip681Uri : activeVault);
 
                     return (
                       <div className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#040A14] border border-[#122135] text-center space-y-2.5 shadow-inner">
                         {/* QR Format Selector Toggle */}
-                        <div className="flex items-center p-1 rounded-xl bg-[#02060E] border border-[#14263E] text-[10.5px] w-full max-w-xs">
+                        <div className="flex items-center p-1 rounded-xl bg-[#02060E] border border-[#14263E] text-[10.5px] w-full max-w-sm">
                           <button
                             type="button"
                             onClick={() => setQrFormat('auto_amount')}
-                            className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                            className={`flex-1 py-1.5 px-1 rounded-lg font-bold transition-all cursor-pointer ${
                               qrFormat === 'auto_amount'
                                 ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
                                 : 'text-[#94A3B8] hover:text-white'
                             }`}
                           >
-                            ⚡ Auto-Fill Amount
+                            ⚡ Trust Wallet
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQrFormat('web3_eip')}
+                            className={`flex-1 py-1.5 px-1 rounded-lg font-bold transition-all cursor-pointer ${
+                              qrFormat === 'web3_eip'
+                                ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                                : 'text-[#94A3B8] hover:text-white'
+                            }`}
+                          >
+                            🦊 MetaMask
                           </button>
                           <button
                             type="button"
                             onClick={() => setQrFormat('raw_address')}
-                            className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                            className={`flex-1 py-1.5 px-1 rounded-lg font-bold transition-all cursor-pointer ${
                               qrFormat === 'raw_address'
                                 ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
                                 : 'text-[#94A3B8] hover:text-white'
                             }`}
                           >
-                            📋 Raw Address
+                            📋 Binance / CEX
                           </button>
                         </div>
 
@@ -442,13 +453,19 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                           </div>
                         </div>
 
-                        {qrFormat === 'auto_amount' ? (
+                        {qrFormat === 'auto_amount' && (
                           <div className="text-[9.5px] text-[#10B981] font-mono bg-[#10B981]/10 px-2.5 py-0.5 rounded-full border border-[#10B981]/30">
-                            ✓ Auto-fills ${payableCost.toFixed(2)} USDT in Trust Wallet & MetaMask!
+                            ✓ Auto-fills ${payableCost.toFixed(2)} USDT in Trust Wallet & Phone Camera!
                           </div>
-                        ) : (
+                        )}
+                        {qrFormat === 'web3_eip' && (
+                          <div className="text-[9.5px] text-[#38BDF8] font-mono bg-[#38BDF8]/10 px-2.5 py-0.5 rounded-full border border-[#38BDF8]/30">
+                            ✓ EIP-681 Web3 Mode for MetaMask
+                          </div>
+                        )}
+                        {qrFormat === 'raw_address' && (
                           <div className="text-[9.5px] text-[#94A3B8] font-mono bg-[#14263E]/40 px-2.5 py-0.5 rounded-full border border-[#14263E]">
-                            Raw Address Mode: For Binance / CEX withdrawal camera
+                            Raw Address Mode: For Binance / Bybit / CEX withdrawal camera (Enter amount manually)
                           </div>
                         )}
 
