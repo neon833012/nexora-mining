@@ -17,6 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { verifyBscTransaction, OFFICIAL_VAULT_ADDRESS } from '../services/blockchain';
+import { nexoraApi } from '../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -127,18 +128,40 @@ export const DepositDemoDialog: React.FC<Props> = ({
       return;
     }
 
-    // 2. Anti-replay check to prevent double spending
+    // 2. Anti-replay check to prevent double spending across device & accounts
     try {
       const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
       if (usedHashes.includes(cleanHash)) {
         setVerificationError(
-          'This transaction hash has already been redeemed for another deposit. Replay attacks are rejected.'
+          'This 66-character transaction reference has ALREADY been used on this device. Each transaction hash can only be redeemed once.'
         );
         return;
       }
+
+      const adminOrders = JSON.parse(localStorage.getItem('neon_admin_orders') || '[]');
+      if (Array.isArray(adminOrders)) {
+        const found = adminOrders.find((o: any) => o.txHash && o.txHash.toLowerCase() === cleanHash);
+        if (found) {
+          setVerificationError(`This 66-character reference ID was already redeemed by account "${found.userId || found.userName}". A transaction hash can only be used once.`);
+          return;
+        }
+      }
     } catch {}
 
+    // 3. Query Cloudflare D1 Backend to check if this hash was ever used by ANY account
     setIsVerifying(true);
+    setVerificationError(null);
+    try {
+      const checkRes = await nexoraApi.checkTxClaimable(cleanHash);
+      if (checkRes.claimed) {
+        setIsVerifying(false);
+        setVerificationError(checkRes.message || 'This transaction hash has already been redeemed on the platform. It cannot be used again.');
+        return;
+      }
+    } catch (err: any) {
+      // Continue if offline
+    }
+
     setStep('BLOCKCHAIN_VERIFYING');
     setVerifyStage(1);
     setBlockConfirmations(0);

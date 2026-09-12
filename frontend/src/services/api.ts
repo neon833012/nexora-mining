@@ -200,6 +200,24 @@ class NeonApiService {
     }
   }
 
+  async checkTxClaimable(txHash: string): Promise<{ success: boolean; claimed: boolean; message: string }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tx/check-claimable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txHash })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, claimed: data.claimed ?? true, message: data.message || 'Transaction already claimed' };
+      }
+      return data;
+    } catch (err: any) {
+      // Network failure: don't block offline dev
+      return { success: true, claimed: false, message: 'Offline check bypass' };
+    }
+  }
+
   // ==========================================================================
   // Mining Plans & Staking
   // ==========================================================================
@@ -212,6 +230,10 @@ class NeonApiService {
     durationDays: number;
     compoundingEnabled: boolean;
     fundPin?: string;
+    paymentMethod?: string;
+    txHash?: string;
+    isDirectPayment?: boolean;
+    payDifferenceOnly?: boolean;
   }) {
     try {
       const res = await fetch(`${this.baseUrl}/api/plans/subscribe`, {

@@ -436,6 +436,51 @@ app.post('/api/deposit/create-order', async (c) => {
   }
 });
 
+// Check if a 66-character TxHash is unclaimed and eligible to be used
+app.post('/api/tx/check-claimable', async (c) => {
+  try {
+    const { txHash } = await c.req.json();
+    if (!txHash) {
+      return c.json({ success: false, message: 'txHash is required' }, 400);
+    }
+
+    const cleanTx = String(txHash).trim().toLowerCase();
+    if (!cleanTx.startsWith('0x') || cleanTx.length !== 66) {
+      return c.json({
+        success: false,
+        message: 'Invalid 66-character transaction hash. Must start with 0x and have 66 characters.'
+      }, 400);
+    }
+
+    // Check transactions
+    const existingTx = await c.env.DB.prepare(
+      'SELECT id, user_id, type FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    // Check confirmed deposit_orders
+    const existingOrder = await c.env.DB.prepare(
+      'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    if (existingTx || existingOrder) {
+      const owner = existingTx?.user_id || existingOrder?.user_id || 'another member';
+      return c.json({
+        success: false,
+        claimed: true,
+        message: `This 66-character transaction hash has ALREADY been claimed on the platform (by ${owner}). Each transaction can only be used once.`
+      }, 409);
+    }
+
+    return c.json({
+      success: true,
+      claimed: false,
+      message: 'Transaction hash is valid and unclaimed.'
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 app.post('/api/deposit/verify-tx', async (c) => {
   try {
     const { orderId, txHash, userId } = await c.req.json();
@@ -462,15 +507,21 @@ app.post('/api/deposit/verify-tx', async (c) => {
       });
     }
 
-    // 2. Prevent Replay Attack: check if this txHash was already used by any other confirmed order
+    // 2. Prevent Replay Attack: check if this txHash was already used anywhere
+    const cleanTx = txHash.trim().toLowerCase();
     const duplicateTx = await c.env.DB.prepare(
-      'SELECT order_id FROM deposit_orders WHERE tx_hash = ? AND status = "confirmed"'
-    ).bind(txHash.trim().toLowerCase()).first();
+      'SELECT order_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
+    ).bind(cleanTx).first();
 
-    if (duplicateTx) {
+    const duplicateLedger = await c.env.DB.prepare(
+      'SELECT id, user_id FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
+    ).bind(cleanTx).first() as any;
+
+    if (duplicateTx || duplicateLedger) {
       return c.json({
         success: false,
-        message: 'This transaction hash has already been redeemed for another order. Replay attacks are rejected.'
+        alreadyClaimed: true,
+        message: 'This transaction hash has already been redeemed on the platform. Replay attacks are rejected.'
       }, 409);
     }
 
@@ -489,7 +540,6 @@ app.post('/api/deposit/verify-tx', async (c) => {
     }
 
     // 4. Verification PASSED: Credit user deposit wallet and record transaction in atomic batch
-    const cleanTx = txHash.trim().toLowerCase();
     const effectiveUserId = userId || order.user_id;
     const txId = `TX-DEP-${Date.now().toString().slice(-6)}`;
 
@@ -637,7 +687,29 @@ app.post('/api/plans/subscribe', async (c) => {
     const contractId = `contract_${Date.now().toString().slice(-8)}`;
     const dailyYield = Number((planCost * (Number(dailyRatePercent) / 100)).toFixed(4));
     const txId = `PLAN-${Date.now().toString().slice(-6)}`;
-    const planTxHash = body.txHash || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+
+    // Anti-Replay: Prevent reusing 66-character TxHash across multiple accounts
+    const cleanProvidedTx = body.txHash ? String(body.txHash).trim().toLowerCase() : null;
+    if (cleanProvidedTx && cleanProvidedTx.startsWith('0x') && cleanProvidedTx.length === 66) {
+      const existingTx = await c.env.DB.prepare(
+        'SELECT id, user_id, type FROM transactions WHERE LOWER(tx_hash) = ? LIMIT 1'
+      ).bind(cleanProvidedTx).first() as any;
+
+      const existingDeposit = await c.env.DB.prepare(
+        'SELECT order_id, user_id FROM deposit_orders WHERE LOWER(tx_hash) = ? AND status = "confirmed" LIMIT 1'
+      ).bind(cleanProvidedTx).first() as any;
+
+      if (existingTx || existingDeposit) {
+        const owner = existingTx?.user_id || existingDeposit?.user_id || 'another member';
+        return c.json({
+          success: false,
+          alreadyClaimed: true,
+          message: `This 66-character transaction reference has ALREADY been claimed on the platform (by ${owner}). Each blockchain transaction can only activate 1 plan once.`
+        }, 409);
+      }
+    }
+
+    const planTxHash = cleanProvidedTx || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
 
     const walletUpdateStatement = isCryptoDirect
       ? c.env.DB.prepare(

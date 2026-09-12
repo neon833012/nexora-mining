@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { MiningPlan } from '../types/mining';
 import { verifyBscTransaction, OFFICIAL_VAULT_ADDRESS } from '../services/blockchain';
+import { nexoraApi } from '../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -131,16 +132,38 @@ export const PlanCheckoutModal: React.FC<Props> = ({
       return;
     }
 
-    // Anti-replay check
+    // 1. Local Anti-replay check across device & admin orders
     try {
       const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
       if (usedHashes.includes(cleanHash)) {
-        setVerificationError('This transaction hash has already been redeemed for another order. Replay attacks are rejected.');
+        setVerificationError('This 66-character transaction reference has ALREADY been used on this device. Each transaction hash can only be redeemed once.');
         return;
+      }
+
+      const adminOrders = JSON.parse(localStorage.getItem('neon_admin_orders') || '[]');
+      if (Array.isArray(adminOrders)) {
+        const found = adminOrders.find((o: any) => o.txHash && o.txHash.toLowerCase() === cleanHash);
+        if (found) {
+          setVerificationError(`This 66-character reference ID was already redeemed by account "${found.userId || found.userName}". A transaction hash can only activate 1 plan.`);
+          return;
+        }
       }
     } catch {}
 
+    // 2. Query Cloudflare D1 Backend to check if this hash was ever used by ANY account on the platform
     setIsVerifying(true);
+    setVerificationError(null);
+    try {
+      const checkRes = await nexoraApi.checkTxClaimable(cleanHash);
+      if (checkRes.claimed) {
+        setIsVerifying(false);
+        setVerificationError(checkRes.message || 'This transaction hash has already been redeemed on the platform. Each reference ID can only be used once.');
+        return;
+      }
+    } catch (err: any) {
+      // Continue to on-chain verification if offline
+    }
+
     setCurrentStep(3);
     setVerifyStage(1);
     setBlockConfirmations(0);

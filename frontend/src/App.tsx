@@ -1245,6 +1245,23 @@ export const App: React.FC = () => {
     paymentMethod: 'internal' | 'bep20_chain',
     txHash?: string
   ) => {
+    // Anti-Replay: Verify that 66-character TxHash is not already used
+    if (txHash && txHash.startsWith('0x') && txHash.length === 66) {
+      const cleanTx = txHash.trim().toLowerCase();
+      const alreadyUsedInAdmin = adminOrders.some(
+        (o) => o.txHash && o.txHash.toLowerCase() === cleanTx && o.userId?.toUpperCase() !== (userName || '').toUpperCase()
+      );
+      try {
+        const usedHashes: string[] = JSON.parse(localStorage.getItem('neon_used_tx_hashes') || '[]');
+        if (alreadyUsedInAdmin || usedHashes.includes(cleanTx)) {
+          showToast('🚫 This 66-character reference has ALREADY been used to activate a plan. Replay rejected.');
+          return;
+        }
+        usedHashes.push(cleanTx);
+        localStorage.setItem('neon_used_tx_hashes', JSON.stringify(usedHashes));
+      } catch {}
+    }
+
     if (paymentMethod === 'internal') {
       if (depositBalance >= paidCost) {
         setDepositBalance((prev) => +(prev - paidCost).toFixed(2));
@@ -1410,7 +1427,14 @@ export const App: React.FC = () => {
         dailyRatePercent: plan.dailyRatePercent,
         durationDays: plan.durationDays || 365,
         compoundingEnabled: true,
-        fundPin: userFundPassword || '123456'
+        fundPin: userFundPassword || '123456',
+        paymentMethod: paymentMethod === 'bep20_chain' ? 'crypto' : 'internal',
+        txHash: txHash,
+        isDirectPayment: paymentMethod === 'bep20_chain'
+      }).then((res) => {
+        if (res && res.alreadyClaimed) {
+          showToast(`🚫 ${res.message}`);
+        }
       }).catch(() => {});
     }
 
