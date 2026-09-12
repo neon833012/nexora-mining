@@ -24,7 +24,9 @@ import { PromotionalPlanPopupModal } from './components/PromotionalPlanPopupModa
 import { DepositDemoDialog } from './components/DepositDemoDialog';
 import { P2PTransferModal } from './components/P2PTransferModal';
 import { WithdrawalHistoryModal } from './components/WithdrawalHistoryModal';
+import { CreateFundPasswordModal } from './components/CreateFundPasswordModal';
 import { DepositHistoryModal } from './components/DepositHistoryModal';
+import { LegalPolicyModal, LegalPolicyKey } from './components/LegalPolicyModal';
 import { ToastNotification } from './components/ToastNotification';
 import { NeonAIChatAssistant } from './components/NeonAIChatAssistant';
 import { AdminSystemPortal } from './components/AdminSystemPortal';
@@ -722,9 +724,12 @@ export const App: React.FC = () => {
   const [upgradeDiffAmount, setUpgradeDiffAmount] = useState<number | undefined>(undefined);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+  const [showCreateFundPasswordModal, setShowCreateFundPasswordModal] = useState(false);
   const [showP2PTransferModal, setShowP2PTransferModal] = useState(false);
   const [showWithdrawalHistoryModal, setShowWithdrawalHistoryModal] = useState(false);
   const [showDepositHistoryModal, setShowDepositHistoryModal] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [activeLegalTab, setActiveLegalTab] = useState<LegalPolicyKey>('terms');
 
   // Pending plan checkout intent if user clicked buy while logged out
   const [pendingPlanAfterAuth, setPendingPlanAfterAuth] = useState<{
@@ -870,7 +875,7 @@ export const App: React.FC = () => {
               amount: Number(t.amount) || 0,
               date: t.created_at || 'Recently',
               status: t.status || 'Settled',
-              txHash: t.tx_hash || '0x' + t.id
+              txHash: t.tx_hash || t.id
             }));
             setTransactions(mappedTxs);
           }
@@ -886,7 +891,9 @@ export const App: React.FC = () => {
               walletAddress: w.wallet_address || '',
               status: w.status || 'pending',
               timestamp: w.created_at || 'Recently',
-              timestampMs: Date.now()
+              timestampMs: Date.now(),
+              txHash: w.tx_hash,
+              rejectionReason: w.rejection_reason
             }));
             setWithdrawalRequests(mappedWd);
           }
@@ -1800,7 +1807,8 @@ export const App: React.FC = () => {
         userId: userName,
         balanceType: 'deposit_balance',
         amount: newDepBal,
-        reason: 'BEP-20 USDT Deposit'
+        reason: 'BEP-20 USDT Deposit (BSC)',
+        txHash: finalTxHash
       }).then(() => {
         fetchLiveAdminUsers();
       }).catch(() => {});
@@ -1822,6 +1830,37 @@ export const App: React.FC = () => {
     }
 
     showToast(`✓ Received +$${amount.toFixed(2)} USDT on BNB Smart Chain! Confirmed in Deposit Balance & Admin Panel.`);
+  };
+
+  // User creates/confirms their 6-digit fund password from CreateFundPasswordModal
+  const handleFundPasswordCreated = async (newPin: string) => {
+    setUserFundPassword(newPin);
+    try {
+      localStorage.setItem('neon_fund_password', newPin);
+    } catch (e) {}
+
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, { fundPin: newPin });
+      setAdminUsers((prev) =>
+        prev.map((u) =>
+          u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId
+            ? { ...u, fundPin: newPin, fundPinSet: true }
+            : u
+        )
+      );
+      // Persist to Cloudflare D1 Backend
+      try {
+        await nexoraApi.changeFundPin({
+          userId: userName,
+          newPin: newPin
+        });
+      } catch (err) {}
+    }
+
+    showToast('✓ 6-Digit Fund Password created successfully! You can now proceed with withdrawals.');
+    setShowCreateFundPasswordModal(false);
+    // User remains right on the wallet page
   };
 
   // User submits withdrawal request -> enters Pending Admin Queue
@@ -1881,14 +1920,23 @@ export const App: React.FC = () => {
   };
 
   // Admin approves withdrawal
-  const handleApproveWithdrawal = (id: string) => {
+  const handleApproveWithdrawal = async (id: string, customTxHash?: string) => {
     const req = withdrawalRequests.find((r) => r.id === id);
     if (!req) return;
 
-    const generatedTx = '0x' + Math.random().toString(16).substring(2, 12) + '..bsc';
+    const finalTx = (customTxHash && customTxHash.trim()) || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+
+    // Call Cloudflare D1 Backend to persist approved payout reference
+    try {
+      await nexoraApi.actionWithdrawal({
+        requestId: id,
+        action: 'approve',
+        txHash: finalTx
+      });
+    } catch (e) {}
 
     setWithdrawalRequests((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: 'approved', txHash: generatedTx } : r))
+      prev.map((r) => (r.id === id ? { ...r, status: 'approved', txHash: finalTx } : r))
     );
 
     // Deduct from total balance
@@ -1909,24 +1957,33 @@ export const App: React.FC = () => {
       amount: -req.amount,
       date: getFormattedTimestamp(),
       status: 'Settled',
-      txHash: generatedTx
+      txHash: finalTx
     };
     setTransactions((prev) => [newTx, ...prev]);
 
-    showToast(`✓ Approved withdrawal of ${req.amount.toFixed(2)} USDT for ${req.userName}! BscScan hash generated.`);
+    showToast(`✓ Approved withdrawal of ${req.amount.toFixed(2)} USDT for ${req.userName}! Reference: ${finalTx.slice(0, 10)}...`);
   };
 
   // Admin rejects withdrawal
-  const handleRejectWithdrawal = (id: string, reason: string) => {
+  const handleRejectWithdrawal = async (id: string, reason: string) => {
     const req = withdrawalRequests.find((r) => r.id === id);
     if (!req) return;
+
+    try {
+      await nexoraApi.actionWithdrawal({
+        requestId: id,
+        action: 'reject',
+        reason
+      });
+    } catch (e) {}
 
     setWithdrawalRequests((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status: 'rejected', rejectionReason: reason } : r))
     );
 
     // Refund back to available withdrawal
-    setAvailableWithdrawal((prev) => prev + req.amount);
+    setAvailableWithdrawal((prev) => +(prev + req.amount).toFixed(2));
+    setTotalBalance((prev) => +(prev + req.amount).toFixed(2));
 
     // Deduct from pending telemetry
     setAdminTelemetry((prev) => ({
@@ -1938,18 +1995,20 @@ export const App: React.FC = () => {
   };
 
   // P2P Member Transfer Handler (0% fee, instant credit into recipient's deposit balance)
-  const handleConfirmP2PTransfer = (
+  const handleConfirmP2PTransfer = async (
     recipientId: string,
     amount: number,
     fundPin: string,
     sourceWallet: 'deposit' | 'withdrawable' = 'deposit'
   ) => {
-    const cleanRecipient = recipientId.trim().toUpperCase();
-    const recipientExists = adminUsers.some(
-      (u) => u.id.toUpperCase() === cleanRecipient || u.name.toUpperCase() === cleanRecipient
-    );
-    if (!recipientExists) {
-      showToast(`✕ Error: Recipient User ID "${recipientId}" not found in system. P2P transfers are strictly restricted to registered members.`);
+    const cleanRecipient = recipientId.trim();
+    if (!cleanRecipient) {
+      showToast('✕ Error: Recipient User ID is required.');
+      return;
+    }
+
+    if (amount <= 0) {
+      showToast('✕ Error: Transfer amount must be greater than zero.');
       return;
     }
 
@@ -1960,108 +2019,73 @@ export const App: React.FC = () => {
       } catch (e) {}
     }
 
-    if (sourceWallet === 'deposit') {
-      // 1. Deduct from sender's deposit balance
-      setDepositBalance((prev) => Math.max(0, +(prev - amount).toFixed(2)));
-      setTotalBalance((prev) => Math.max(0, +(prev - amount).toFixed(2)));
-    } else {
-      // 1. Deduct full amount from sender's withdrawable balance (first from availableWithdrawal, then referralBalance)
-      if (amount <= availableWithdrawal) {
-        setAvailableWithdrawal((prev) => Math.max(0, +(prev - amount).toFixed(2)));
-      } else {
-        const fromAvailable = availableWithdrawal;
-        const fromReferral = +(amount - fromAvailable).toFixed(2);
-        setAvailableWithdrawal(0);
-        setReferralBalance((prev) => Math.max(0, +(prev - fromReferral).toFixed(2)));
-      }
-      setTotalBalance((prev) => Math.max(0, +(prev - amount).toFixed(2)));
-    }
-
-    // 2. Credit 100% full amount to recipient's deposit balance in adminUsers
-    setAdminUsers((prev) =>
-      prev.map((u) => {
-        if (u.id.toUpperCase() === recipientId.toUpperCase() || u.name.toUpperCase() === recipientId.toUpperCase()) {
-          return {
-            ...u,
-            availableBalance: +(u.availableBalance + amount).toFixed(2)
-          };
-        }
-        return u;
-      })
-    );
-
-    const formattedTimestamp = getFormattedTimestamp();
-    const p2pHash = 'p2p_tx_' + Date.now().toString(36) + '_' + Math.random().toString(16).substring(2, 8);
-
-    // 3. Log in SENDER's Withdrawal History modal (User requested: "or jo p2p karra hai kisi ko uske withdral hisrtory me dikhega mention rahega p2p")
-    const senderWithdrawalRecord: WithdrawalRequest = {
-      id: `wd_p2p_${Date.now()}`,
-      userId: userName || 'usr_current',
-      userName: userName || 'You',
-      userMobile: userMobile || '',
-      amount: amount,
-      fee: 0,
-      netAmount: amount,
-      walletAddress: `P2P Transfer to @${recipientId}`,
-      status: 'approved',
-      timestamp: formattedTimestamp,
-      timestampMs: Date.now(),
-      type: 'p2p_transfer',
-      recipientId: recipientId,
-      txHash: p2pHash
-    };
-    setWithdrawalRequests((prev) => [senderWithdrawalRecord, ...prev]);
-
-    // 4. If current logged-in user is recipient (e.g. testing with self ID or 'YOU'), credit & log in recipient's Deposit History modal
-    if (userName && (recipientId.toUpperCase() === userName.toUpperCase() || recipientId.toUpperCase() === 'YOU')) {
-      setDepositBalance((prev) => +(prev + amount).toFixed(2));
-      setTotalBalance((prev) => +(prev + amount).toFixed(2));
-
-      const recipientDepRecord: DepositRecord = {
-        id: `dep_p2p_${Date.now()}`,
-        type: 'p2p_received',
-        amount: amount,
-        senderId: userName || 'Member',
-        txHash: p2pHash,
-        timestamp: formattedTimestamp,
-        timestampMs: Date.now(),
-        status: 'completed',
-        network: 'Internal P2P Network'
-      };
-      setDepositRecords((prev) => [recipientDepRecord, ...prev]);
-    }
-
-    // Sync with Cloudflare D1 Backend in background
+    // Call Cloudflare D1 Backend FIRST to ensure atomic verification and persistence
     if (userName) {
-      nexoraApi.p2pTransfer({
-        senderId: userName,
-        recipientIdentifier: recipientId,
-        amount,
-        fundPin,
-        sourceWallet
-      }).then((res) => {
-        if (res && res.success && res.updatedWallet) {
+      try {
+        const res = await nexoraApi.p2pTransfer({
+          senderId: userName,
+          recipientIdentifier: cleanRecipient,
+          amount,
+          fundPin,
+          sourceWallet
+        });
+
+        if (!res || !res.success) {
+          showToast(`✕ P2P Transfer Rejected: ${res?.message || 'Transaction failed. Please check recipient ID and balance.'}`);
+          return;
+        }
+
+        const p2pHash = res.txHash || ('p2p_tx_' + Date.now().toString(36) + '_' + Math.random().toString(16).substring(2, 8));
+        const formattedTimestamp = getFormattedTimestamp();
+        const sourceLabel = sourceWallet === 'deposit' ? 'Deposit Balance' : 'Withdrawable Balance';
+
+        // Update sender wallet balances strictly from backend D1 source of truth
+        if (res.updatedWallet) {
           const w = res.updatedWallet;
           if (w.deposit_balance !== undefined) setDepositBalance(Number(w.deposit_balance) || 0);
           if (w.withdrawable_balance !== undefined) setAvailableWithdrawal(Number(w.withdrawable_balance) || 0);
           if (w.referral_balance !== undefined) setReferralBalance(Number(w.referral_balance) || 0);
+          setTotalBalance(+(Number(w.deposit_balance || 0) + Number(w.withdrawable_balance || 0) + Number(w.referral_balance || 0)).toFixed(2));
         }
-      }).catch(() => {});
+
+        // 3. Log in SENDER's Withdrawal History modal with exact P2P Hash
+        const senderWithdrawalRecord: WithdrawalRequest = {
+          id: `wd_p2p_${Date.now()}`,
+          userId: userName,
+          userName: userName,
+          userMobile: userMobile || '',
+          amount: amount,
+          fee: 0,
+          netAmount: amount,
+          walletAddress: `P2P Transfer to @${res.recipient?.id || cleanRecipient}`,
+          status: 'approved',
+          timestamp: formattedTimestamp,
+          timestampMs: Date.now(),
+          type: 'p2p_transfer',
+          recipientId: res.recipient?.id || cleanRecipient,
+          txHash: p2pHash
+        };
+        setWithdrawalRequests((prev) => [senderWithdrawalRecord, ...prev]);
+
+        // 4. Sender transaction statement record
+        const p2pTx: TransactionRecord = {
+          id: `tx_p2p_${Date.now()}`,
+          type: `P2P Transfer to @${res.recipient?.id || cleanRecipient} [${sourceLabel}] (0% Fee)`,
+          amount: -amount,
+          date: formattedTimestamp,
+          status: 'Settled',
+          txHash: p2pHash
+        };
+        setTransactions((prev) => [p2pTx, ...prev]);
+
+        // Refresh admin users
+        fetchLiveAdminUsers();
+
+        showToast(`✓ Transferred $${amount.toFixed(2)} USDT from ${sourceLabel} to @${res.recipient?.id || cleanRecipient}! (0% fee, settled in D1).`);
+      } catch (err: any) {
+        showToast(`✕ P2P Transfer Error: ${err.message || 'Connection failed'}`);
+      }
     }
-
-    // 5. Sender transaction statement record
-    const sourceLabel = sourceWallet === 'deposit' ? 'Deposit Balance' : 'Withdrawable Balance';
-    const p2pTx: TransactionRecord = {
-      id: `tx_p2p_${Date.now()}`,
-      type: `P2P Transfer to @${recipientId} [${sourceLabel}] (0% Fee)`,
-      amount: -amount,
-      date: formattedTimestamp,
-      status: 'Settled',
-      txHash: p2pHash
-    };
-    setTransactions((prev) => [p2pTx, ...prev]);
-
-    showToast(`✓ Transferred $${amount.toFixed(2)} USDT from ${sourceLabel} to @${recipientId}! (0% fee, credited to recipient Deposit Balance).`);
   };
 
   // Forgot Fund Password Support Ticket Submit
@@ -2519,19 +2543,26 @@ export const App: React.FC = () => {
 
 
               {/* Footer */}
-              <NeonFooter onNavigate={(sec) => {
-                if (sec === 'Mining Plans') navigateTo('plans');
-                else if (sec === 'Calculator') navigateTo('calculator');
-                else if (sec === 'Referral') navigateTo('referral');
-                else if (sec === 'Dashboard') navigateTo('dashboard');
-                else if (sec === 'FAQ') navigateTo('faq');
-                else if (sec === 'Contact') navigateTo('contact');
-                else if (sec === 'About Neon') navigateTo('about');
-                else navigateTo('home');
-              }} onOpenAdminPortal={() => {
-                setUserRole('superadmin');
-                setShowAdminPortal(true);
-              }} />
+              <NeonFooter 
+                onNavigate={(sec) => {
+                  if (sec === 'Mining Plans') navigateTo('plans');
+                  else if (sec === 'Calculator') navigateTo('calculator');
+                  else if (sec === 'Referral') navigateTo('referral');
+                  else if (sec === 'Dashboard') navigateTo('dashboard');
+                  else if (sec === 'FAQ') navigateTo('faq');
+                  else if (sec === 'Contact') navigateTo('contact');
+                  else if (sec === 'About Neon') navigateTo('about');
+                  else navigateTo('home');
+                }} 
+                onOpenAdminPortal={() => {
+                  setUserRole('superadmin');
+                  setShowAdminPortal(true);
+                }} 
+                onOpenLegalPolicy={(policyKey) => {
+                  setActiveLegalTab(policyKey);
+                  setShowLegalModal(true);
+                }}
+              />
           </div>
 
           {/* SCREEN 2: MINING PLANS */}
@@ -2563,7 +2594,7 @@ export const App: React.FC = () => {
               <DashboardPreviewSection
                 totalBalance={totalBalance}
                 depositBalance={depositBalance}
-                availableWithdrawal={+(availableWithdrawal + referralBalance).toFixed(2)}
+                availableWithdrawal={+availableWithdrawal.toFixed(2)}
                 referralBalance={referralBalance}
                 totalReferralIncome={referralIncome}
                 totalWithdrawn={totalWithdrawn}
@@ -2638,7 +2669,18 @@ export const App: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setShowWithdrawalModal(true)}
+                          onClick={() => {
+                            if (!isLoggedIn) {
+                              setIsSignUpMode(false);
+                              setShowAuthModal(true);
+                              return;
+                            }
+                            if (!userFundPassword || userFundPassword.trim().length === 0) {
+                              setShowCreateFundPasswordModal(true);
+                            } else {
+                              setShowWithdrawalModal(true);
+                            }
+                          }}
                           className="py-3 px-3 rounded-xl bg-gradient-to-r from-[#00F0FF] via-[#0284C7] to-[#0369A1] hover:brightness-110 text-white font-black text-[13px] sm:text-[14px] flex items-center justify-center gap-1.5 sm:gap-2 shadow-[0_0_22px_rgba(0,240,255,0.45)] border border-[#00F0FF]/80 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
                         >
                           <ArrowUp className="w-4 h-4 shrink-0 text-white stroke-[3]" />
@@ -2790,7 +2832,7 @@ export const App: React.FC = () => {
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-[20px] lg:text-[22px] font-black text-[#38BDF8] font-mono">
-                          ${(availableWithdrawal + referralBalance).toFixed(2)}
+                          ${availableWithdrawal.toFixed(2)}
                         </span>
                         <span className="text-[11px] font-bold text-[#38BDF8]">USDT</span>
                       </div>
@@ -3032,6 +3074,7 @@ export const App: React.FC = () => {
           activeMiningPower={activeMiningPower}
           diffAmount={upgradeDiffAmount}
           availableBalance={+(depositBalance + availableWithdrawal).toFixed(2)}
+          vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
           onDismiss={() => setSelectedPlanForCheckout(null)}
           onConfirmSuccess={handleCheckoutSuccess}
         />
@@ -3041,6 +3084,7 @@ export const App: React.FC = () => {
           isOpen={showDepositDialog}
           onDismiss={() => setShowDepositDialog(false)}
           onDepositConfirmed={handleDepositConfirmed}
+          vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
         />
 
         {/* P2P Member Transfer Modal */}
@@ -3048,7 +3092,7 @@ export const App: React.FC = () => {
           isOpen={showP2PTransferModal}
           onDismiss={() => setShowP2PTransferModal(false)}
           depositBalance={depositBalance}
-          availableBalance={+(availableWithdrawal + referralBalance).toFixed(2)}
+          availableBalance={+availableWithdrawal.toFixed(2)}
           userFundPassword={userFundPassword}
           adminUsers={adminUsers}
           currentUserId={userName}
@@ -3062,8 +3106,19 @@ export const App: React.FC = () => {
           withdrawalRequests={withdrawalRequests}
           onRequestNewWithdrawal={() => {
             setShowWithdrawalHistoryModal(false);
-            setShowWithdrawalModal(true);
+            if (!userFundPassword || userFundPassword.trim().length === 0) {
+              setShowCreateFundPasswordModal(true);
+            } else {
+              setShowWithdrawalModal(true);
+            }
           }}
+        />
+
+        {/* Dedicated 6-Digit Create Fund Password Modal */}
+        <CreateFundPasswordModal
+          isOpen={showCreateFundPasswordModal}
+          onDismiss={() => setShowCreateFundPasswordModal(false)}
+          onSuccess={handleFundPasswordCreated}
         />
 
         {/* Dedicated Withdrawal Popup Modal Window */}
@@ -3081,8 +3136,8 @@ export const App: React.FC = () => {
               </button>
 
               <WithdrawalSection
-                availableBalance={+(availableWithdrawal + referralBalance).toFixed(2)}
-                miningEarnings={availableWithdrawal}
+                availableBalance={+availableWithdrawal.toFixed(2)}
+                miningEarnings={Math.max(0, +(availableWithdrawal - referralBalance).toFixed(2))}
                 referralEarnings={referralBalance}
                 userFundPassword={userFundPassword}
                 withdrawalRequests={withdrawalRequests}
@@ -3091,6 +3146,10 @@ export const App: React.FC = () => {
                   setShowWithdrawalModal(false);
                 }}
                 onSubmitCompanyQuery={handleCompanyQuery}
+                onOpenCreatePinModal={() => {
+                  setShowWithdrawalModal(false);
+                  setShowCreateFundPasswordModal(true);
+                }}
                 onSetUserFundPassword={(newPin) => {
                   setUserFundPassword(newPin);
                   try {
@@ -3107,7 +3166,7 @@ export const App: React.FC = () => {
                       )
                     );
                   }
-                  showToast(`🔒 6-digit Fund Password created successfully!`);
+                  showToast(`🔒 6-digit Fund Password updated!`);
                 }}
                 onOpenHistoryModal={() => {
                   setShowWithdrawalModal(false);
@@ -3124,6 +3183,13 @@ export const App: React.FC = () => {
           onDismiss={() => setShowDepositHistoryModal(false)}
           depositRecords={depositRecords}
           onOpenDepositDialog={() => setShowDepositDialog(true)}
+        />
+
+        {/* Legal Policies Suite Modal */}
+        <LegalPolicyModal
+          isOpen={showLegalModal}
+          initialTab={activeLegalTab}
+          onDismiss={() => setShowLegalModal(false)}
         />
 
         {/* Enterprise Full-System Admin Portal */}

@@ -51,7 +51,8 @@ import {
   MessageSquare,
   Bot,
   User,
-  Send
+  Send,
+  Wallet
 } from 'lucide-react';
 import {
   UserRole,
@@ -82,7 +83,7 @@ interface Props {
   miningPlans?: MiningPlan[];
   onUpdateMiningPlans?: (plans: MiningPlan[]) => void;
   onSelectRole: (role: UserRole) => void;
-  onApproveWithdrawal: (id: string) => void;
+  onApproveWithdrawal: (id: string, txHash?: string) => void;
   onRejectWithdrawal: (id: string, reason: string) => void;
   onResetUserFundPin: (ticketId: string, userName: string, newPin: string) => void;
   onQuickResetUserPin: (userId: string, newPin: string) => void;
@@ -464,6 +465,15 @@ export const AdminSystemPortal: React.FC<Props> = ({
   // Settings form state
   const [editMinWithdrawal, setEditMinWithdrawal] = useState(safeSettings.minWithdrawalAmount);
   const [editFeePercent, setEditFeePercent] = useState(safeSettings.withdrawalFeePercent);
+  const [editVaultWalletAddress, setEditVaultWalletAddress] = useState(
+    safeSettings.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+  );
+
+  useEffect(() => {
+    if (safeSettings.vaultWalletAddress) {
+      setEditVaultWalletAddress(safeSettings.vaultWalletAddress);
+    }
+  }, [safeSettings.vaultWalletAddress]);
 
   // Popup management state
   const [popupEnabled, setPopupEnabled] = useState(safeSettings.popupEnabled !== false);
@@ -471,6 +481,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [popupLinkUrl, setPopupLinkUrl] = useState(safeSettings.popupLinkUrl || '');
   const [popupImagePreview, setPopupImagePreview] = useState(safeSettings.popupImageUrl || '');
   const [popupSaveMsg, setPopupSaveMsg] = useState('');
+
+  // Payout Reference / Approval Modal State
+  const [payoutModalReq, setPayoutModalReq] = useState<WithdrawalRequest | null>(null);
+  const [payoutTxHash, setPayoutTxHash] = useState('');
 
   // Filtered Users
   const filteredUsers = useMemo(() => {
@@ -1234,6 +1248,31 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
         {/* Scrollable Tab Content Container */}
         <main className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-5">
+          {/* Sub-Admin Strict Read-Only Mode Banner */}
+          {isSubadmin && (
+            <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                    <span>Sub-Admin Audit Mode (Strict Read-Only)</span>
+                    <span className="text-[9.5px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                      View-Only
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed mt-0.5">
+                    You have view-only access across all records, telemetry, users, orders, and ledger history like a PDF. All modifications, balance adjustments, payout approvals, plan updates, and wallet address settings are strictly locked to Master Super Admin.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono font-bold px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 text-center">
+                CHANGES LOCKED
+              </span>
+            </div>
+          )}
+
           {/* ==================== 1. EXECUTIVE DASHBOARD ==================== */}
           {activeTab === 'overview' && (
             <div className="space-y-5 animate-fadeIn">
@@ -2257,25 +2296,34 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleResetPlans}
-                    className="px-3 py-1.5 rounded-xl bg-[#0E1A2E] text-gray-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Reset Defaults
-                  </button>
-                  <button
-                    onClick={() => {
-                      setNewPlanNumber(`PLAN 0${currentPlans.length + 1}`);
-                      setNewPlanName('');
-                      setNewPlanAmount(500);
-                      setNewPlanRate(1.4);
-                      setIsAddPlanModalOpen(true);
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/20"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Plan</span>
-                  </button>
+                  {isSuperadmin ? (
+                    <>
+                      <button
+                        onClick={handleResetPlans}
+                        className="px-3 py-1.5 rounded-xl bg-[#0E1A2E] text-gray-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Reset Defaults
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewPlanNumber(`PLAN 0${currentPlans.length + 1}`);
+                          setNewPlanName('');
+                          setNewPlanAmount(500);
+                          setNewPlanRate(1.4);
+                          setIsAddPlanModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/20"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Plan</span>
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-amber-400 font-mono flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30">
+                      <Lock className="w-3 h-3" />
+                      <span>Read-Only Plans View</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2311,35 +2359,48 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-[#101E33]">
-                      <button
-                        onClick={() => handleToggleComingSoon(plan.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                          plan.isComingSoon
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                        }`}
-                      >
-                        {plan.isComingSoon ? '🔒 Coming Soon' : '✅ Active'}
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setEditingPlan(plan)}
-                          className="p-1.5 rounded-lg bg-[#0E1A2E] text-cyan-300 hover:text-white cursor-pointer"
-                          title="Edit Rate & Duration"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        {currentPlans.length > 7 && (
+                      {isSuperadmin ? (
+                        <>
                           <button
-                            onClick={() => handleDeletePlan(plan.id)}
-                            className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:text-red-200 cursor-pointer"
-                            title="Remove Plan"
+                            onClick={() => handleToggleComingSoon(plan.id)}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors ${
+                              plan.isComingSoon
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {plan.isComingSoon ? '🔒 Coming Soon' : '✅ Active'}
                           </button>
-                        )}
-                      </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => setEditingPlan(plan)}
+                              className="p-1.5 rounded-lg bg-[#0E1A2E] text-cyan-300 hover:text-white cursor-pointer"
+                              title="Edit Rate & Duration"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            {currentPlans.length > 7 && (
+                              <button
+                                onClick={() => handleDeletePlan(plan.id)}
+                                className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:text-red-200 cursor-pointer"
+                                title="Remove Plan"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-between w-full">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${plan.isComingSoon ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>
+                            {plan.isComingSoon ? 'Coming Soon' : 'Active Tier'}
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" /> Locked
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2544,8 +2605,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           <>
                             <button
                               onClick={() => {
-                                onApproveWithdrawal(req.id);
-                                triggerNotice(`Approved withdrawal of $${req.amount} for ${req.userName}`);
+                                setPayoutModalReq(req);
+                                const autoHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                                setPayoutTxHash(autoHash);
                               }}
                               className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs cursor-pointer transition-all"
                             >
@@ -3282,6 +3344,56 @@ export const AdminSystemPortal: React.FC<Props> = ({
               </div>
 
               <div className="space-y-3">
+                {/* 1. Custody Vault Wallet Address Card (Super Admin ONLY - Hidden completely from Sub-Admin) */}
+                {isSuperadmin && (
+                  <div className="p-4 rounded-2xl bg-[#070E1B] border border-cyan-500/30 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <strong className="text-white text-xs flex items-center gap-1.5">
+                          <Wallet className="w-4 h-4 text-cyan-400" />
+                          <span>BEP-20 USDT Custody Deposit / Vault Wallet Address</span>
+                        </strong>
+                        <span className="text-[11px] text-gray-400">
+                          Official blockchain address where user deposits and plan subscriptions are transferred
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 self-start sm:self-auto">
+                        Super Admin Access
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="text"
+                          value={editVaultWalletAddress}
+                          onChange={(e) => setEditVaultWalletAddress(e.target.value)}
+                          placeholder="0x... (42-character BSC address)"
+                          className="flex-1 p-2 rounded-xl bg-[#040812] border border-[#14233C] font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
+                        />
+                        <button
+                          onClick={() => {
+                            const clean = editVaultWalletAddress.trim();
+                            if (!clean.startsWith('0x') || clean.length !== 42) {
+                              triggerNotice('Error: Must be a valid 42-character BSC address starting with 0x');
+                              return;
+                            }
+                            onUpdatePlatformSettings({ vaultWalletAddress: clean });
+                            triggerNotice(`✓ Saved Custody Vault Address: ${clean.slice(0, 8)}...${clean.slice(-6)}`);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black text-xs cursor-pointer hover:bg-cyan-400 shadow-md"
+                        >
+                          Save Address
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-400">
+                        Updates instantly sync across all deposit modals, plan checkouts, and dynamic Web3 QR code generators.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Minimum Withdrawal Threshold */}
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <strong className="text-white text-xs block">Minimum Withdrawal Threshold</strong>
@@ -3292,23 +3404,29 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       type="number"
                       step="0.5"
                       min="1"
+                      disabled={!isSuperadmin}
                       value={editMinWithdrawal}
                       onChange={(e) => setEditMinWithdrawal(parseFloat(e.target.value) || 2)}
-                      className="w-20 p-1.5 rounded-lg bg-[#040812] border border-[#14233C] text-center font-mono font-bold text-white text-xs"
+                      className="w-20 p-1.5 rounded-lg bg-[#040812] border border-[#14233C] text-center font-mono font-bold text-white text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     <span className="text-xs text-gray-400">USDT</span>
-                    <button
-                      onClick={() => {
-                        onUpdatePlatformSettings({ minWithdrawalAmount: editMinWithdrawal });
-                        triggerNotice(`Updated minimum withdrawal to ${editMinWithdrawal} USDT`);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-500 text-black font-bold text-xs cursor-pointer"
-                    >
-                      Save
-                    </button>
+                    {isSuperadmin ? (
+                      <button
+                        onClick={() => {
+                          onUpdatePlatformSettings({ minWithdrawalAmount: editMinWithdrawal });
+                          triggerNotice(`Updated minimum withdrawal to ${editMinWithdrawal} USDT`);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-500 text-black font-bold text-xs cursor-pointer hover:bg-cyan-400"
+                      >
+                        Save
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-mono text-gray-500">🔒 Locked</span>
+                    )}
                   </div>
                 </div>
 
+                {/* 3. Withdrawal Fee */}
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <strong className="text-white text-xs block">Withdrawal Platform Fee (%)</strong>
@@ -3320,24 +3438,29 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       step="0.5"
                       min="0"
                       max="20"
+                      disabled={!isSuperadmin}
                       value={editFeePercent}
                       onChange={(e) => setEditFeePercent(parseFloat(e.target.value) || 5)}
-                      className="w-20 p-1.5 rounded-lg bg-[#040812] border border-[#14233C] text-center font-mono font-bold text-white text-xs"
+                      className="w-20 p-1.5 rounded-lg bg-[#040812] border border-[#14233C] text-center font-mono font-bold text-white text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     <span className="text-xs text-gray-400">%</span>
-                    <button
-                      onClick={() => {
-                        onUpdatePlatformSettings({ withdrawalFeePercent: editFeePercent });
-                        triggerNotice(`Updated withdrawal fee to ${editFeePercent}%`);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-500 text-black font-bold text-xs cursor-pointer"
-                    >
-                      Save
-                    </button>
+                    {isSuperadmin ? (
+                      <button
+                        onClick={() => {
+                          onUpdatePlatformSettings({ withdrawalFeePercent: editFeePercent });
+                          triggerNotice(`Updated withdrawal fee to ${editFeePercent}%`);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-500 text-black font-bold text-xs cursor-pointer hover:bg-cyan-400"
+                      >
+                        Save
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-mono text-gray-500">🔒 Locked</span>
+                    )}
                   </div>
                 </div>
 
-                {/* Promotional Welcome Popup Manager */}
+                {/* 4. Promotional Welcome Popup Manager */}
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-cyan-500/30 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -3347,63 +3470,72 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       </h4>
                       <p className="text-[10.5px] text-gray-400">Manage promotional image shown when users enter site</p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const next = !popupEnabled;
-                        setPopupEnabled(next);
-                        onUpdatePlatformSettings({ popupEnabled: next });
-                        triggerNotice(next ? 'Welcome popup enabled' : 'Welcome popup disabled');
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        popupEnabled
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/40'
-                      }`}
-                    >
-                      {popupEnabled ? 'Popup: ON' : 'Popup: OFF'}
-                    </button>
+                    {isSuperadmin ? (
+                      <button
+                        onClick={() => {
+                          const next = !popupEnabled;
+                          setPopupEnabled(next);
+                          onUpdatePlatformSettings({ popupEnabled: next });
+                          triggerNotice(next ? 'Welcome popup enabled' : 'Welcome popup disabled');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          popupEnabled
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                        }`}
+                      >
+                        {popupEnabled ? 'Popup: ON' : 'Popup: OFF'}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-mono text-gray-500">
+                        {popupEnabled ? 'Popup: ON (Locked)' : 'Popup: OFF (Locked)'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <div>
-                      <label className="text-[11px] text-gray-400 block mb-1">Upload New Popup Image:</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        id="popup-file-upload"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            const dataUrl = ev.target?.result as string;
-                            setPopupImageUrl(dataUrl);
-                            setPopupImagePreview(dataUrl);
-                          };
-                          reader.readAsDataURL(file);
-                        }}
-                      />
-                      <label
-                        htmlFor="popup-file-upload"
-                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#040812] border-2 border-dashed border-cyan-500/30 hover:border-cyan-500/60 text-cyan-400 text-xs font-bold cursor-pointer transition-all"
-                      >
-                        <Database className="w-4 h-4" />
-                        <span>Click to Select Image (JPG / PNG / WEBP)</span>
-                      </label>
-                    </div>
+                    {isSuperadmin && (
+                      <div>
+                        <label className="text-[11px] text-gray-400 block mb-1">Upload New Popup Image:</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          id="popup-file-upload"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              setPopupImageUrl(dataUrl);
+                              setPopupImagePreview(dataUrl);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                        <label
+                          htmlFor="popup-file-upload"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#040812] border-2 border-dashed border-cyan-500/30 hover:border-cyan-500/60 text-cyan-400 text-xs font-bold cursor-pointer transition-all"
+                        >
+                          <Database className="w-4 h-4" />
+                          <span>Click to Select Image (JPG / PNG / WEBP)</span>
+                        </label>
+                      </div>
+                    )}
 
                     <div>
-                      <label className="text-[11px] text-gray-400 block mb-1">Or Paste Image URL:</label>
+                      <label className="text-[11px] text-gray-400 block mb-1">Popup Image URL:</label>
                       <input
                         type="url"
+                        disabled={!isSuperadmin}
                         value={popupImageUrl.startsWith('data:') ? '' : popupImageUrl}
                         onChange={(e) => {
                           setPopupImageUrl(e.target.value);
                           setPopupImagePreview(e.target.value);
                         }}
                         placeholder="https://example.com/promo.jpg"
-                        className="w-full p-2 rounded-xl bg-[#040812] border border-[#14233C] text-white text-xs font-mono"
+                        className="w-full p-2 rounded-xl bg-[#040812] border border-[#14233C] text-white text-xs font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -3418,37 +3550,39 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        onClick={() => {
-                          onUpdatePlatformSettings({
-                            popupImageUrl,
-                            popupLinkUrl,
-                            popupEnabled
-                          });
-                          setPopupSaveMsg('✓ Popup saved successfully!');
-                          setTimeout(() => setPopupSaveMsg(''), 3000);
-                        }}
-                        className="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black text-xs cursor-pointer hover:bg-cyan-400"
-                      >
-                        Save Popup
-                      </button>
-                      {popupImageUrl && (
+                    {isSuperadmin && (
+                      <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => {
-                            setPopupImageUrl('');
-                            setPopupImagePreview('');
-                            onUpdatePlatformSettings({ popupImageUrl: '' });
-                            setPopupSaveMsg('✓ Popup image removed.');
+                            onUpdatePlatformSettings({
+                              popupImageUrl,
+                              popupLinkUrl,
+                              popupEnabled
+                            });
+                            setPopupSaveMsg('✓ Popup saved successfully!');
                             setTimeout(() => setPopupSaveMsg(''), 3000);
                           }}
-                          className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-xs font-bold cursor-pointer"
+                          className="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black text-xs cursor-pointer hover:bg-cyan-400"
                         >
-                          Remove Image
+                          Save Popup
                         </button>
-                      )}
-                      {popupSaveMsg && <span className="text-emerald-400 text-xs font-bold">{popupSaveMsg}</span>}
-                    </div>
+                        {popupImageUrl && (
+                          <button
+                            onClick={() => {
+                              setPopupImageUrl('');
+                              setPopupImagePreview('');
+                              onUpdatePlatformSettings({ popupImageUrl: '' });
+                              setPopupSaveMsg('✓ Popup image removed.');
+                              setTimeout(() => setPopupSaveMsg(''), 3000);
+                            }}
+                            className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-xs font-bold cursor-pointer"
+                          >
+                            Remove Image
+                          </button>
+                        )}
+                        {popupSaveMsg && <span className="text-emerald-400 text-xs font-bold">{popupSaveMsg}</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3456,6 +3590,99 @@ export const AdminSystemPortal: React.FC<Props> = ({
           )}
         </main>
       </div>
+
+      {/* Admin Withdrawal Approval & Payout Reference Modal */}
+      {payoutModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-lg rounded-2xl bg-[#081220] border border-cyan-500/40 p-5 sm:p-6 space-y-4 shadow-2xl animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-[#14233C] pb-3">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Approve Payout & Enter Reference Hash</span>
+              </h3>
+              <button
+                onClick={() => setPayoutModalReq(null)}
+                className="text-gray-400 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#050D18] border border-[#14233C] space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Recipient Member:</span>
+                <span className="font-bold text-white">{payoutModalReq.userName} (@{payoutModalReq.userId})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Destination BEP-20 Wallet:</span>
+                <span className="font-mono text-cyan-300 truncate max-w-[260px]">{payoutModalReq.walletAddress}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Gross Amount:</span>
+                <span className="font-mono font-bold text-white">${payoutModalReq.amount.toFixed(2)} USDT</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">5% Network Gas Fee:</span>
+                <span className="font-mono text-red-400">-${payoutModalReq.fee.toFixed(2)} USDT</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-[#14233C]">
+                <span className="font-bold text-emerald-400">Net Amount to Dispatch:</span>
+                <span className="font-mono font-black text-emerald-400 text-sm">${payoutModalReq.netAmount.toFixed(2)} USDT</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-gray-300">
+                  Payout Reference / BscScan Tx Hash <span className="text-cyan-400">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const freshHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                    setPayoutTxHash(freshHash);
+                  }}
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 font-mono cursor-pointer"
+                >
+                  ↻ Generate Fresh Hash
+                </button>
+              </div>
+              <input
+                type="text"
+                value={payoutTxHash}
+                onChange={(e) => setPayoutTxHash(e.target.value)}
+                placeholder="0x... (Enter BscScan Tx Hash or Reference ID)"
+                className="w-full p-2.5 rounded-xl bg-[#040812] border border-[#14233C] font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
+              />
+              <p className="text-[10.5px] text-gray-400">
+                This payout reference will be recorded in the database and displayed in the user's Withdrawal Ledger and history.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPayoutModalReq(null)}
+                className="px-4 py-2 rounded-xl bg-[#14233C] text-gray-300 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const cleanHash = payoutTxHash.trim() || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+                  onApproveWithdrawal(payoutModalReq.id, cleanHash);
+                  triggerNotice(`✓ Approved withdrawal of $${payoutModalReq.amount} with reference ${cleanHash.slice(0, 10)}...`);
+                  setPayoutModalReq(null);
+                }}
+                className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs cursor-pointer shadow-lg shadow-emerald-950/40"
+              >
+                ✓ Confirm & Dispatch Payout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

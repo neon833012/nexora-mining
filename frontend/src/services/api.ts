@@ -377,6 +377,7 @@ class NeonApiService {
     balanceType: 'deposit_balance' | 'withdrawable_balance' | 'active_mining_power' | 'referral_balance';
     amount: number;
     reason?: string;
+    txHash?: string;
   }) {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/users/adjust-balance`, {

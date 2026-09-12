@@ -3,6 +3,7 @@ import React from 'react';
 interface Props {
   onNavigate: (section: string) => void;
   onOpenAdminPortal?: () => void;
+  onOpenLegalPolicy?: (policyKey: 'terms' | 'privacy' | 'risk' | 'referral' | 'mining') => void;
 }
 
 const PLATFORM_LINKS = [
@@ -16,15 +17,16 @@ const PLATFORM_LINKS = [
   'Contact'
 ];
 
-const LEGAL_LINKS = [
-  'Terms & Conditions',
-  'Privacy Policy',
-  'Risk Disclosure',
-  'Referral Policy',
-  'Support'
+const LEGAL_LINKS: { label: string; key?: 'terms' | 'privacy' | 'risk' | 'referral' | 'mining'; action?: string }[] = [
+  { label: 'Terms & Conditions', key: 'terms' },
+  { label: 'Privacy Policy', key: 'privacy' },
+  { label: 'Risk Disclosure', key: 'risk' },
+  { label: 'Referral Policy', key: 'referral' },
+  { label: 'Mining & Yield Rules', key: 'mining' },
+  { label: 'Customer Support', action: 'Contact' }
 ];
 
-export const NeonFooter: React.FC<Props> = ({ onNavigate, onOpenAdminPortal }) => {
+export const NeonFooter: React.FC<Props> = ({ onNavigate, onOpenAdminPortal, onOpenLegalPolicy }) => {
   return (
     <footer className="w-full bg-[#050B14] border-t border-[#101C2E] p-5 lg:p-10">
       <div className="w-full max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
@@ -65,12 +67,20 @@ export const NeonFooter: React.FC<Props> = ({ onNavigate, onOpenAdminPortal }) =
           <h4 className="text-[13px] font-bold text-[#F8FAFC] tracking-wider uppercase">Legal & Security</h4>
           <div className="mt-3 space-y-2">
             {LEGAL_LINKS.map((legal) => (
-              <div
-                key={legal}
-                className="text-[12.5px] text-[#94A3B8] cursor-default hover:text-[#CBD5E1] transition-colors"
+              <button
+                key={legal.label}
+                type="button"
+                onClick={() => {
+                  if (legal.key && onOpenLegalPolicy) {
+                    onOpenLegalPolicy(legal.key);
+                  } else if (legal.action) {
+                    onNavigate(legal.action);
+                  }
+                }}
+                className="block text-left text-[12.5px] text-[#94A3B8] hover:text-[#00F0FF] transition-colors cursor-pointer"
               >
-                {legal}
-              </div>
+                {legal.label}
+              </button>
             ))}
           </div>
         </div>

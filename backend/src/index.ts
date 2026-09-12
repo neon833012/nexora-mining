@@ -625,7 +625,9 @@ app.post('/api/plans/subscribe', async (c) => {
       }
     }
 
-    if (!wallet || wallet.deposit_balance < chargedAmount) {
+    const isCryptoDirect = body.paymentMethod === 'crypto' || body.paymentMethod === 'bep20' || body.isDirectPayment === true;
+
+    if (!isCryptoDirect && (!wallet || wallet.deposit_balance < chargedAmount)) {
       return c.json({
         success: false,
         message: `Insufficient deposit balance ($${(wallet?.deposit_balance || 0).toFixed(2)}). Required: $${chargedAmount.toFixed(2)} USDT.`
@@ -635,6 +637,22 @@ app.post('/api/plans/subscribe', async (c) => {
     const contractId = `contract_${Date.now().toString().slice(-8)}`;
     const dailyYield = Number((planCost * (Number(dailyRatePercent) / 100)).toFixed(4));
     const txId = `PLAN-${Date.now().toString().slice(-6)}`;
+    const planTxHash = body.txHash || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+
+    const walletUpdateStatement = isCryptoDirect
+      ? c.env.DB.prepare(
+          `UPDATE wallets 
+           SET active_mining_power = ?, 
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE user_id = ?`
+        ).bind(planCost, userId)
+      : c.env.DB.prepare(
+          `UPDATE wallets 
+           SET deposit_balance = MAX(0, deposit_balance - ?), 
+               active_mining_power = ?, 
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE user_id = ?`
+        ).bind(chargedAmount, planCost, userId);
 
     const batchStatements: any[] = [
       // If upgrading, mark previous active contract as upgraded
@@ -645,13 +663,7 @@ app.post('/api/plans/subscribe', async (c) => {
       ] : []),
 
       // Deduct charged amount and set active mining power to the new plan tier
-      c.env.DB.prepare(
-        `UPDATE wallets 
-         SET deposit_balance = deposit_balance - ?, 
-             active_mining_power = ?, 
-             updated_at = CURRENT_TIMESTAMP 
-         WHERE user_id = ?`
-      ).bind(chargedAmount, planCost, userId),
+      walletUpdateStatement,
 
       // Create new active mining contract (ensures strictly 1 active contract)
       c.env.DB.prepare(
@@ -672,9 +684,9 @@ app.post('/api/plans/subscribe', async (c) => {
 
       // Record transaction
       c.env.DB.prepare(
-        `INSERT INTO transactions (id, user_id, type, amount, status) 
-         VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : 'Plan Staked', -chargedAmount)
+        `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
+         VALUES (?, ?, ?, ?, 'Settled', ?)`
+      ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : `Plan Staked (${planName})`, -chargedAmount, planTxHash)
     ];
 
     // If user has an upline referrer, reward 10% direct referral commission
@@ -691,6 +703,7 @@ app.post('/api/plans/subscribe', async (c) => {
       if (uplineUser) {
         const uplineBonus = Number((planCost * 0.10).toFixed(2));
         if (uplineBonus > 0) {
+          const refTxHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
           batchStatements.push(
             c.env.DB.prepare(
               `UPDATE wallets 
@@ -701,9 +714,9 @@ app.post('/api/plans/subscribe', async (c) => {
             ).bind(uplineBonus, uplineBonus, uplineUser.id),
 
             c.env.DB.prepare(
-              `INSERT INTO transactions (id, user_id, type, amount, status) 
-               VALUES (?, ?, '10% Direct Referral Commission', ?, 'Settled')`
-            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus)
+              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
+               VALUES (?, ?, ?, ?, 'Settled', ?)`
+            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, `10% Direct Referral Commission (${userId} - ${planName})`, uplineBonus, refTxHash)
           );
         }
       }
@@ -872,32 +885,42 @@ app.get('/api/mining/status', async (c) => {
 });
 
 // ============================================================================
-// 5. P2P Wallet Transfer (Instant 0% Network Fee)
+// 5. P2P Wallet Transfer (Instant 0% Network Fee & Atomic D1 Settlement)
 // ============================================================================
 app.post('/api/wallet/p2p-transfer', async (c) => {
   try {
-    const { senderId, recipientIdentifier, amount, fundPin, sourceWallet = 'deposit' } = await c.req.json();
-    const transferAmount = Number(amount);
-    const isFromDeposit = sourceWallet === 'deposit';
+    const body = await c.req.json();
+    const { senderId, recipientIdentifier, amount, fundPin, sourceWallet = 'deposit' } = body;
 
-    if (!senderId || !recipientIdentifier || transferAmount <= 0) {
-      return c.json({ success: false, message: 'Valid sender, recipient, and amount are required' }, 400);
+    if (!senderId || !recipientIdentifier || !amount || Number(amount) <= 0) {
+      return c.json({ success: false, message: 'Valid senderId, recipientIdentifier, and transfer amount (> 0) are required.' }, 400);
     }
 
-    // Verify Sender & PIN
-    const sender = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(senderId).first() as any;
+    const transferAmt = Number(Number(amount).toFixed(2));
+    if (transferAmt <= 0) {
+      return c.json({ success: false, message: 'Transfer amount must be greater than zero.' }, 400);
+    }
+
+    // 1. Fetch Sender (flexible case-insensitive lookup by ID, Name, or Email)
+    const cleanSender = String(senderId).trim();
+    const sender = await c.env.DB.prepare(
+      'SELECT * FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(name) = UPPER(?) OR LOWER(email) = LOWER(?) LIMIT 1'
+    ).bind(cleanSender, cleanSender, cleanSender).first() as any;
+
     if (!sender) {
-      return c.json({ success: false, message: 'Sender not found' }, 404);
-    }
-    if (fundPin && sender.fund_pin && sender.fund_pin !== fundPin) {
-      return c.json({ success: false, message: 'Incorrect 6-digit Fund PIN' }, 403);
+      return c.json({ success: false, message: 'Sender account not found.' }, 404);
     }
 
-    // Verify Recipient strictly exists in users table
-    const cleanRecipient = recipientIdentifier.trim();
+    // Verify fund PIN if sender has configured one
+    if (fundPin && sender.fund_pin && sender.fund_pin !== fundPin) {
+      return c.json({ success: false, message: 'Incorrect 6-digit Fund Security PIN.' }, 403);
+    }
+
+    // 2. Fetch Recipient (strictly search by id, name, mobile, email)
+    const cleanRecipient = String(recipientIdentifier).trim();
     const cleanRecipientNoSpaces = cleanRecipient.replace(/\s+/g, '');
     const recipient = await c.env.DB.prepare(
-      `SELECT id, name, mobile, email FROM users 
+      `SELECT * FROM users 
        WHERE (
          UPPER(id) = UPPER(?) 
          OR UPPER(name) = UPPER(?) 
@@ -909,86 +932,103 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
     ).bind(cleanRecipient, cleanRecipient, cleanRecipient, cleanRecipientNoSpaces, cleanRecipient).first() as any;
 
     if (!recipient) {
-      return c.json({ success: false, message: `Recipient User ID "${recipientIdentifier}" does not exist in the platform. P2P transfers are strictly restricted to registered members.` }, 404);
+      return c.json({ success: false, message: `Recipient User ID "${cleanRecipient}" not found in system. P2P transfers are strictly restricted to registered members.` }, 404);
     }
 
-    if (recipient.id === senderId) {
-      return c.json({ success: false, message: 'Cannot transfer funds to yourself' }, 400);
+    if (recipient.id === sender.id) {
+      return c.json({ success: false, message: 'You cannot transfer funds to yourself.' }, 400);
     }
 
-    // Check Sender Balance based on selected source wallet
-    const senderWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(senderId).first() as any;
-    if (isFromDeposit) {
-      if (!senderWallet || senderWallet.deposit_balance < transferAmount) {
+    // 3. Check Sender Balance
+    const senderWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(sender.id).first() as any;
+    if (!senderWallet) {
+      return c.json({ success: false, message: 'Sender wallet not found.' }, 404);
+    }
+
+    let senderDeductQuery: any;
+    if (sourceWallet === 'deposit') {
+      if ((senderWallet.deposit_balance || 0) < transferAmt) {
         return c.json({
           success: false,
-          message: `Insufficient deposit balance ($${(senderWallet?.deposit_balance || 0).toFixed(2)}).`
+          message: `Insufficient deposit balance ($${(senderWallet.deposit_balance || 0).toFixed(2)} USDT). Required: $${transferAmt.toFixed(2)} USDT.`
         }, 400);
       }
+      senderDeductQuery = c.env.DB.prepare(
+        'UPDATE wallets SET deposit_balance = MAX(0, deposit_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+      ).bind(transferAmt, sender.id);
     } else {
-      if (!senderWallet || senderWallet.withdrawable_balance < transferAmount) {
+      // Withdrawable balance deduction (checks sum of withdrawable_balance + referral_balance)
+      const totalAvailable = Number(((senderWallet.withdrawable_balance || 0) + (senderWallet.referral_balance || 0)).toFixed(2));
+      if (totalAvailable < transferAmt) {
         return c.json({
           success: false,
-          message: `Insufficient withdrawable balance ($${(senderWallet?.withdrawable_balance || 0).toFixed(2)}).`
+          message: `Insufficient withdrawable balance ($${totalAvailable.toFixed(2)} USDT). Required: $${transferAmt.toFixed(2)} USDT.`
         }, 400);
+      }
+
+      if ((senderWallet.withdrawable_balance || 0) >= transferAmt) {
+        senderDeductQuery = c.env.DB.prepare(
+          'UPDATE wallets SET withdrawable_balance = MAX(0, withdrawable_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+        ).bind(transferAmt, sender.id);
+      } else {
+        const fromWithdrawable = senderWallet.withdrawable_balance || 0;
+        const fromReferral = Number((transferAmt - fromWithdrawable).toFixed(2));
+        senderDeductQuery = c.env.DB.prepare(
+          'UPDATE wallets SET withdrawable_balance = 0, referral_balance = MAX(0, referral_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+        ).bind(fromReferral, sender.id);
       }
     }
 
-    const txIdSender = `P2P-OUT-${Date.now().toString().slice(-6)}`;
-    const txIdRecipient = `P2P-IN-${Date.now().toString().slice(-6)}`;
+    // 4. Ensure Recipient Wallet exists
+    const recipientWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(recipient.id).first() as any;
+    let recipientCreditQuery: any;
+    if (recipientWallet) {
+      recipientCreditQuery = c.env.DB.prepare(
+        'UPDATE wallets SET deposit_balance = deposit_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+      ).bind(transferAmt, recipient.id);
+    } else {
+      recipientCreditQuery = c.env.DB.prepare(
+        'INSERT INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield) VALUES (?, ?, 0, 0, 0, 0, 0)'
+      ).bind(recipient.id, transferAmt);
+    }
 
-    const deductStatement = isFromDeposit
-      ? c.env.DB.prepare(
-          `UPDATE wallets 
-           SET deposit_balance = deposit_balance - ?, updated_at = CURRENT_TIMESTAMP 
-           WHERE user_id = ?`
-        ).bind(transferAmount, senderId)
-      : c.env.DB.prepare(
-          `UPDATE wallets 
-           SET withdrawable_balance = withdrawable_balance - ?, updated_at = CURRENT_TIMESTAMP 
-           WHERE user_id = ?`
-        ).bind(transferAmount, senderId);
+    const txIdSender = `TX-P2P-${Date.now().toString().slice(-6)}`;
+    const txIdRecipient = `TX-P2P-REC-${Date.now().toString().slice(-6)}`;
+    const wdIdSender = `wd_p2p_${Date.now()}`;
+    const p2pHash = `p2p_tx_${Date.now().toString(36)}_${Math.random().toString(16).substring(2, 8)}`;
+    const sourceLabel = sourceWallet === 'deposit' ? 'Deposit Balance' : 'Withdrawable Balance';
 
-    const senderTxType = isFromDeposit
-      ? `P2P Deposit Transfer to ${recipient.name}`
-      : `P2P Transfer to ${recipient.name}`;
-    const recipientTxType = isFromDeposit
-      ? `P2P Deposit Received from ${sender.name || senderId}`
-      : `P2P Transfer Received from ${sender.name || senderId}`;
-
-    // Execute atomic transfer (0% fee)
+    // 5. Execute Atomic SQL Batch in Cloudflare D1
     await c.env.DB.batch([
-      // Deduct from selected sender balance
-      deductStatement,
-
-      // Credit to recipient deposit balance
+      // Deduct sender
+      senderDeductQuery,
+      // Credit recipient deposit balance
+      recipientCreditQuery,
+      // Sender transaction statement
       c.env.DB.prepare(
-        `UPDATE wallets 
-         SET deposit_balance = deposit_balance + ?, updated_at = CURRENT_TIMESTAMP 
-         WHERE user_id = ?`
-      ).bind(transferAmount, recipient.id),
-
-      // Sender Ledger Outflow
+        'INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, "Settled", ?)'
+      ).bind(txIdSender, sender.id, `P2P Transfer to @${recipient.id} [${sourceLabel}] (0% Fee)`, -transferAmt, p2pHash),
+      // Recipient transaction statement
       c.env.DB.prepare(
-        `INSERT INTO transactions (id, user_id, type, amount, status) 
-         VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txIdSender, senderId, senderTxType, -transferAmount),
-
-      // Recipient Ledger Inflow
+        'INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, "Settled", ?)'
+      ).bind(txIdRecipient, recipient.id, `P2P Transfer Received from @${sender.id} (0% Fee)`, transferAmt, p2pHash),
+      // Sender withdrawal history entry
       c.env.DB.prepare(
-        `INSERT INTO transactions (id, user_id, type, amount, status) 
-         VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txIdRecipient, recipient.id, recipientTxType, transferAmount)
+        'INSERT INTO withdrawal_requests (id, user_id, amount, fee, net_amount, wallet_address, tx_hash, status) VALUES (?, ?, ?, 0, ?, ?, ?, "approved")'
+      ).bind(wdIdSender, sender.id, transferAmt, transferAmt, `P2P Transfer to @${recipient.id}`, p2pHash)
     ]);
 
-    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(senderId).first();
+    const updatedSenderWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(sender.id).first();
 
-    const sourceLabel = isFromDeposit ? 'Deposit Balance' : 'Withdrawable Balance';
     return c.json({
       success: true,
-      message: `P2P Transfer of $${transferAmount.toFixed(2)} USDT from ${sourceLabel} to ${recipient.name} completed instantly with 0% fee!`,
-      recipient: { id: recipient.id, name: recipient.name },
-      updatedWallet
+      message: `Successfully transferred $${transferAmt.toFixed(2)} USDT to @${recipient.id}! Recipient received 100% in Deposit Balance.`,
+      updatedWallet: updatedSenderWallet,
+      recipient: {
+        id: recipient.id,
+        name: recipient.name
+      },
+      txHash: p2pHash
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -1012,7 +1052,11 @@ app.post('/api/wallet/withdraw-request', async (c) => {
     }
 
     // Verify Fund PIN
-    const user = await c.env.DB.prepare('SELECT fund_pin FROM users WHERE id = ?').bind(userId).first() as any;
+    const cleanUser = String(userId).trim();
+    const user = await c.env.DB.prepare(
+      'SELECT * FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(name) = UPPER(?) LIMIT 1'
+    ).bind(cleanUser, cleanUser).first() as any;
+
     if (!user) {
       return c.json({ success: false, message: 'User not found' }, 404);
     }
@@ -1020,12 +1064,14 @@ app.post('/api/wallet/withdraw-request', async (c) => {
       return c.json({ success: false, message: 'Incorrect 6-digit Fund PIN' }, 403);
     }
 
-    // Check Withdrawable Balance
-    const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first() as any;
-    if (!wallet || wallet.withdrawable_balance < withdrawAmount) {
+    // Check Withdrawable Balance (withdrawable_balance + referral_balance)
+    const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(user.id).first() as any;
+    const totalAvailable = Number(((wallet?.withdrawable_balance || 0) + (wallet?.referral_balance || 0)).toFixed(2));
+
+    if (!wallet || totalAvailable < withdrawAmount) {
       return c.json({
         success: false,
-        message: `Insufficient withdrawable balance ($${(wallet?.withdrawable_balance || 0).toFixed(2)}).`
+        message: `Insufficient withdrawable balance ($${totalAvailable.toFixed(2)} USDT).`
       }, 400);
     }
 
@@ -1034,31 +1080,47 @@ app.post('/api/wallet/withdraw-request', async (c) => {
     const reqId = `wd_${Date.now().toString().slice(-6)}`;
     const txId = `WD-${Date.now().toString().slice(-6)}`;
 
-    // Execute atomic batch
-    await c.env.DB.batch([
-      // Deduct from withdrawable balance & record total withdrawn
-      c.env.DB.prepare(
+    // Determine deduction query
+    let deductQuery: any;
+    if ((wallet.withdrawable_balance || 0) >= withdrawAmount) {
+      deductQuery = c.env.DB.prepare(
         `UPDATE wallets 
          SET withdrawable_balance = withdrawable_balance - ?, 
              total_withdrawn = total_withdrawn + ?, 
              updated_at = CURRENT_TIMESTAMP 
          WHERE user_id = ?`
-      ).bind(withdrawAmount, withdrawAmount, userId),
+      ).bind(withdrawAmount, withdrawAmount, user.id);
+    } else {
+      const fromWithdrawable = wallet.withdrawable_balance || 0;
+      const fromReferral = Number((withdrawAmount - fromWithdrawable).toFixed(2));
+      deductQuery = c.env.DB.prepare(
+        `UPDATE wallets 
+         SET withdrawable_balance = 0, 
+             referral_balance = MAX(0, referral_balance - ?), 
+             total_withdrawn = total_withdrawn + ?, 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE user_id = ?`
+      ).bind(fromReferral, withdrawAmount, user.id);
+    }
 
-      // Create withdrawal request
+    // Execute atomic batch
+    await c.env.DB.batch([
+      deductQuery,
+
+      // Create withdrawal request (pending)
       c.env.DB.prepare(
         `INSERT INTO withdrawal_requests (id, user_id, amount, fee, net_amount, wallet_address, status) 
          VALUES (?, ?, ?, ?, ?, ?, 'pending')`
-      ).bind(reqId, userId, withdrawAmount, fee, netAmount, walletAddress.trim()),
+      ).bind(reqId, user.id, withdrawAmount, fee, netAmount, walletAddress.trim()),
 
-      // Record transaction
+      // Record transaction (Pending)
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status) 
          VALUES (?, ?, 'Payout Request', ?, 'Pending')`
-      ).bind(txId, userId, -withdrawAmount)
+      ).bind(txId, user.id, -withdrawAmount)
     ]);
 
-    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(user.id).first();
 
     return c.json({
       success: true,
@@ -1262,7 +1324,7 @@ app.post('/api/admin/users/purge-inactive', async (c) => {
 // Admin Balance Adjustment (Credit / Debit user balance directly)
 app.post('/api/admin/users/adjust-balance', async (c) => {
   try {
-    const { userId, balanceType = 'deposit_balance', amount, reason = 'Admin Adjustment' } = await c.req.json();
+    const { userId, balanceType = 'deposit_balance', amount, reason = 'Admin Adjustment', txHash } = await c.req.json();
     const validFields = ['deposit_balance', 'withdrawable_balance', 'active_mining_power', 'referral_balance'];
     if (!userId || !validFields.includes(balanceType)) {
       return c.json({ success: false, message: 'Valid userId and balanceType required' }, 400);
@@ -1273,6 +1335,16 @@ app.post('/api/admin/users/adjust-balance', async (c) => {
       return c.json({ success: false, message: 'Valid non-zero amount required' }, 400);
     }
 
+    const cleanReason = String(reason || '');
+    const isDeposit = cleanReason.toLowerCase().includes('deposit');
+    const txType = isDeposit
+      ? 'BEP-20 USDT Deposit (BSC)'
+      : cleanReason.startsWith('Admin Adjustment') || cleanReason.startsWith('Purchased') || cleanReason.startsWith('Plan')
+        ? cleanReason
+        : `Admin Adjustment: ${cleanReason}`;
+
+    const txHashToStore = (txHash && String(txHash).trim()) || (isDeposit ? ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')) : null);
+
     const txId = `ADJ-${Date.now().toString().slice(-6)}`;
     await c.env.DB.batch([
       c.env.DB.prepare(
@@ -1280,12 +1352,12 @@ app.post('/api/admin/users/adjust-balance', async (c) => {
       ).bind(numAmount, userId),
 
       c.env.DB.prepare(
-        `INSERT INTO transactions (id, user_id, type, amount, status) VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txId, userId, `Admin Adjustment: ${reason}`, numAmount)
+        `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, 'Settled', ?)`
+      ).bind(txId, userId, txType, numAmount, txHashToStore)
     ]);
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
-    return c.json({ success: true, message: `Wallet ${balanceType} adjusted by $${numAmount}`, updatedWallet });
+    return c.json({ success: true, message: `Wallet ${balanceType} adjusted by $${numAmount}`, updatedWallet, txHash: txHashToStore });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
@@ -1331,11 +1403,19 @@ app.post('/api/admin/withdrawals/action', async (c) => {
     }
 
     if (action === 'approve') {
-      await c.env.DB.prepare(
-        `UPDATE withdrawal_requests SET status = 'approved', tx_hash = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?`
-      ).bind(txHash || `0x_payout_${Date.now()}`, requestId).run();
+      const cleanTx = (txHash && String(txHash).trim()) || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          `UPDATE withdrawal_requests SET status = 'approved', tx_hash = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?`
+        ).bind(cleanTx, requestId),
 
-      return c.json({ success: true, message: 'Withdrawal approved and marked settled on blockchain' });
+        // Update corresponding transaction in user's ledger to Settled with tx_hash
+        c.env.DB.prepare(
+          `UPDATE transactions SET status = 'Settled', tx_hash = ? WHERE user_id = ? AND type = 'Payout Request' AND status = 'Pending'`
+        ).bind(cleanTx, req.user_id)
+      ]);
+
+      return c.json({ success: true, message: 'Withdrawal approved and marked settled on blockchain', txHash: cleanTx });
     } else {
       // Reject: refund amount back to user's withdrawable balance
       await c.env.DB.batch([
@@ -1374,10 +1454,68 @@ app.get('/api/admin/deposits', async (c) => {
   }
 });
 
+// Public / Client Get Platform Settings
+app.get('/api/settings', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
+    const settingsMap: Record<string, string> = {
+      min_deposit: '2.0',
+      min_withdrawal: '2.0',
+      withdrawal_fee_percent: '5.0',
+      p2p_fee_percent: '0.0',
+      vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+      vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+    };
+    for (const row of results as any[]) {
+      settingsMap[row.key] = row.value;
+      if (row.key === 'vault_address') {
+        settingsMap.vaultWalletAddress = row.value;
+      }
+      if (row.key === 'vaultWalletAddress') {
+        settingsMap.vault_address = row.value;
+      }
+    }
+    return c.json({ success: true, settings: settingsMap });
+  } catch (err: any) {
+    return c.json({
+      success: true,
+      settings: {
+        min_deposit: '2.0',
+        min_withdrawal: '2.0',
+        withdrawal_fee_percent: '5.0',
+        vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+        vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+      }
+    });
+  }
+});
+
+// Admin Get Platform Settings
+app.get('/api/admin/settings', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
+    const settingsMap: Record<string, string> = {};
+    for (const row of results as any[]) {
+      settingsMap[row.key] = row.value;
+    }
+    return c.json({ success: true, settings: settingsMap });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 // Admin Update Platform Settings (Fees, Min limits, Vault Address)
 app.put('/api/admin/settings', async (c) => {
   try {
     const body = await c.req.json();
+    const adminRole = c.req.header('X-Admin-Role') || body.adminRole || body.role;
+    if (adminRole === 'subadmin') {
+      return c.json({
+        success: false,
+        message: 'Forbidden: Sub-Admin accounts have read-only audit permissions. Only Master Super Admin can modify system settings.'
+      }, 403);
+    }
+
     if (body.key && body.value !== undefined) {
       await c.env.DB.prepare(
         `INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -1386,6 +1524,7 @@ app.put('/api/admin/settings', async (c) => {
     } else {
       const statements: any[] = [];
       for (const [key, value] of Object.entries(body)) {
+        if (key === 'adminRole' || key === 'role') continue;
         statements.push(
           c.env.DB.prepare(
             `INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
