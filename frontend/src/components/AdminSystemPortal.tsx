@@ -1647,8 +1647,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           {liveLiabilityDesk.userRows.map((row, idx) => (
                             <tr key={`live-user-row-${row.user.id || idx}`} className="hover:bg-[#081220]/60 transition-colors">
                               <td className="py-2.5 px-3">
-                                <span className="font-bold text-white block">{row.user.name}</span>
-                                <span className="text-[9.5px] text-[#64748B]">{row.user.id} · {row.user.mobile}</span>
+                                <span className="font-mono font-bold text-cyan-400 block">{row.user.id}</span>
+                                <span className="text-[9.5px] text-[#64748B]">{row.user.mobile}</span>
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="text-white font-bold block">{row.planName}</span>
@@ -1813,8 +1813,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <span className="font-bold text-white text-xs block">{user.name}</span>
-                            <span className="text-[10px] font-mono text-cyan-400">{user.id}</span>
+                            <span className="font-mono font-black text-cyan-400 text-xs block">{user.id}</span>
+                            {user.name && user.name.toUpperCase() !== user.id.toUpperCase() && !user.name.toUpperCase().startsWith('NEON') && user.name.toLowerCase() !== 'neon member' && (
+                              <span className="font-bold text-gray-300 text-[11px] block">{user.name}</span>
+                            )}
                             <span className="text-[10px] text-gray-400 block">{user.mobile}</span>
                           </div>
                           {user.status === 'active' || user.stakedAmount > 0 ? (
@@ -1916,7 +1918,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             >
                               <td className="py-3 px-3">
                                 <span className="font-mono font-black text-cyan-400 block">{user.id}</span>
-                                <span className="text-white font-semibold">{user.name}</span>
+                                {user.name && user.name.toUpperCase() !== user.id.toUpperCase() && !user.name.toUpperCase().startsWith('NEON') && user.name.toLowerCase() !== 'neon member' && (
+                                  <span className="text-gray-400 font-medium text-[11px] block">{user.name}</span>
+                                )}
                               </td>
                               <td className="py-3 px-3">
                                 <span className="text-gray-300 block text-[11px]">{user.email}</span>
@@ -2037,8 +2041,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           ID
                         </div>
                         <div>
-                          <h4 className="text-sm font-black text-white">{selectedUserDetail.name}</h4>
-                          <span className="text-[11px] font-mono text-cyan-400">{selectedUserDetail.id}</span>
+                          <h4 className="text-sm font-black text-cyan-400 font-mono">{selectedUserDetail.id}</h4>
+                          {selectedUserDetail.name && selectedUserDetail.name.toUpperCase() !== selectedUserDetail.id.toUpperCase() && !selectedUserDetail.name.toUpperCase().startsWith('NEON') && selectedUserDetail.name.toLowerCase() !== 'neon member' && (
+                            <span className="text-[11px] font-semibold text-gray-300 block">{selectedUserDetail.name}</span>
+                          )}
                         </div>
                       </div>
                       <button

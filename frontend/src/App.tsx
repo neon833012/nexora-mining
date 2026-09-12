@@ -346,6 +346,7 @@ export const App: React.FC = () => {
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [preFilledRefCode, setPreFilledRefCode] = useState('');
   const [userUplineCode, setUserUplineCode] = useState<string>(() => loadStorageStr('neon_upline_code', ''));
+  const [userReferralCode, setUserReferralCode] = useState<string>(() => loadStorageStr('neon_referral_code', ''));
 
   // 3-Second Promotional Plans Showcase Popup Modal State
   const [showPromoPopup, setShowPromoPopup] = useState(false);
@@ -662,6 +663,7 @@ export const App: React.FC = () => {
       localStorage.setItem('neon_user_email', userEmail);
       localStorage.setItem('neon_fund_password', userFundPassword);
       localStorage.setItem('neon_upline_code', userUplineCode);
+      localStorage.setItem('neon_referral_code', userReferralCode);
       localStorage.setItem('neon_total_balance', String(totalBalance));
       localStorage.setItem('neon_deposit_balance', String(depositBalance));
       localStorage.setItem('neon_mining_power', String(activeMiningPower));
@@ -870,7 +872,7 @@ export const App: React.FC = () => {
           setTotalBalance(+(finalDep + withdr + ref).toFixed(2));
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
-          if (res.user.referralCode) setPreFilledRefCode(res.user.referralCode);
+          if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
         } else if (res && !res.success) {
           // Stale / invalid session (user deleted or not in D1)
           setIsLoggedIn(false);
@@ -936,6 +938,13 @@ export const App: React.FC = () => {
             invitedBy: 'Direct (You)'
           }));
           setReferredUsers(mappedDownlines);
+
+          const totalEarnedCommission = mappedDownlines.reduce((sum, d) => sum + (d.commissionEarned || 0), 0);
+          if (totalEarnedCommission > 0) {
+            setReferralIncome((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
+            setReferralBalance((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
+            setAvailableWithdrawal((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
+          }
 
           const l1Volume = mappedDownlines.reduce((sum, d) => sum + d.planAmount, 0);
           setTeamTurnover((prev) => ({
@@ -2192,7 +2201,8 @@ export const App: React.FC = () => {
     mobile: string,
     fundPin?: string,
     email?: string,
-    referralCode?: string
+    referralCode?: string,
+    ownReferralCode?: string
   ) => {
     const cleanId = name.toUpperCase();
     setUserName(name);
@@ -2202,7 +2212,9 @@ export const App: React.FC = () => {
     if (referralCode) {
       const cleanRef = referralCode.toUpperCase();
       setUserUplineCode(cleanRef);
-      setPreFilledRefCode(cleanRef);
+    }
+    if (ownReferralCode) {
+      setUserReferralCode(ownReferralCode.toUpperCase());
     }
     // Check if account is suspended in admin directory
     const existing = adminUsers.find(
@@ -2680,11 +2692,6 @@ export const App: React.FC = () => {
                         >
                           <ArrowDown className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                           <span className="truncate">Deposit History</span>
-                          {depositRecords.length > 0 && (
-                            <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9px] font-mono font-bold shrink-0">
-                              {depositRecords.length}
-                            </span>
-                          )}
                         </button>
                       </div>
                     </div>
@@ -2957,10 +2964,10 @@ export const App: React.FC = () => {
               )
             ) : (
               <ReferralNetworkSection
-                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${userName.toUpperCase()}`}
+                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${(userReferralCode || userName).toUpperCase()}`}
                 isAccountActive={activeMiningPower > 0}
                 onCopyReferral={() => {
-                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${userName.toUpperCase()}`;
+                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${(userReferralCode || userName).toUpperCase()}`;
                   navigator.clipboard?.writeText(link);
                   showToast('✓ Referral link copied to clipboard!');
                 }}

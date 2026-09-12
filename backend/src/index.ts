@@ -91,6 +91,25 @@ app.post('/api/auth/register', async (c) => {
     const userId = `NEON${Math.floor(10000 + Math.random() * 90000)}`;
     const referralCode = `NEX${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
+    // Resolve uplineCode whether it is a referral code (e.g. NEX...) or a User ID (e.g. NEON...)
+    let uplineUserId: string | null = null;
+    if (uplineCode) {
+      const cleanRef = String(uplineCode).trim().toUpperCase();
+      const uplineMatch = await c.env.DB.prepare(
+        'SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ? LIMIT 1'
+      ).bind(cleanRef, cleanRef).first() as any;
+      if (uplineMatch) {
+        uplineUserId = uplineMatch.id;
+      } else {
+        uplineUserId = cleanRef;
+      }
+    }
+
+    // Keep name equal to userId unless an actual custom personal name was submitted
+    const officialName = (name && !name.toUpperCase().startsWith('NEON') && name.toLowerCase() !== 'neon member')
+      ? name.trim()
+      : userId;
+
     // Insert user and initialize wallet atomically
     await c.env.DB.batch([
       c.env.DB.prepare(
@@ -98,12 +117,12 @@ app.post('/api/auth/register', async (c) => {
          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
       ).bind(
         userId,
-        name || 'Neon Member',
+        officialName,
         cleanMobile || `+00 ${userId.replace('NEON', '9')}`,
         cleanEmail,
         password,
         fundPin,
-        uplineCode || null,
+        uplineUserId,
         referralCode
       ),
 
@@ -115,12 +134,12 @@ app.post('/api/auth/register', async (c) => {
 
     const user = {
       id: userId,
-      name: name || 'Neon Member',
+      name: officialName,
       mobile: cleanMobile || `+00 ${userId.replace('NEON', '9')}`,
       email: cleanEmail,
       referralCode,
       role: 'user',
-      uplineCode: uplineCode || null
+      uplineCode: uplineUserId
     };
 
     const wallet = {
@@ -501,20 +520,28 @@ app.post('/api/deposit/verify-tx', async (c) => {
 
     // If upline exists, reward Level 1 referral bonus (10%)
     if (user && user.upline_code) {
-      const uplineBonus = Number((order.amount * 0.10).toFixed(2));
-      if (uplineBonus > 0) {
-        batchStatements.push(
-          c.env.DB.prepare(
-            `UPDATE wallets 
-             SET referral_balance = referral_balance + ?, updated_at = CURRENT_TIMESTAMP 
-             WHERE user_id = ?`
-          ).bind(uplineBonus, user.upline_code),
+      const uplineUser = await c.env.DB.prepare(
+        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
+      ).bind(user.upline_code.toUpperCase(), user.upline_code.toUpperCase()).first() as any;
 
-          c.env.DB.prepare(
-            `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
-             VALUES (?, ?, 'Referral Commission (L1)', ?, 'Settled', ?)`
-          ).bind(`REF-${Date.now().toString().slice(-6)}`, user.upline_code, uplineBonus, cleanTx)
-        );
+      if (uplineUser) {
+        const uplineBonus = Number((order.amount * 0.10).toFixed(2));
+        if (uplineBonus > 0) {
+          batchStatements.push(
+            c.env.DB.prepare(
+              `UPDATE wallets 
+               SET referral_balance = referral_balance + ?, 
+                   withdrawable_balance = withdrawable_balance + ?, 
+                   updated_at = CURRENT_TIMESTAMP 
+               WHERE user_id = ?`
+            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+
+            c.env.DB.prepare(
+              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
+               VALUES (?, ?, 'Referral Commission (L1)', ?, 'Settled', ?)`
+            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus, cleanTx)
+          );
+        }
       }
     }
 
@@ -649,6 +676,38 @@ app.post('/api/plans/subscribe', async (c) => {
          VALUES (?, ?, ?, ?, 'Settled')`
       ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : 'Plan Staked', -chargedAmount)
     ];
+
+    // If user has an upline referrer, reward 10% direct referral commission
+    // Credited to BOTH referral_balance (Referral Income) AND withdrawable_balance (Withdrawable)
+    const subscriberUser = await c.env.DB.prepare(
+      'SELECT upline_code FROM users WHERE id = ?'
+    ).bind(userId).first() as any;
+
+    if (subscriberUser && subscriberUser.upline_code) {
+      const uplineUser = await c.env.DB.prepare(
+        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
+      ).bind(subscriberUser.upline_code.toUpperCase(), subscriberUser.upline_code.toUpperCase()).first() as any;
+
+      if (uplineUser) {
+        const uplineBonus = Number((planCost * 0.10).toFixed(2));
+        if (uplineBonus > 0) {
+          batchStatements.push(
+            c.env.DB.prepare(
+              `UPDATE wallets 
+               SET referral_balance = referral_balance + ?, 
+                   withdrawable_balance = withdrawable_balance + ?, 
+                   updated_at = CURRENT_TIMESTAMP 
+               WHERE user_id = ?`
+            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+
+            c.env.DB.prepare(
+              `INSERT INTO transactions (id, user_id, type, amount, status) 
+               VALUES (?, ?, '10% Direct Referral Commission', ?, 'Settled')`
+            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus)
+          );
+        }
+      }
+    }
 
     await c.env.DB.batch(batchStatements);
 

@@ -362,8 +362,10 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                                 {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                               </div>
                               <div>
-                                <div className="font-bold text-white text-[12px]">{user.name}</div>
-                                <div className="text-[10px] font-mono text-[#64748B]">{user.id}</div>
+                                <div className="font-bold text-white text-[12px] font-mono">{user.id}</div>
+                                {user.name && user.name.toUpperCase() !== user.id.toUpperCase() && !user.name.toUpperCase().startsWith('NEON') && user.name.toLowerCase() !== 'neon member' && (
+                                  <div className="text-[10px] text-[#94A3B8]">{user.name}</div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -424,8 +426,10 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                             {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                           </div>
                           <div>
-                            <div className="font-bold text-white text-[12px]">{user.name}</div>
-                            <div className="text-[9.5px] font-mono text-[#64748B]">{user.id}</div>
+                            <div className="font-bold text-white text-[12px] font-mono">{user.id}</div>
+                            {user.name && user.name.toUpperCase() !== user.id.toUpperCase() && !user.name.toUpperCase().startsWith('NEON') && user.name.toLowerCase() !== 'neon member' && (
+                              <div className="text-[9.5px] text-[#94A3B8]">{user.name}</div>
+                            )}
                           </div>
                         </div>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold border ${levelBadgeClass}`}>

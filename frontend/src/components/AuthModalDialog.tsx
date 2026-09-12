@@ -25,7 +25,7 @@ interface Props {
   isSignUp: boolean;
   initialReferralCode?: string;
   onDismiss: () => void;
-  onAuthSuccess: (userName: string, mobile: string, fundPin?: string, email?: string, referralCode?: string) => void;
+  onAuthSuccess: (userName: string, mobile: string, fundPin?: string, email?: string, referralCode?: string, ownReferralCode?: string) => void;
   onSwitchAuthMode: () => void;
 }
 
@@ -54,6 +54,7 @@ export const AuthModalDialog: React.FC<Props> = ({
     mobile: string;
     joiningDate: string;
     referral: string;
+    ownReferralCode?: string;
   } | null>(null);
   const [copiedId, setCopiedId] = useState(false);
 
@@ -100,11 +101,9 @@ export const AuthModalDialog: React.FC<Props> = ({
         }
 
         const fullMobile = `${selectedCountry.code} ${mobileNumber.trim()}`;
-        const randomSix = Math.floor(100000 + Math.random() * 900000);
-        const desiredName = `NEON${randomSix}`;
 
         const res = await nexoraApi.register({
-          name: desiredName,
+          name: '',
           mobile: fullMobile,
           email: email.trim().toLowerCase(),
           password: loginPassword,
@@ -112,7 +111,7 @@ export const AuthModalDialog: React.FC<Props> = ({
         });
 
         if (res && res.success && res.user) {
-          const assignedId = res.user.id || desiredName;
+          const assignedId = res.user.id;
           const now = new Date();
           const joiningDate = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
 
@@ -121,7 +120,8 @@ export const AuthModalDialog: React.FC<Props> = ({
             email: email.trim().toLowerCase(),
             mobile: fullMobile,
             joiningDate,
-            referral: referralCode.trim() || ''
+            referral: referralCode.trim() || '',
+            ownReferralCode: res.user.referralCode || ''
           });
           setSignupSuccess(true);
         } else if (res?.message?.toLowerCase().includes('already registered')) {
@@ -149,7 +149,7 @@ export const AuthModalDialog: React.FC<Props> = ({
         });
 
         if (res && res.success && res.user) {
-          onAuthSuccess(res.user.id, res.user.mobile || '', undefined, res.user.email || identifier, res.user.referralCode);
+          onAuthSuccess(res.user.id, res.user.mobile || '', undefined, res.user.email || identifier, res.user.uplineCode || undefined, res.user.referralCode || undefined);
         } else {
           if (res?.suspended || res?.message?.toLowerCase().includes('suspended')) {
             setApiError('Your account has been suspended due to irregular mining activity and security policy violations. Please contact support@neon-mining.io for assistance.');
@@ -221,7 +221,8 @@ export const AuthModalDialog: React.FC<Props> = ({
                     successData.mobile,
                     undefined,
                     successData.email,
-                    successData.referral || undefined
+                    successData.referral || undefined,
+                    successData.ownReferralCode || undefined
                   );
                 }
                 onDismiss();
@@ -340,7 +341,8 @@ export const AuthModalDialog: React.FC<Props> = ({
                     successData.mobile,
                     undefined,
                     successData.email,
-                    successData.referral || undefined
+                    successData.referral || undefined,
+                    successData.ownReferralCode || undefined
                   );
                 }
                 onDismiss();
