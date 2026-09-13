@@ -976,10 +976,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
     { id: 'treasury', label: 'Treasury', icon: Landmark, badge: null, category: 'Finance' },
     {
       id: 'support',
-      label: 'Support & PINs',
+      label: 'Live Chat Support',
       icon: Headphones,
-      badge: waitingChatsCount > 0 ? `🔴 ${waitingChatsCount}` : (pendingTickets.length || null),
-      alert: waitingChatsCount > 0 || pendingTickets.length > 0,
+      badge: waitingChatsCount > 0 ? `🔴 ${waitingChatsCount}` : (liveSessions.length > 0 ? `${liveSessions.length}` : null),
+      alert: waitingChatsCount > 0,
       category: 'Security'
     },
     { id: 'subadmins', label: 'Staff (RBAC)', icon: ShieldCheck, badge: subAdmins.length, category: 'Security' },
@@ -3040,6 +3040,15 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                       >
                                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                                         <span>✓ Query Resolved</span>
+                                      </button>
+                                    )}
+                                    {selectedSession.status === 'waiting_admin' && (
+                                      <button
+                                        onClick={() => handleSendAdminReply(selectedSession, '👋 Hello! Support specialist has connected to your session. How may I assist you today?')}
+                                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 animate-bounce"
+                                      >
+                                        <Headphones className="w-3.5 h-3.5" />
+                                        <span>⚡ Accept & Connect</span>
                                       </button>
                                     )}
                                     <button

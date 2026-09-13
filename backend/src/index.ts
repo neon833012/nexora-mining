@@ -385,7 +385,7 @@ app.post('/api/auth/forgot-password', async (c) => {
       VALUES (?, ?, ?, ?, 0)
     `).bind(resetToken, user.id, user.email, expiresAt).run();
 
-    const resetLink = `https://nexora-mining.pages.dev/?reset_token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+    const resetLink = `https://neoncryptomining.com/?reset_token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     // Dispatch real email via Resend API
     let emailSent = false;

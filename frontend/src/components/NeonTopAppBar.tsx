@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Globe, ShieldCheck, Smartphone } from 'lucide-react';
 import { LanguageCode, UserRole } from '../types/mining';
 import { NavRoute } from './BottomNavBar';
@@ -46,12 +46,27 @@ export const NeonTopAppBar: React.FC<Props> = ({
   onNavigateHome
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const langMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langMenuRef.current && !langMenuRef.current.contains(event.target as Node)) {
+        setShowLangMenu(false);
+      }
+    };
+    if (showLangMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showLangMenu]);
 
   const currentLangObj = LANGUAGES_LIST.find((l) => l.code === currentLang) || LANGUAGES_LIST[0];
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#030712]/95 backdrop-blur-md border-b border-[#162338]">
-      <div className="w-full max-w-7xl mx-auto px-2 sm:px-3.5 lg:px-8 py-2 sm:py-2.5 flex items-center justify-between gap-1 sm:gap-2 flex-nowrap min-h-[48px] sm:min-h-[54px] max-h-[54px] overflow-hidden">
+    <header className="sticky top-0 z-50 w-full bg-[#030712]/95 backdrop-blur-md border-b border-[#162338]">
+      <div className="w-full max-w-7xl mx-auto px-2 sm:px-3.5 lg:px-8 py-2 sm:py-2.5 flex items-center justify-between gap-1 sm:gap-2 flex-nowrap min-h-[48px] sm:min-h-[54px]">
         {/* Left: Brand Logo (App-style, no hamburger) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <div
@@ -131,7 +146,7 @@ export const NeonTopAppBar: React.FC<Props> = ({
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* 25-Language Selector Dropdown - Only visible on Home Screen */}
           {activeRoute === 'home' && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" ref={langMenuRef}>
               <button
                 onClick={() => setShowLangMenu(!showLangMenu)}
                 className="flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-lg bg-[#0A1322] border border-[#16243A] text-[10.5px] sm:text-[11.5px] font-semibold text-[#CBD5E1] hover:border-[#00F0FF]/50 transition-colors cursor-pointer whitespace-nowrap shrink-0"
@@ -143,8 +158,8 @@ export const NeonTopAppBar: React.FC<Props> = ({
               </button>
 
               {showLangMenu && (
-                <div className="absolute right-0 mt-1 w-52 max-h-[340px] overflow-y-auto rounded-xl bg-[#0C1424] border border-[#1F304B] py-1 shadow-2xl z-50 animate-scaleUp">
-                  <div className="px-3 py-1.5 border-b border-[#182840] text-[10px] font-bold text-[#00F0FF] uppercase tracking-wider">
+                <div className="absolute right-0 mt-2 w-52 max-h-[340px] overflow-y-auto rounded-xl bg-[#0C1424] border border-[#00F0FF]/40 py-1 shadow-[0_10px_35px_rgba(0,0,0,0.8)] z-[100] animate-scaleUp">
+                  <div className="px-3 py-1.5 border-b border-[#182840] text-[10px] font-bold text-[#00F0FF] uppercase tracking-wider sticky top-0 bg-[#0C1424]">
                     {getTranslation('selectLanguage', currentLang, 'Select Language (25)')}
                   </div>
                   {LANGUAGES_LIST.map((lang) => (

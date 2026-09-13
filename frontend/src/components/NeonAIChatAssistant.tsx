@@ -61,6 +61,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 ];
 
 const PRESET_PROMPTS = [
+  '📄 Download Official PDF Business Plan',
   'What are all 7 official mining plans?',
   'What is minimum withdrawal & fee?',
   'How does 24H proof-of-activity cycle work?',
@@ -438,10 +439,26 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     setIsTyping(true);
 
     setTimeout(() => {
-      let aiResponse = '';
+      // 0. PDF / PRESENTATION / WHITEPAPER / BUSINESS PLAN
+      if (
+        lower.includes('pdf') ||
+        lower.includes('presentation') ||
+        lower.includes('whitepaper') ||
+        lower.includes('business plan') ||
+        lower.includes('ppt') ||
+        lower.includes('brochure') ||
+        lower.includes('deck')
+      ) {
+        aiResponse =
+          "📄 **Official Neon Mining Presentation & Business Plan PDF:**\n\n" +
+          "You can view and download our complete 16-page high-definition corporate presentation deck below:\n\n" +
+          "👉 **[📥 Download Official PDF Presentation](/Neon_Mining_Official_Presentation.pdf)**\n\n" +
+          "👉 **[🌐 View Fullscreen HD Slide Deck](/neon_mining_presentation.html)**\n\n" +
+          "Contains: Infrastructure, 7 Mining Node Tiers, 24H Proof-of-Activity Engine, 3-Tier Referral Rewards (10%-5%-2%), Team Turnover Boosters, and Security Protocols.";
+      }
 
       // 1. ALL 7 MINING PLANS
-      if (
+      else if (
         lower.includes('plan') ||
         lower.includes('tier') ||
         lower.includes('package') ||
