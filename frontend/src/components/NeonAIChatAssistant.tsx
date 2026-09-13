@@ -251,9 +251,10 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     };
   }, [sessionId, userIdentifier]);
 
-  // Real-time Cloudflare D1 Polling when Chat Drawer is Open
+  // Real-time Cloudflare D1 Polling when Chat Drawer is Open or Human Support Requested
   useEffect(() => {
-    if (!isOpen) return;
+    const shouldPoll = isOpen || isWaitingHuman || hasHumanJoined;
+    if (!shouldPoll) return;
 
     const pollChat = async () => {
       try {
@@ -276,8 +277,10 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
             setIsWaitingHuman(true);
             setHasHumanJoined(false);
           } else {
+            // resolved or bot -> reset back to normal mode (Green Blink)
             setIsWaitingHuman(false);
             setHasHumanJoined(false);
+            setAssignedAdmin(undefined);
           }
         } else {
           setIsWaitingHuman(false);
@@ -287,9 +290,9 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     };
 
     pollChat();
-    const interval = setInterval(pollChat, 3000);
+    const interval = setInterval(pollChat, isOpen ? 2500 : 3500);
     return () => clearInterval(interval);
-  }, [isOpen, sessionId]);
+  }, [isOpen, sessionId, isWaitingHuman, hasHumanJoined]);
 
   useEffect(() => {
     if (isOpen) {
@@ -663,12 +666,15 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           className="fixed z-50 select-none w-13 h-13 rounded-full bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021426] flex items-center justify-center shadow-[0_4px_25px_rgba(0,240,255,0.45)] hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing group"
           title="Drag anywhere • Tap to open Neon AI Copilot"
         >
-          {isWaitingHuman ? (
-            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-[#030712] animate-ping" />
-          ) : hasHumanJoined ? (
-            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#030712] animate-pulse" />
+          {isWaitingHuman || hasHumanJoined ? (
+            <div className="absolute -top-1 -right-1 flex items-center justify-center">
+              <span className="w-4 h-4 rounded-full bg-red-500 animate-ping absolute" />
+              <span className="w-4 h-4 rounded-full bg-red-600 border-2 border-[#030712] animate-pulse relative" />
+            </div>
           ) : (
-            <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#10B981] border-2 border-[#030712] animate-pulse" />
+            <div className="absolute -top-1 -right-1 flex items-center justify-center">
+              <span className="w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#030712] animate-pulse" />
+            </div>
           )}
           <Bot className="w-6 h-6 text-[#021426]" />
         </button>
@@ -689,18 +695,18 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
                 </h4>
                 <div className="flex items-center gap-1.5 text-[10px]">
                   {isWaitingHuman ? (
-                    <span className="text-amber-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                      Waiting for Support Agent...
+                    <span className="text-red-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                      Live Human Support Requested
                     </span>
                   ) : hasHumanJoined ? (
-                    <span className="text-emerald-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-red-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                       Live Human Support Active
                     </span>
                   ) : (
-                    <span className="text-[#10B981] flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       24/7 Web3 Autonomous AI
                     </span>
                   )}
@@ -712,17 +718,17 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
               {!isWaitingHuman && !hasHumanJoined && (
                 <button
                   onClick={() => handleEscalateToHuman()}
-                  className="px-2 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                  title="Connect with Human Support Agent"
+                  className="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                  title="Connect with Human Support Specialist"
                 >
-                  <Headphones className="w-3 h-3" />
+                  <Headphones className="w-3 h-3 text-red-400" />
                   <span>Talk to Human</span>
                 </button>
               )}
 
               <button
                 onClick={handleClearChat}
-                title="Reset conversation & clear queue"
+                title="Reset conversation"
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-cyan-400 hover:bg-[#0D1B2E] transition-colors cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -737,23 +743,20 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
             </div>
           </div>
 
-          {/* Status Banner when escalated */}
+          {/* Status Banner when human requested */}
           {isWaitingHuman && (
-            <div className="px-3 py-2 bg-amber-950/60 border-b border-amber-600/40 flex items-center justify-between text-[11px] text-amber-200">
+            <div className="px-3 py-2 bg-red-950/70 border-b border-red-600/40 flex items-center justify-between text-[11px] text-red-200">
               <div className="flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-bounce" />
-                <span>Ticket dispatched to Live Support Desk</span>
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+                <span>Live Support Desk Notified • Specialist will reply here</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-amber-400 bg-amber-900/40 px-1.5 py-0.5 rounded">In Queue</span>
-                <button
-                  onClick={handleClearChat}
-                  className="text-[10px] text-amber-300 hover:text-white underline cursor-pointer font-bold"
-                  title="Cancel human support request"
-                >
-                  Cancel
-                </button>
-              </div>
+              <button
+                onClick={handleClearChat}
+                className="text-[10px] text-red-300 hover:text-white underline cursor-pointer font-bold"
+                title="Cancel human support request"
+              >
+                Cancel
+              </button>
             </div>
           )}
 

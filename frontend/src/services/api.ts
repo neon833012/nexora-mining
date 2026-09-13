@@ -593,12 +593,12 @@ class NeonApiService {
     }
   }
 
-  async resolveAdminChat(sessionId: string) {
+  async resolveAdminChat(sessionId: string, resolutionMessage?: string) {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/chats/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId })
+        body: JSON.stringify({ sessionId, resolutionMessage })
       });
       return await res.json();
     } catch (err: any) {

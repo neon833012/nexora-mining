@@ -2069,17 +2069,52 @@ app.post('/api/admin/chats/reply', async (c) => {
 // Admin Resolve Chat
 app.post('/api/admin/chats/resolve', async (c) => {
   try {
-    const { sessionId } = await c.req.json();
+    const { sessionId, resolutionMessage } = await c.req.json();
     if (!sessionId) {
       return c.json({ success: false, message: 'sessionId required' }, 400);
     }
-    await c.env.DB.prepare(`
-      UPDATE chat_sessions 
-      SET status = 'resolved',
-          unread_admin_count = 0,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(sessionId).run();
+
+    const row = await c.env.DB.prepare('SELECT * FROM chat_sessions WHERE id = ?').bind(sessionId).first() as any;
+    if (row) {
+      let messages = [];
+      try {
+        messages = JSON.parse(row.messages_json || '[]');
+      } catch {}
+
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const resolveText = resolutionMessage || '✅ **[Query Resolved]**\nOur support specialist has resolved this inquiry. If you need any further assistance, feel free to chat with our 24/7 AI Copilot anytime!';
+
+      const resolveMsg = {
+        id: `sys_resolved_${Date.now()}`,
+        sender: 'ai',
+        text: resolveText,
+        timestamp: nowStr
+      };
+
+      messages.push(resolveMsg);
+
+      await c.env.DB.prepare(`
+        UPDATE chat_sessions 
+        SET status = 'resolved',
+            messages_json = ?,
+            last_message_text = ?,
+            unread_admin_count = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(
+        JSON.stringify(messages),
+        '[Query Resolved]',
+        sessionId
+      ).run();
+    } else {
+      await c.env.DB.prepare(`
+        UPDATE chat_sessions 
+        SET status = 'resolved',
+            unread_admin_count = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(sessionId).run();
+    }
 
     return c.json({ success: true, message: 'Session marked resolved' });
   } catch (err: any) {
@@ -2087,11 +2122,11 @@ app.post('/api/admin/chats/resolve', async (c) => {
   }
 });
 
-// Admin Clear All Chat Sessions / Purge Queue
+// Admin Clear All Chat Sessions
 app.post('/api/admin/chats/clear-all', async (c) => {
   try {
     await c.env.DB.prepare('DELETE FROM chat_sessions').run();
-    return c.json({ success: true, message: 'All chat sessions purged from queue' });
+    return c.json({ success: true, message: 'All chat conversations cleared successfully' });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

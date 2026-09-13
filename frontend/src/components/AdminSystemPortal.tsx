@@ -799,19 +799,20 @@ export const AdminSystemPortal: React.FC<Props> = ({
       return;
     }
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const resolveText = '✅ **[Query Resolved]**\nOur admin specialist has resolved your inquiry. If you have any further questions, feel free to message our 24/7 AI Copilot anytime!';
+    const resolveMsg: ChatMessage = {
+      id: `sys_resolved_${Date.now()}`,
+      sender: 'ai',
+      text: resolveText,
+      timestamp: now
+    };
     const updatedSessions = liveSessions.map((s) => {
       if (s.id === sessionId) {
-        const resolveMsg: ChatMessage = {
-          id: `sys_resolved_${Date.now()}`,
-          sender: 'ai',
-          text: '✅ **[ISSUE RESOLVED BY SUPPORT DESK]**\nOur admin specialist has resolved this inquiry. If you have any further questions, feel free to message our AI Copilot anytime!',
-          timestamp: now
-        };
         return {
           ...s,
           status: 'resolved' as const,
           messages: [...s.messages, resolveMsg],
-          lastMessageText: '[Resolved by Admin]',
+          lastMessageText: '[Query Resolved by Admin]',
           updatedAt: now
         };
       }
@@ -819,25 +820,25 @@ export const AdminSystemPortal: React.FC<Props> = ({
     });
 
     saveLiveSessions(updatedSessions);
-    triggerNotice('✓ Support conversation marked as resolved');
+    triggerNotice('✓ Query marked as resolved & user notified');
 
     // Persist to Cloudflare D1
     try {
-      await nexoraApi.resolveAdminChat(sessionId);
+      await nexoraApi.resolveAdminChat(sessionId, resolveText);
     } catch (e) {}
   };
 
   const handlePurgeAllChats = async () => {
-    if (!window.confirm('⚠️ Are you sure you want to PURGE all chat sessions from queue? This will clear all waiting and active chats.')) return;
+    if (!window.confirm('⚠️ Are you sure you want to clear all chat conversations? This will remove all active and past chats.')) return;
     try {
       await nexoraApi.clearAllAdminChats();
       setLiveSessions([]);
       setSelectedSessionId(null);
       localStorage.removeItem('neon_live_chat_sessions');
       window.dispatchEvent(new Event('neon_chat_sync'));
-      triggerNotice('✓ All chat sessions and queues purged successfully!');
+      triggerNotice('✓ All chat conversations cleared successfully!');
     } catch (e: any) {
-      triggerNotice(`Error purging chats: ${e.message}`);
+      triggerNotice(`Error clearing chats: ${e.message}`);
     }
   };
 
@@ -2785,10 +2786,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           type="button"
                           onClick={handlePurgeAllChats}
                           className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-red-400 bg-red-950/40 border border-red-500/30 hover:bg-red-900/60 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                          title="Purge all active/waiting chat sessions from queue"
+                          title="Clear all chat conversations"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          <span>Clear Queue</span>
+                          <span>Clear All Chats</span>
                         </button>
                       )}
 
@@ -2838,7 +2839,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                   isSelected
                                     ? 'bg-[#0E1A2E] border-cyan-500 shadow-md shadow-cyan-500/10'
                                     : isWaiting
-                                    ? 'bg-red-950/20 border-red-500/40 hover:border-red-500/80 animate-pulse'
+                                    ? 'bg-red-950/30 border-red-500/50 hover:border-red-500/80 shadow-md shadow-red-950/30 animate-pulse'
                                     : 'bg-[#070E1B] border-[#14233C] hover:border-[#1E3A5F]'
                                 }`}
                               >
@@ -2872,7 +2873,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                   {isWaiting && (
                                     <span className="text-[9.5px] font-black text-red-400 flex items-center gap-1">
                                       <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span>
-                                      WAITING HUMAN AGENT
+                                      🔴 LIVE SUPPORT REQUESTED
                                     </span>
                                   )}
                                   {isActive && (
@@ -2944,10 +2945,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                     {selectedSession.status !== 'resolved' && (
                                       <button
                                         onClick={() => handleResolveSession(selectedSession.id)}
-                                        className="px-2.5 py-1.5 rounded-xl bg-[#0E1A2E] hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                                        className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5"
                                       >
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        <span>Mark Resolved</span>
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>✓ Query Resolved</span>
                                       </button>
                                     )}
                                     <button
@@ -3155,7 +3156,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <div className="flex items-center justify-between">
                       <h4 className="text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2">
                         <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Queued Reset Requests ({pendingTickets.length})</span>
+                        <span>Pending Reset Requests ({pendingTickets.length})</span>
                       </h4>
                     </div>
 
