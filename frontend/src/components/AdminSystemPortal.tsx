@@ -1323,7 +1323,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
               </div>
 
               {/* Secondary Metrics Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="p-3 rounded-xl bg-[#070E1B] border border-[#14233C] flex items-center justify-between">
                   <div>
                     <span className="text-[10px] text-[#64748B] block font-bold uppercase">REGISTERED USERS</span>
@@ -1336,21 +1336,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     className="text-[10.5px] text-cyan-400 font-bold hover:underline cursor-pointer"
                   >
                     View →
-                  </button>
-                </div>
-
-                <div className="p-3 rounded-xl bg-[#070E1B] border border-[#14233C] flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-[#64748B] block font-bold uppercase">STAKING ORDERS</span>
-                    <span className="text-base font-black text-purple-400 font-mono">
-                      {adminOrders.length} Settled
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('plans')}
-                    className="text-[10.5px] text-purple-400 font-bold hover:underline cursor-pointer"
-                  >
-                    Plans →
                   </button>
                 </div>
 
