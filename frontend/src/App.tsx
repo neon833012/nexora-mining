@@ -2913,10 +2913,6 @@ export const App: React.FC = () => {
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
-            const el = document.getElementById('official-get-app-section');
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
             showToast('📲 Neon Mining Official Android App APK download starting soon!');
           }}
           onLoginClick={() => {
@@ -2947,35 +2943,6 @@ export const App: React.FC = () => {
                 isLoggedIn={isLoggedIn}
                 currentLang={currentLang}
               />
-
-              {/* Centered Official Mobile App Download Banner */}
-              <div id="official-get-app-section" className="flex justify-center px-3.5 lg:px-0 scroll-mt-20">
-                <div className="w-full max-w-2xl p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#071324] via-[#0D213D] to-[#071324] border border-[#00F0FF]/40 shadow-[0_0_25px_rgba(0,240,255,0.15)] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-                  <div className="flex flex-col sm:flex-row items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-[#00F0FF]/15 border border-[#00F0FF]/50 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(0,240,255,0.3)]">
-                      <Smartphone className="w-6 h-6 text-[#00F0FF]" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                        <span className="text-[14px] sm:text-[15px] font-black text-white tracking-wide">NEON MINING OFFICIAL APP</span>
-                        <span className="text-[9.5px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/40">ANDROID APK v4.2</span>
-                      </div>
-                      <p className="text-[11.5px] sm:text-[12.5px] text-[#94A3B8] mt-0.5">
-                        Download the official Android APK for 24/7 background mining alerts and instant wallet payouts.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      showToast('📱 Official Neon Mining Android APK download link will be attached soon!');
-                    }}
-                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#0284C7] via-[#00B4D8] to-[#00F0FF] hover:brightness-110 text-[#021020] text-[12px] sm:text-[13px] font-black tracking-wider flex items-center justify-center gap-2 shadow-[0_0_18px_rgba(0,240,255,0.4)] cursor-pointer active:scale-95 transition-all shrink-0"
-                  >
-                    <Download className="w-4 h-4 text-[#021020]" />
-                    <span>GET APP</span>
-                  </button>
-                </div>
-              </div>
 
               <LiveStatsGrid
                 activeUsersCount={activeUsersCount}
