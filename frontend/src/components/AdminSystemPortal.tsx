@@ -48,6 +48,7 @@ import {
   Eye,
   EyeOff,
   Check,
+  Download,
   MessageSquare,
   Bot,
   User,
@@ -655,6 +656,57 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const triggerNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  const handleExportUsersCSV = () => {
+    if (!adminUsers || adminUsers.length === 0) {
+      triggerNotice('No users registered in database to export.');
+      return;
+    }
+
+    const headers = [
+      'User ID / Username',
+      'Name',
+      'Email',
+      'Phone Number',
+      'Account Status',
+      'Active Plan',
+      'Staked Capital (USDT)',
+      'Available Balance (USDT)',
+      'Total Mined Yield (USDT)',
+      'Total Withdrawn (USDT)',
+      'Referral Earnings (USDT)',
+      'Direct Referrals Count',
+      'Registration Date'
+    ];
+
+    const rows = adminUsers.map((u) => [
+      `"${u.id || ''}"`,
+      `"${(u.name || '').replace(/"/g, '""')}"`,
+      `"${(u.email || '').replace(/"/g, '""')}"`,
+      `"${(u.mobile || '').replace(/"/g, '""')}"`,
+      `"${u.status || 'active'}"`,
+      `"${(u.currentPlanName || (u.stakedAmount ? `$${u.stakedAmount} Node` : 'No Plan')).replace(/"/g, '""')}"`,
+      (u.stakedAmount || 0).toFixed(2),
+      (u.availableBalance || 0).toFixed(2),
+      (u.totalMinedYield || 0).toFixed(2),
+      (u.totalWithdrawn || 0).toFixed(2),
+      (u.referralEarnings || 0).toFixed(2),
+      u.directReferralsCount || 0,
+      `"${u.joiningDate || (u as any).createdAt || ''}"`
+    ]);
+
+    const csvString = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `NEON_MINING_USERS_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    triggerNotice(`✓ Exported ${adminUsers.length} user accounts to CSV/Excel file!`);
   };
 
   const handleCreateSubAdmin = (e: React.FormEvent) => {
@@ -1908,6 +1960,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <option value="inactive">Inactive ({adminUsers.length - dynamicActiveMinersCount} No Plans)</option>
                     <option value="suspended">Suspended</option>
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={handleExportUsersCSV}
+                    className="py-1.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 hover:text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                    title="Export all users to CSV / Excel spreadsheet"
+                  >
+                    <Download className="w-3 h-3 text-emerald-400" />
+                    <span>Export Users (Excel / CSV)</span>
+                  </button>
 
                   {onRefreshMiners && (
                     <button

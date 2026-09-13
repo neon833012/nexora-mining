@@ -152,10 +152,10 @@ export const AuthModalDialog: React.FC<Props> = ({
           setApiError(res?.message || 'Registration failed. Please verify your details.');
         }
       } else {
-        // Sign In Mode: Accepts registered Email Address OR Mobile Number
+        // Sign In Mode: Accepts registered Email Address OR Username
         const identifier = email.trim();
         if (!identifier) {
-          setApiError('Please enter your registered Email or Mobile number.');
+          setApiError('Please enter your Email Address or Username.');
           setIsLoading(false);
           return;
         }

@@ -156,31 +156,24 @@ app.post('/api/auth/register', async (c) => {
 app.post('/api/auth/login', async (c) => {
   try {
     const body = await c.req.json();
-    const identifier = (body.identifier || body.email || body.mobile || '').trim();
+    const identifier = (body.identifier || body.email || '').trim();
     const password = (body.password || '').trim();
 
     if (!identifier || !password) {
-      return c.json({ success: false, message: 'Please enter your Mobile / Email / Miner ID and Password' }, 400);
+      return c.json({ success: false, message: 'Please enter your Email Address or Username and Password' }, 400);
     }
 
     const cleanId = identifier;
-    const cleanNoSpaces = identifier.replace(/\s+/g, '');
 
-    // Strict search: Email, User ID, Mobile (with or without spaces), or sub-match
+    // Strict search: Email or Username (User ID)
     const userRecord = await c.env.DB.prepare(`
       SELECT * FROM users 
-      WHERE (
-        LOWER(email) = LOWER(?)
-        OR UPPER(id) = UPPER(?)
-        OR mobile = ?
-        OR REPLACE(mobile, ' ', '') = ?
-        OR (length(?) >= 6 AND mobile LIKE '%' || ?)
-      )
+      WHERE LOWER(email) = LOWER(?) OR UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?)
       LIMIT 1
-    `).bind(cleanId, cleanId, cleanId, cleanNoSpaces, cleanNoSpaces, cleanNoSpaces).first() as any;
+    `).bind(cleanId, cleanId, cleanId).first() as any;
 
     if (!userRecord || userRecord.password_hash !== password) {
-      return c.json({ success: false, message: 'Invalid mobile/email or password. Please check your credentials.' }, 401);
+      return c.json({ success: false, message: 'Invalid Email/Username or Password. Please check your credentials.' }, 401);
     }
 
     if (userRecord.status === 'suspended') {
