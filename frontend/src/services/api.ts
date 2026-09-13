@@ -49,6 +49,7 @@ class NeonApiService {
           'Pragma': 'no-cache'
         }
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return data.settings || {};
     } catch (err) {
@@ -580,6 +581,7 @@ class NeonApiService {
   async getChatSession(sessionId: string) {
     try {
       const res = await fetch(`${this.baseUrl}/api/chat/session?sessionId=${encodeURIComponent(sessionId)}`);
+      if (!res.ok) return { success: false, message: `HTTP ${res.status}` };
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message };
