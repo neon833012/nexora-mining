@@ -401,9 +401,17 @@ export const AdminSystemPortal: React.FC<Props> = ({
   };
 
   // DYNAMIC CALCULATIONS - STRICTLY DERIVED FROM REAL CLOUDFLARE D1 DATA
+  // If zero registered users exist, orders and inflow MUST be strictly empty []
+  const safeAdminOrders = useMemo(() => {
+    if (!adminUsers || adminUsers.length === 0) return [];
+    return (adminOrders || []).filter((o) =>
+      adminUsers.some((u) => u.id === o.userId || u.name === o.userName)
+    );
+  }, [adminOrders, adminUsers]);
+
   const dynamicInflow = useMemo(() => {
-    return (adminOrders || []).reduce((sum, o) => sum + (o.amountPaid || 0), 0);
-  }, [adminOrders]);
+    return safeAdminOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+  }, [safeAdminOrders]);
 
   const dynamicStaked = useMemo(() => {
     return (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
@@ -507,7 +515,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     ];
 
     return plans.map((p) => {
-      const matchingOrders = (adminOrders || []).filter(
+      const matchingOrders = safeAdminOrders.filter(
         (o) => o.planAmount === p.amount || o.planId === p.id || o.planName?.toLowerCase().includes(`$${p.amount}`)
       );
       const matchingUsers = (adminUsers || []).filter(
@@ -525,7 +533,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
         totalRevenue
       };
     });
-  }, [adminOrders, adminUsers]);
+  }, [safeAdminOrders, adminUsers]);
 
   const totalPlansSoldAcrossTiers = useMemo(() => {
     return planSalesBreakdown.reduce((sum, p) => sum + p.soldCount, 0);
@@ -1269,7 +1277,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                   </div>
                   <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-400 font-bold">
                     <TrendingUp className="w-3.5 h-3.5" />
-                    <span>{adminOrders.length} plan orders recorded</span>
+                    <span>{safeAdminOrders.length} plan orders recorded</span>
                   </div>
                 </div>
 

@@ -228,16 +228,23 @@ export const App: React.FC = () => {
         }
       }
 
-      // Purge test orders from neon_admin_orders
+      // Purge orphan orders from neon_admin_orders
       const rawAdminOrders = localStorage.getItem('neon_admin_orders');
       if (rawAdminOrders) {
         const parsedOrders = JSON.parse(rawAdminOrders);
         if (Array.isArray(parsedOrders)) {
-          const cleanOrders = parsedOrders.filter((o: any) => !isTestAccount(o.userId, o.userName, o.userEmail));
-          if (cleanOrders.length !== parsedOrders.length) {
-            localStorage.setItem('neon_admin_orders', JSON.stringify(cleanOrders));
-            setAdminOrders(cleanOrders);
-          }
+          const rawAdminUsers = localStorage.getItem('neon_admin_users');
+          const parsedUsers = rawAdminUsers ? JSON.parse(rawAdminUsers) : [];
+          const userIds = new Set((parsedUsers || []).map((u: any) => (u.id || u.name || '').toLowerCase()));
+          const cleanOrders = (userIds.size === 0)
+            ? []
+            : parsedOrders.filter((o: any) => {
+                if (isTestAccount(o.userId, o.userName, o.userEmail)) return false;
+                const uid = (o.userId || o.userName || '').toLowerCase();
+                return userIds.has(uid);
+              });
+          localStorage.setItem('neon_admin_orders', JSON.stringify(cleanOrders));
+          setAdminOrders(cleanOrders);
         }
       }
     } catch {}
@@ -334,8 +341,17 @@ export const App: React.FC = () => {
     return (loaded || []).filter((u) => !isTestAccount(u.id, u.name, u.email));
   });
   const [adminOrders, setAdminOrders] = useState<AdminOrderRecord[]>(() => {
+    const loadedUsers = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
+    if (!loadedUsers || loadedUsers.length === 0) {
+      try {
+        localStorage.setItem('neon_admin_orders', '[]');
+      } catch (e) {}
+      return [];
+    }
     const loaded = loadStorage<AdminOrderRecord[]>('neon_admin_orders', []);
-    return (loaded || []).filter((o) => !isTestAccount(o.userId, o.userName, o.userEmail));
+    return (loaded || []).filter(
+      (o) => !isTestAccount(o.userId, o.userName, o.userEmail) && loadedUsers.some((u) => u.id === o.userId || u.name === o.userName)
+    );
   });
   const [adminTelemetry, setAdminTelemetry] = useState<AdminTelemetry>(() => loadStorage('neon_admin_telemetry', INITIAL_ADMIN_TELEMETRY));
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(() => loadStorage('neon_platform_settings', INITIAL_PLATFORM_SETTINGS));
@@ -807,11 +823,55 @@ export const App: React.FC = () => {
             walletAddress: '0x' + u.id
           };
         });
-        setAdminUsers(mappedUsers);
-        setAdminTelemetry((prev) => ({
-          ...prev,
-          totalRegisteredUsers: mappedUsers.length
-        }));
+        if (mappedUsers.length === 0) {
+          setAdminUsers([]);
+          setAdminOrders([]);
+          setAdminTelemetry((prev) => ({
+            ...prev,
+            totalRegisteredUsers: 0,
+            totalOrdersCount: 0,
+            totalPlatformRevenue: 0,
+            totalStakedPower: 0,
+            activeMinersCount: 0
+          }));
+          try {
+            localStorage.setItem('neon_admin_orders', '[]');
+            localStorage.setItem('neon_admin_users', '[]');
+          } catch (e) {}
+        } else {
+          setAdminUsers(mappedUsers);
+          setAdminTelemetry((prev) => ({
+            ...prev,
+            totalRegisteredUsers: mappedUsers.length
+          }));
+
+          // Live sync real orders from D1 deposits
+          try {
+            const depRes = await nexoraApi.getAdminDeposits();
+            if (depRes && depRes.success && Array.isArray(depRes.deposits)) {
+              const liveOrders: AdminOrderRecord[] = depRes.deposits
+                .filter((d: any) => mappedUsers.some((u) => u.id === d.user_id || u.name === d.user_name))
+                .map((d: any) => ({
+                  id: d.order_id,
+                  orderNumber: d.order_id,
+                  userId: d.user_id,
+                  userName: d.user_name || d.user_id,
+                  planId: `plan_${d.amount}`,
+                  planName: `Node Plan ($${d.amount})`,
+                  planAmount: Number(d.amount),
+                  amountPaid: Number(d.amount),
+                  txHash: d.tx_hash,
+                  paymentMethod: 'bep20',
+                  status: d.status === 'confirmed' ? 'completed' : (d.status as any),
+                  createdAt: d.created_at || 'Recently'
+                }));
+              setAdminOrders(liveOrders);
+              try {
+                localStorage.setItem('neon_admin_orders', JSON.stringify(liveOrders));
+              } catch (e) {}
+            }
+          } catch (err) {}
+        }
       }
     } catch (err) {
       console.error('Failed to sync admin users from D1:', err);
