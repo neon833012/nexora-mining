@@ -38,13 +38,14 @@ export const PromotionalPlanPopupModal: React.FC<Props> = ({
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fadeIn overflow-y-auto">
         <div className="absolute inset-0" onClick={onDismiss} />
-        <div className="relative z-10 w-full max-w-[420px] animate-scaleUp">
+        <div className="relative z-10 w-full max-w-[340px] sm:max-w-[420px] my-auto animate-scaleUp">
           {/* Close button */}
           <button
             onClick={onDismiss}
-            className="absolute -top-3 -right-3 z-20 w-8 h-8 rounded-full bg-[#0D1A30] border border-[#1E3354] hover:border-red-500/60 flex items-center justify-center text-[#94A3B8] hover:text-white transition-all cursor-pointer shadow-lg"
+            aria-label="Close"
+            className="absolute -top-3 -right-3 z-30 w-8 h-8 rounded-full bg-[#0D1A30] border border-[#1E3354] hover:border-red-500/60 flex items-center justify-center text-[#94A3B8] hover:text-white transition-all cursor-pointer shadow-2xl"
           >
             <X className="w-4 h-4" />
           </button>
@@ -52,19 +53,20 @@ export const PromotionalPlanPopupModal: React.FC<Props> = ({
           {/* Image */}
           <div
             onClick={handleImageClick}
-            className={`rounded-2xl overflow-hidden border border-[#00F0FF]/30 shadow-[0_0_40px_rgba(0,240,255,0.2)] ${adminPopupLinkUrl ? 'cursor-pointer hover:brightness-105 transition-all' : ''}`}
+            className={`rounded-2xl overflow-hidden border border-[#00F0FF]/40 shadow-[0_0_50px_rgba(0,240,255,0.3)] bg-[#070E1B] ${adminPopupLinkUrl ? 'cursor-pointer hover:brightness-105 transition-all' : ''}`}
           >
             <img
               src={adminPopupImageUrl}
               alt="Neon Mining Promotion"
-              className="w-full h-auto block"
+              className="w-full h-auto max-h-[75vh] object-contain block mx-auto"
+              loading="eager"
             />
           </div>
 
           {/* Skip text */}
           <button
             onClick={onDismiss}
-            className="mt-2 w-full text-center text-[11px] text-[#64748B] hover:text-[#94A3B8] cursor-pointer transition-colors"
+            className="mt-2.5 w-full text-center text-xs text-gray-400 hover:text-white cursor-pointer transition-colors py-1"
           >
             Tap anywhere or press ✕ to close
           </button>
@@ -78,7 +80,7 @@ export const PromotionalPlanPopupModal: React.FC<Props> = ({
   const featuredPlans = miningPlans.slice(0, 3);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-md animate-fadeIn overflow-y-auto">
       {/* Click outside backdrop handler */}
       <div className="absolute inset-0" onClick={onDismiss} />
 

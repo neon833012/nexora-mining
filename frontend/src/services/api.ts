@@ -38,11 +38,17 @@ class NeonApiService {
   }
 
   /**
-   * Fetch platform settings
+   * Fetch platform settings (Cache-busted for real-time mobile sync)
    */
   async getSettings(): Promise<Record<string, string>> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/settings`);
+      const res = await fetch(`${this.baseUrl}/api/settings?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
       const data = await res.json();
       return data.settings || {};
     } catch (err) {
@@ -626,7 +632,46 @@ class NeonApiService {
       return { success: false, message: err.message };
     }
   }
+
+  // ==========================================================================
+  // Staff Sub-Admin Management
+  // ==========================================================================
+  async getSubAdmins() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/subadmins`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message, subadmins: [] };
+    }
+  }
+
+  async createSubAdmin(params: { email: string; name?: string; password?: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/subadmins/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async deleteSubAdmin(params: { id?: string; email?: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/subadmins/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 export const neonApi = new NeonApiService();
 export const nexoraApi = neonApi;
+
