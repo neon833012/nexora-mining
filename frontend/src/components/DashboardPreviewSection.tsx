@@ -15,7 +15,10 @@ import {
   Wallet,
   CheckCircle2,
   Lock,
-  LogOut
+  LogOut,
+  User,
+  Copy,
+  Check
 } from 'lucide-react';
 import { TeamTurnover } from '../types/mining';
 
@@ -154,8 +157,103 @@ export const DashboardPreviewSection: React.FC<Props> = ({
 
   const pureMinedYield = +(totalIncome - totalReferralIncome).toFixed(2);
 
+  const [copiedId, setCopiedId] = useState(false);
+  const displayId = userName && userName.trim() ? userName.trim() : 'MINER';
+  const cleanId = displayId.startsWith('@') ? displayId.substring(1) : displayId;
+  const formattedId = `@${cleanId}`;
+
+  const handleCopyId = () => {
+    try {
+      navigator.clipboard.writeText(formattedId);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch (e) {
+      // fallback
+    }
+  };
+
   return (
     <section className="w-full px-3.5 lg:px-0 space-y-5">
+      {/* 0. Member Identity & Big User ID Hero Card */}
+      <div className="p-4 sm:p-5 lg:p-6 rounded-2xl bg-gradient-to-r from-[#061224] via-[#091A33] to-[#07152B] border border-[#00F0FF]/40 shadow-[0_0_25px_rgba(0,240,255,0.15)] relative overflow-hidden">
+        {/* Glow ambient accent */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-br from-[#00F0FF]/10 to-[#7C3AED]/10 rounded-full blur-3xl pointer-events-none -mr-24 -mt-24" />
+
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            {/* Hex/Squircle Avatar Icon with Online indicator */}
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-[#00F0FF]/25 via-[#0284C7]/20 to-[#7C3AED]/30 border-2 border-[#00F0FF] flex items-center justify-center text-[#00F0FF] shadow-[0_0_25px_rgba(0,240,255,0.4)] shrink-0">
+              <User className="w-7 h-7 sm:w-8 sm:h-8 text-[#00F0FF]" />
+              <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-[#10B981] border-2 border-[#061224] flex items-center gap-1 shadow-md">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                <span className="text-[8.5px] font-black text-black uppercase font-mono">LIVE</span>
+              </div>
+            </div>
+
+            {/* Member Details & Big Glowing ID */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black tracking-widest text-[#00F0FF] uppercase bg-[#00F0FF]/10 px-2.5 py-0.5 rounded-md border border-[#00F0FF]/30">
+                  MY USER ID
+                </span>
+                <span className="text-[10px] font-extrabold text-[#10B981] bg-[#10B981]/15 px-2.5 py-0.5 rounded-md border border-[#10B981]/30 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-[#10B981]" />
+                  <span>VERIFIED MEMBER</span>
+                </span>
+                {activeMiningPower > 0 && (
+                  <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-400/10 px-2 py-0.5 rounded-md border border-amber-400/30">
+                    VIP OPERATOR
+                  </span>
+                )}
+              </div>
+
+              {/* Badi Badi ID Display */}
+              <div className="flex items-center gap-3 pt-0.5 flex-wrap">
+                <h1 className="text-[26px] sm:text-[34px] lg:text-[40px] font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#00F0FF] via-[#38BDF8] to-[#10B981] drop-shadow-[0_0_20px_rgba(0,240,255,0.45)] select-all leading-none">
+                  {formattedId}
+                </h1>
+
+                {/* Copy ID Button */}
+                <button
+                  type="button"
+                  onClick={handleCopyId}
+                  title="Copy User ID"
+                  className="px-3 py-1.5 rounded-xl bg-[#091B33] hover:bg-[#102747] border border-[#00F0FF]/40 hover:border-[#00F0FF] text-[#00F0FF] text-[12px] font-bold flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(0,240,255,0.2)] active:scale-95 cursor-pointer shrink-0"
+                >
+                  {copiedId ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#10B981]" />
+                      <span className="text-[#10B981]">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-[#00F0FF]" />
+                      <span>Copy ID</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-[11.5px] text-[#94A3B8] flex items-center gap-1">
+                <span>P2P Member Transfer ID · Share this ID with other members to receive instant zero-fee transfers</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Right: Quick Member Tags (Referral Code & Active Campus) */}
+          <div className="flex sm:flex-col items-start sm:items-end justify-between gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#142642] shrink-0">
+            <div className="px-3 py-1.5 rounded-xl bg-[#050B16] border border-[#142642] flex items-center gap-2">
+              <span className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Referral Code:</span>
+              <span className="text-[13px] font-mono font-black text-[#00F0FF]">{userReferralCode || 'NEON'}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-[#050B16] border border-[#142642] flex items-center gap-2">
+              <span className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Immersion Server:</span>
+              <span className="text-[12px] font-mono font-bold text-[#10B981]">{activeCampus.split(' ')[0]} {activeCampus.split(' ')[1]}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* 1. Mining Operations Command Center Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 lg:p-6 rounded-2xl bg-gradient-to-r from-[#071324] via-[#0A1A2F] to-[#07172B] border border-[#192E4C] shadow-xl">
         <div>

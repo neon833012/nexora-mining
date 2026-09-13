@@ -725,8 +725,12 @@ export const App: React.FC = () => {
     unclaimedYield
   ]);
 
-  // Total Withdrawn (sum of approved withdrawals)
-  const totalWithdrawn = +(withdrawalRequests.filter((r) => r.status === 'approved').reduce((sum, r) => sum + r.amount, 0)).toFixed(2);
+  // Total Settled Cashouts / Outflows (Approved external withdrawals + Outbound P2P transfers, strictly excluding rejected)
+  const totalWithdrawn = +(
+    withdrawalRequests
+      .filter((r) => r.status !== 'rejected' && (r.status === 'approved' || r.type === 'p2p_transfer'))
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0)
+  ).toFixed(2);
 
   // Total Cumulative Income (Total Mined + Total Referral Earned)
   const totalCumulativeIncome = +(totalRewards + referralIncome).toFixed(2);
@@ -864,11 +868,11 @@ export const App: React.FC = () => {
                   userId: d.user_id,
                   userName: d.user_name || d.user_id,
                   planId: `plan_${d.amount}`,
-                  planName: `Node Plan ($${d.amount})`,
+                  planName: d.network === 'P2P Transfer' ? `P2P Inbound Transfer ($${Number(d.amount).toFixed(2)})` : `BEP-20 USDT Deposit ($${Number(d.amount).toFixed(2)})`,
                   planAmount: Number(d.amount),
                   amountPaid: Number(d.amount),
                   txHash: d.tx_hash,
-                  paymentMethod: 'bep20',
+                  paymentMethod: d.network === 'P2P Transfer' ? 'p2p' : 'bep20',
                   status: d.status === 'confirmed' ? 'completed' : (d.status as any),
                   createdAt: d.created_at || 'Recently'
                 }));
@@ -1047,10 +1051,9 @@ export const App: React.FC = () => {
 
     verifyAndSyncSession();
 
-    // Fast polling: check every 3.5 seconds so if someone else signs in, this session gets kicked out immediately!
-    const sessionInterval = setInterval(verifyAndSyncSession, 3500);
-
-      // 3. Fetch real wallet history (transactions, withdrawals, deposits)
+    // 3. Fetch real wallet history (transactions, withdrawals, deposits)
+    const fetchWalletHistory = () => {
+      if (!userName) return;
       nexoraApi.getWalletHistory(userName).then((res) => {
         if (res && res.success) {
           if (Array.isArray(res.transactions)) {
@@ -1149,6 +1152,15 @@ export const App: React.FC = () => {
           setDepositRecords(cleanDeposits);
         }
       }).catch(() => {});
+    };
+
+    fetchWalletHistory();
+
+    // Fast polling: check every 3.5 seconds so if someone else signs in or admin approves/rejects, views update immediately!
+    const sessionInterval = setInterval(() => {
+      verifyAndSyncSession();
+      fetchWalletHistory();
+    }, 3500);
 
       // 4. Fetch real referred downlines (L1 + L2 + L3) from Cloudflare D1
       nexoraApi.getDownlines(userName).then((res) => {
@@ -2230,15 +2242,25 @@ export const App: React.FC = () => {
       platformNetReserves: +(prev.platformNetReserves - req.netAmount).toFixed(2)
     }));
 
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}`,
-      type: 'BEP-20 Withdrawal Approved',
-      amount: -req.amount,
-      date: getFormattedTimestamp(),
-      status: 'Settled',
-      txHash: finalTx
-    };
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions((prev) => {
+      const hasPending = prev.some((t) => t.type?.toLowerCase().includes('payout') && t.status === 'Pending');
+      if (hasPending) {
+        return prev.map((t) =>
+          t.type?.toLowerCase().includes('payout') && t.status === 'Pending'
+            ? { ...t, status: 'Settled' as any, txHash: finalTx }
+            : t
+        );
+      }
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}`,
+        type: 'BEP-20 Withdrawal Approved',
+        amount: -req.amount,
+        date: getFormattedTimestamp(),
+        status: 'Settled',
+        txHash: finalTx
+      };
+      return [newTx, ...prev];
+    });
 
     showToast(`✓ Approved withdrawal of ${req.amount.toFixed(2)} USDT for ${req.userName}! Reference: ${finalTx.slice(0, 10)}...`);
   };
@@ -2260,11 +2282,55 @@ export const App: React.FC = () => {
       prev.map((r) => (r.id === id ? { ...r, status: 'rejected', rejectionReason: reason } : r))
     );
 
-    // Refund back to available withdrawal
+    // 1. Refund back to available withdrawal & total balance
     setAvailableWithdrawal((prev) => +(prev + req.amount).toFixed(2));
     setTotalBalance((prev) => +(prev + req.amount).toFixed(2));
 
-    // Deduct from pending telemetry
+    // 2. Update transactions ledger: mark pending payout as Rejected and insert refund entry
+    setTransactions((prev) => {
+      const updated = prev.map((t) => {
+        if (t.type?.toLowerCase().includes('payout') && t.status === 'Pending') {
+          return { ...t, status: 'Rejected' as any };
+        }
+        return t;
+      });
+      const refundTx: TransactionRecord = {
+        id: `REF-${Date.now().toString().slice(-6)}`,
+        type: 'Withdrawal Refund',
+        amount: req.amount,
+        date: getFormattedTimestamp(),
+        status: 'Settled',
+        txHash: 'N/A'
+      };
+      return [refundTx, ...updated];
+    });
+
+    // 3. Update admin user record if available
+    setAdminUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === req.userId || u.name === req.userName) {
+          return {
+            ...u,
+            availableBalance: +(u.availableBalance + req.amount).toFixed(2),
+            totalWithdrawn: Math.max(0, +(u.totalWithdrawn - req.amount).toFixed(2))
+          };
+        }
+        return u;
+      })
+    );
+
+    // 4. Update user's saved data in localStorage
+    if (userName && (req.userId === userName || req.userName === userName)) {
+      const cleanId = userName.toUpperCase();
+      const currentSaved = loadUserSavedData(cleanId);
+      const newWithdr = +((currentSaved?.availableWithdrawal || availableWithdrawal) + req.amount).toFixed(2);
+      saveUserSavedData(cleanId, {
+        availableWithdrawal: newWithdr,
+        totalBalance: +((currentSaved?.depositBalance || depositBalance) + newWithdr).toFixed(2)
+      });
+    }
+
+    // 5. Deduct from pending telemetry
     setAdminTelemetry((prev) => ({
       ...prev,
       totalPendingWithdrawals: +(Math.max(0, prev.totalPendingWithdrawals - req.amount)).toFixed(2)
@@ -3305,15 +3371,23 @@ export const App: React.FC = () => {
                                       )}
                                     </td>
                                     <td className="py-3 px-3.5 text-right font-mono font-black text-[12.5px] whitespace-nowrap">
-                                      <span className={tx.amount > 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                                      <span className={
+                                        tx.status?.toLowerCase().includes('reject')
+                                          ? 'text-[#64748B] line-through'
+                                          : tx.amount > 0
+                                          ? 'text-[#10B981]'
+                                          : 'text-[#EF4444]'
+                                      }>
                                         {tx.amount > 0 ? `+${tx.amount.toFixed(2)}` : tx.amount.toFixed(2)} USDT
                                       </span>
                                     </td>
                                     <td className="py-3 px-3.5 text-right whitespace-nowrap">
                                       <span
                                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                          tx.status.toLowerCase().includes('settled') || tx.status.toLowerCase().includes('approved')
+                                          tx.status?.toLowerCase().includes('settled') || tx.status?.toLowerCase().includes('approved')
                                             ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
+                                            : tx.status?.toLowerCase().includes('reject')
+                                            ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30 font-extrabold'
                                             : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                                         }`}
                                       >

@@ -1731,11 +1731,16 @@ app.post('/api/admin/withdrawals/action', async (c) => {
 
       return c.json({ success: true, message: 'Withdrawal approved and marked settled on blockchain', txHash: cleanTx });
     } else {
-      // Reject: refund amount back to user's withdrawable balance
+      // Reject: refund amount back to user's withdrawable balance and mark pending transaction Rejected
       await c.env.DB.batch([
         c.env.DB.prepare(
           `UPDATE withdrawal_requests SET status = 'rejected', rejection_reason = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?`
         ).bind(reason || 'Rejected by administrator', requestId),
+
+        // Update corresponding transaction in user's ledger from Pending to Rejected
+        c.env.DB.prepare(
+          `UPDATE transactions SET status = 'Rejected' WHERE user_id = ? AND type = 'Payout Request' AND status = 'Pending'`
+        ).bind(req.user_id),
 
         c.env.DB.prepare(
           `UPDATE wallets SET withdrawable_balance = withdrawable_balance + ?, total_withdrawn = total_withdrawn - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
@@ -1746,7 +1751,7 @@ app.post('/api/admin/withdrawals/action', async (c) => {
         ).bind(`REF-${Date.now().toString().slice(-6)}`, req.user_id, req.amount)
       ]);
 
-      return c.json({ success: true, message: 'Withdrawal rejected and amount refunded to user wallet' });
+      return c.json({ success: true, message: 'Withdrawal rejected, transaction updated to Rejected, and amount refunded to user wallet' });
     }
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);

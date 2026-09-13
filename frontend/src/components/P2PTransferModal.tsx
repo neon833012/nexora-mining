@@ -52,10 +52,15 @@ export const P2PTransferModal: React.FC<Props> = ({
   const safeWithdrawableBalance = Number(availableBalance) || 0;
   const activeSourceBalance = sourceWallet === 'deposit' ? safeDepositBalance : safeWithdrawableBalance;
 
-  // Real-time recipient lookup
-  const cleanRecipientId = recipientId.trim().toUpperCase();
+  // Real-time recipient lookup (tolerates with or without '@')
+  const rawRecipientInput = recipientId.trim().toUpperCase();
+  const cleanRecipientId = rawRecipientInput.replace(/^@+/, '');
   const matchedUser = adminUsers.find(
-    (u) => u.id.toUpperCase() === cleanRecipientId || u.name.toUpperCase() === cleanRecipientId
+    (u) =>
+      u.id.toUpperCase() === cleanRecipientId ||
+      u.name.toUpperCase() === cleanRecipientId ||
+      u.id.toUpperCase() === rawRecipientInput ||
+      u.name.toUpperCase() === rawRecipientInput
   );
 
   const numAmount = parseFloat(amount) || 0;
@@ -86,7 +91,8 @@ export const P2PTransferModal: React.FC<Props> = ({
       return;
     }
 
-    if (currentUserId && cleanRecipientId === currentUserId.toUpperCase()) {
+    const cleanSelfId = currentUserId ? currentUserId.replace(/^@+/, '').toUpperCase() : '';
+    if (cleanSelfId && cleanRecipientId === cleanSelfId) {
       setErrorMessage('You cannot transfer funds to your own User ID.');
       return;
     }

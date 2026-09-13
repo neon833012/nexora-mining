@@ -209,6 +209,7 @@ export interface AdminOrderRecord {
   txHash: string;
   orderDate: string;
   status: 'active' | 'completed' | 'cancelled';
+  paymentMethod?: string;
 }
 
 export interface AdminTelemetry {

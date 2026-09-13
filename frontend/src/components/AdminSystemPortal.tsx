@@ -413,6 +413,18 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return safeAdminOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
   }, [safeAdminOrders]);
 
+  const dynamicExternalInflow = useMemo(() => {
+    return safeAdminOrders
+      .filter((o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p'))
+      .reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+  }, [safeAdminOrders]);
+
+  const dynamicP2PInflow = useMemo(() => {
+    return safeAdminOrders
+      .filter((o) => o.paymentMethod === 'p2p' || o.planName?.toLowerCase().includes('p2p'))
+      .reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+  }, [safeAdminOrders]);
+
   const dynamicStaked = useMemo(() => {
     return (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
   }, [adminUsers]);
@@ -1274,12 +1286,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <span>PLATFORM GROSS INFLOW</span>
                     <Coins className="w-4 h-4 text-[#00F0FF]" />
                   </div>
-                  <div className="my-2 text-2xl font-black text-white font-mono">
+                  <div className="my-1.5 text-2xl font-black text-white font-mono">
                     ${dynamicInflow.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
-                  <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-400 font-bold">
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>{safeAdminOrders.length} plan orders recorded</span>
+                  <div className="flex items-center justify-between text-[10px] text-[#94A3B8] border-t border-[#14233C] pt-1.5 mt-0.5">
+                    <span className="text-emerald-400 font-bold font-mono">BEP-20: ${dynamicExternalInflow.toFixed(2)}</span>
+                    <span className="text-purple-400 font-bold font-mono">P2P: ${dynamicP2PInflow.toFixed(2)}</span>
                   </div>
                 </div>
 

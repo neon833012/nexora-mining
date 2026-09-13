@@ -43,15 +43,15 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
   });
 
   const totalWithdrawn = withdrawalRequests
-    .filter((r) => r.status === 'approved')
-    .reduce((sum, r) => sum + r.amount, 0);
+    .filter((r) => r.status !== 'rejected' && (r.status === 'approved' || r.type === 'p2p_transfer'))
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
   const pendingAmount = withdrawalRequests
-    .filter((r) => r.status === 'pending')
-    .reduce((sum, r) => sum + r.amount, 0);
+    .filter((r) => r.status === 'pending' && r.type !== 'p2p_transfer')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
-  const pendingCount = withdrawalRequests.filter((r) => r.status === 'pending').length;
-  const approvedCount = withdrawalRequests.filter((r) => r.status === 'approved').length;
+  const pendingCount = withdrawalRequests.filter((r) => r.status === 'pending' && r.type !== 'p2p_transfer').length;
+  const approvedCount = withdrawalRequests.filter((r) => r.status !== 'rejected' && (r.status === 'approved' || r.type === 'p2p_transfer')).length;
   const rejectedCount = withdrawalRequests.filter((r) => r.status === 'rejected').length;
 
   return (
