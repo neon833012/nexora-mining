@@ -630,24 +630,50 @@ app.post('/api/tx/claim-deposit', async (c) => {
       ).bind(orderId, effectiveUserId, numAmount, network, c.env.VAULT_ADDRESS || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d', cleanTx)
     ];
 
-    // Referral commission if upline exists
+    // 3-Tier Multi-Level Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)
     if (user && user.upline_code) {
-      const uplineUser = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
-      ).bind(user.upline_code.toUpperCase(), user.upline_code.toUpperCase()).first() as any;
+      const tierConfig = [
+        { level: 1, rate: 0.10, label: 'L1 (10%)' },
+        { level: 2, rate: 0.05, label: 'L2 (5%)' },
+        { level: 3, rate: 0.02, label: 'L3 (2%)' }
+      ];
 
-      if (uplineUser) {
-        const uplineBonus = Number((numAmount * 0.10).toFixed(2));
-        if (uplineBonus > 0) {
+      let currentUpline = user.upline_code;
+      for (const tier of tierConfig) {
+        if (!currentUpline) break;
+
+        const cleanUp = String(currentUpline).trim();
+        const uplineUser = await c.env.DB.prepare(
+          'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(referral_code) = UPPER(?) LIMIT 1'
+        ).bind(cleanUp, cleanUp).first() as any;
+
+        if (!uplineUser) break;
+
+        const commission = Number((numAmount * tier.rate).toFixed(2));
+        if (commission > 0) {
           batchStatements.push(
             c.env.DB.prepare(
-              `UPDATE wallets SET referral_balance = referral_balance + ?, withdrawable_balance = withdrawable_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
-            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+              `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
+               VALUES (?, 0, 0, 0, 0, 0, 0)`
+            ).bind(uplineUser.id),
+
             c.env.DB.prepare(
-              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, 'Referral Commission (L1)', ?, 'Settled', ?)`
-            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus, cleanTx)
+              `UPDATE wallets SET referral_balance = referral_balance + ?, withdrawable_balance = withdrawable_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
+            ).bind(commission, commission, uplineUser.id),
+
+            c.env.DB.prepare(
+              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, 'Settled', ?)`
+            ).bind(
+              `REF-${Date.now().toString().slice(-6)}-L${tier.level}`,
+              uplineUser.id,
+              `Referral Commission ${tier.label} from ${effectiveUserId}`,
+              commission,
+              cleanTx
+            )
           );
         }
+
+        currentUpline = uplineUser.upline_code;
       }
     }
 
@@ -764,30 +790,55 @@ app.post('/api/deposit/verify-tx', async (c) => {
       ).bind(txId, effectiveUserId, order.amount, cleanTx)
     ];
 
-    // If upline exists, reward Level 1 referral bonus (10%)
+    // 3-Tier Multi-Level Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)
     if (user && user.upline_code) {
-      const uplineUser = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
-      ).bind(user.upline_code.toUpperCase(), user.upline_code.toUpperCase()).first() as any;
+      const tierConfig = [
+        { level: 1, rate: 0.10, label: 'L1 (10%)' },
+        { level: 2, rate: 0.05, label: 'L2 (5%)' },
+        { level: 3, rate: 0.02, label: 'L3 (2%)' }
+      ];
 
-      if (uplineUser) {
-        const uplineBonus = Number((order.amount * 0.10).toFixed(2));
-        if (uplineBonus > 0) {
+      let currentUpline = user.upline_code;
+      for (const tier of tierConfig) {
+        if (!currentUpline) break;
+
+        const cleanUp = String(currentUpline).trim();
+        const uplineUser = await c.env.DB.prepare(
+          'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(referral_code) = UPPER(?) LIMIT 1'
+        ).bind(cleanUp, cleanUp).first() as any;
+
+        if (!uplineUser) break;
+
+        const commission = Number((order.amount * tier.rate).toFixed(2));
+        if (commission > 0) {
           batchStatements.push(
+            c.env.DB.prepare(
+              `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
+               VALUES (?, 0, 0, 0, 0, 0, 0)`
+            ).bind(uplineUser.id),
+
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
                    withdrawable_balance = withdrawable_balance + ?, 
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+            ).bind(commission, commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
-               VALUES (?, ?, 'Referral Commission (L1)', ?, 'Settled', ?)`
-            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, uplineBonus, cleanTx)
+               VALUES (?, ?, ?, ?, 'Settled', ?)`
+            ).bind(
+              `REF-${Date.now().toString().slice(-6)}-L${tier.level}`,
+              uplineUser.id,
+              `Referral Commission ${tier.label} from ${effectiveUserId}`,
+              commission,
+              cleanTx
+            )
           );
         }
+
+        currentUpline = uplineUser.upline_code;
       }
     }
 
@@ -972,36 +1023,62 @@ app.post('/api/plans/subscribe', async (c) => {
       ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : `Plan Staked (${planName})`, -chargedAmount, planTxHash)
     ];
 
-    // If user has an upline referrer, reward 10% direct referral commission
+    // Multi-Tier Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)
     // Credited to BOTH referral_balance (Referral Income) AND withdrawable_balance (Withdrawable)
     const subscriberUser = await c.env.DB.prepare(
       'SELECT upline_code FROM users WHERE id = ?'
     ).bind(userId).first() as any;
 
     if (subscriberUser && subscriberUser.upline_code) {
-      const uplineUser = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE UPPER(id) = ? OR UPPER(referral_code) = ? LIMIT 1'
-      ).bind(subscriberUser.upline_code.toUpperCase(), subscriberUser.upline_code.toUpperCase()).first() as any;
+      const tierConfig = [
+        { level: 1, rate: 0.10, label: 'L1 (10%)' },
+        { level: 2, rate: 0.05, label: 'L2 (5%)' },
+        { level: 3, rate: 0.02, label: 'L3 (2%)' }
+      ];
 
-      if (uplineUser) {
-        const uplineBonus = Number((planCost * 0.10).toFixed(2));
-        if (uplineBonus > 0) {
+      let currentUpline = subscriberUser.upline_code;
+      for (const tier of tierConfig) {
+        if (!currentUpline) break;
+
+        const cleanUp = String(currentUpline).trim();
+        const uplineUser = await c.env.DB.prepare(
+          'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(referral_code) = UPPER(?) LIMIT 1'
+        ).bind(cleanUp, cleanUp).first() as any;
+
+        if (!uplineUser) break;
+
+        const commission = Number((planCost * tier.rate).toFixed(2));
+        if (commission > 0) {
           const refTxHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
           batchStatements.push(
+            c.env.DB.prepare(
+              `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
+               VALUES (?, 0, 0, 0, 0, 0, 0)`
+            ).bind(uplineUser.id),
+
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
                    withdrawable_balance = withdrawable_balance + ?, 
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(uplineBonus, uplineBonus, uplineUser.id),
+            ).bind(commission, commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
                VALUES (?, ?, ?, ?, 'Settled', ?)`
-            ).bind(`REF-${Date.now().toString().slice(-6)}`, uplineUser.id, `10% Direct Referral Commission (${userId} - ${planName})`, uplineBonus, refTxHash)
+            ).bind(
+              `REF-${Date.now().toString().slice(-6)}-L${tier.level}`,
+              uplineUser.id,
+              `Referral Commission ${tier.label} from ${userId} (${planName})`,
+              commission,
+              refTxHash
+            )
           );
         }
+
+        // Traverse to next upline level
+        currentUpline = uplineUser.upline_code;
       }
     }
 

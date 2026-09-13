@@ -1548,16 +1548,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* Card 3: 10% Referral Commissions Earned */}
+                  {/* Card 3: 3-Tier Referral Commissions Earned (L1: 10% · L2: 5% · L3: 2%) */}
                   <div className="p-3.5 rounded-xl bg-[#040812] border border-emerald-500/25 space-y-1 bg-gradient-to-b from-emerald-500/5 to-transparent">
                     <span className="text-[9.5px] text-[#10B981] uppercase block font-bold tracking-wider">
-                      3. Referral Commissions (10% Cut)
+                      3. Referral Commissions (L1: 10% · L2: 5% · L3: 2%)
                     </span>
                     <div className="text-[20px] font-black text-[#10B981] font-mono flex items-baseline gap-1.5">
                       +${liveLiabilityDesk.totalReferralIncome.toFixed(2)} <span className="text-[11px] font-normal text-[#10B981]/70">USDT</span>
                     </div>
                     <div className="text-[10.5px] text-[#94A3B8] font-mono">
-                      Direct sponsor bonus credited
+                      Multi-level team commissions (10% + 5% + 2%)
                     </div>
                   </div>
 
