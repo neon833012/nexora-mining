@@ -1562,70 +1562,17 @@ app.post('/api/admin/users/purge-inactive', async (c) => {
   }
 });
 
-// Admin Balance Adjustment (Credit / Debit user balance directly)
+// Admin Balance Adjustment - PERMANENTLY DISABLED
+// Reason: Manual adjustments cause double-credit bugs (e.g. $20 plan shows $40 staked).
+// All balance changes MUST go through proper flows:
+//   - Plan purchase → /api/plans/subscribe
+//   - BEP-20 deposit → /api/tx/claim-deposit
+//   - Withdrawal → /api/wallet/withdraw + /api/admin/withdrawals/action
 app.post('/api/admin/users/adjust-balance', async (c) => {
-  try {
-    const { userId, balanceType = 'deposit_balance', amount, reason = 'Admin Adjustment', txHash } = await c.req.json();
-    const validFields = ['deposit_balance', 'withdrawable_balance', 'active_mining_power', 'referral_balance'];
-    if (!userId || !validFields.includes(balanceType)) {
-      return c.json({ success: false, message: 'Valid userId and balanceType required' }, 400);
-    }
-
-    const numAmount = Number(amount);
-    if (isNaN(numAmount) || numAmount === 0) {
-      return c.json({ success: false, message: 'Valid non-zero amount required' }, 400);
-    }
-
-    const cleanReason = String(reason || '');
-    const isDeposit = cleanReason.toLowerCase().includes('deposit');
-    const txType = isDeposit
-      ? 'BEP-20 USDT Deposit (BSC)'
-      : cleanReason.startsWith('Admin Adjustment') || cleanReason.startsWith('Purchased') || cleanReason.startsWith('Plan')
-        ? cleanReason
-        : `Admin Adjustment: ${cleanReason}`;
-
-    const txHashToStore = (txHash && String(txHash).trim()) || (isDeposit ? ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')) : null);
-    const cleanStoreHash = txHashToStore ? txHashToStore.trim().toLowerCase() : null;
-
-    if (cleanStoreHash && cleanStoreHash.startsWith('0x') && cleanStoreHash.length === 66 && isDeposit) {
-      const existing = await c.env.DB.prepare(
-        'SELECT tx_hash, claimed_by_user FROM claimed_tx_hashes WHERE LOWER(tx_hash) = ? LIMIT 1'
-      ).bind(cleanStoreHash).first() as any;
-      if (existing) {
-        return c.json({
-          success: false,
-          alreadyClaimed: true,
-          message: `This 66-character transaction reference has ALREADY been claimed on the platform (by ${existing.claimed_by_user}).`
-        }, 409);
-      }
-    }
-
-    const txId = `ADJ-${Date.now().toString().slice(-6)}`;
-    const batchStatements: any[] = [
-      c.env.DB.prepare(
-        `UPDATE wallets SET ${balanceType} = MAX(0, ${balanceType} + ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
-      ).bind(numAmount, userId),
-
-      c.env.DB.prepare(
-        `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, 'Settled', ?)`
-      ).bind(txId, userId, txType, numAmount, cleanStoreHash)
-    ];
-
-    if (cleanStoreHash && cleanStoreHash.startsWith('0x') && cleanStoreHash.length === 66) {
-      batchStatements.push(
-        c.env.DB.prepare(
-          'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
-        ).bind(cleanStoreHash, userId, numAmount, txType)
-      );
-    }
-
-    await c.env.DB.batch(batchStatements);
-
-    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
-    return c.json({ success: true, message: `Wallet ${balanceType} adjusted by $${numAmount}`, updatedWallet, txHash: cleanStoreHash });
-  } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
-  }
+  return c.json({
+    success: false,
+    message: 'Manual balance adjustment is permanently disabled. All balance changes must go through proper plan purchase or verified deposit flows.'
+  }, 403);
 });
 
 // Admin Withdrawal Requests (filter by pending, approved, rejected)

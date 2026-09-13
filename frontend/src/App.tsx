@@ -1533,25 +1533,9 @@ export const App: React.FC = () => {
     });
 
     // Synchronize subscription & active mining power directly with Cloudflare D1 database
+    // NOTE: subscribePlan handles everything atomically in D1 (active_mining_power + deduction).
+    // Do NOT call adjustUserBalance here - it causes double-credit (2x staking amount).
     if (activeUser && !isTestAccount(activeUser, activeUser, userEmail)) {
-      nexoraApi.adjustUserBalance({
-        userId: activeUser,
-        balanceType: 'active_mining_power',
-        amount: plan.amount,
-        reason: `Purchased ${plan.planNumber} ($${plan.amount})`
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(() => {});
-
-      if (paymentMethod === 'internal') {
-        nexoraApi.adjustUserBalance({
-          userId: activeUser,
-          balanceType: 'deposit_balance',
-          amount: newDepBal,
-          reason: 'Plan purchase deduction'
-        }).catch(() => {});
-      }
-
       nexoraApi.subscribePlan({
         userId: activeUser,
         planId: plan.id,
@@ -1568,6 +1552,7 @@ export const App: React.FC = () => {
         if (res && res.alreadyClaimed) {
           showToast(`🚫 ${res.message}`);
         }
+        fetchLiveAdminUsers();
       }).catch(() => {});
     }
 
@@ -1962,29 +1947,16 @@ export const App: React.FC = () => {
         totalBalance: +(newDepBal + availableWithdrawal).toFixed(2)
       });
 
-      nexoraApi.adjustUserBalance({
+      // Use the atomic claim-deposit endpoint — this handles deposit_balance credit,
+      // transaction record, and anti-replay in one shot. Do NOT call adjustUserBalance
+      // separately — that causes duplicate balance credits.
+      nexoraApi.claimDepositTx({
         userId: userName,
-        balanceType: 'deposit_balance',
-        amount: newDepBal,
-        reason: 'BEP-20 USDT Deposit (BSC)',
-        txHash: finalTxHash
+        txHash: finalTxHash,
+        amount,
+        network: 'BEP-20'
       }).then(() => {
         fetchLiveAdminUsers();
-      }).catch(() => {});
-
-      nexoraApi.createDepositOrder({
-        userId: userName,
-        amount,
-        token: 'USDT',
-        network: 'BEP-20'
-      }).then((res) => {
-        if (res && res.order && res.order.orderId) {
-          nexoraApi.verifyDepositTx({
-            orderId: res.order.orderId,
-            txHash: finalTxHash,
-            userId: userName
-          }).catch(() => {});
-        }
       }).catch(() => {});
     }
 
