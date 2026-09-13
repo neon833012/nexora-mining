@@ -476,7 +476,7 @@ app.post('/api/auth/forgot-password', async (c) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            from: 'Neon Mining <onboarding@resend.dev>',
+            from: 'Neon Mining <noreply@neoncryptomining.com>',
             to: [user.email],
             subject: '🔐 Reset Your Neon Mining Password',
             html: emailHtml
