@@ -491,12 +491,14 @@ export const AdminSystemPortal: React.FC<Props> = ({
   };
 
   const dynamicExternalInflow = useMemo(() => {
-    return safeAdminOrders
+    const ordersInflow = safeAdminOrders
       .filter((o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p'))
       .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
-  }, [safeAdminOrders]);
+    const usersStaked = (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
+    return Math.max(ordersInflow, usersStaked);
+  }, [safeAdminOrders, adminUsers]);
 
-  // Platform Gross Inflow is strictly On-Chain BEP-20 Deposits (P2P is purely internal transfer)
+  // Platform Gross Inflow is strictly Fresh Crypto Inflow (Direct Plan Purchases + BEP-20 Deposits)
   const dynamicInflow = dynamicExternalInflow;
 
   const dynamicStaked = useMemo(() => {
