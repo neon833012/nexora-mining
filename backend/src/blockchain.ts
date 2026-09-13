@@ -126,8 +126,8 @@ export async function verifyBscTransaction(
       confirmations = Math.max(1, latestBlock - txBlockNumber + 1);
     } catch {}
 
-    // STRICT 5-MINUTE BLOCK AGE ENFORCEMENT:
-    // Binance Smart Chain produces 1 block every 3.0 seconds (100 blocks = 5 minutes).
+    // STRICT 2-MINUTE BLOCK AGE ENFORCEMENT:
+    // Binance Smart Chain produces 1 block every 3.0 seconds (40 blocks = 2 minutes).
     let blockAgeSeconds = Math.max(0, (latestBlock - txBlockNumber) * 3);
 
     try {
@@ -139,12 +139,14 @@ export async function verifyBscTransaction(
       }
     } catch {}
 
-    const MAX_ALLOWED_AGE_SECONDS = 5 * 60; // Strictly 5 minutes (300 seconds)
+    const MAX_ALLOWED_AGE_SECONDS = 2 * 60; // Strictly 2 minutes (120 seconds)
     if (blockAgeSeconds > MAX_ALLOWED_AGE_SECONDS) {
       const ageMinutes = Math.floor(blockAgeSeconds / 60);
       const ageText = ageMinutes >= 60
         ? `${(ageMinutes / 60).toFixed(1)} hours`
-        : `${ageMinutes} minutes`;
+        : ageMinutes >= 1
+          ? `${ageMinutes} minutes`
+          : `${blockAgeSeconds} seconds`;
       return {
         verified: false,
         actualAmount: 0,
@@ -152,7 +154,7 @@ export async function verifyBscTransaction(
         toAddress: '',
         blockNumber: txBlockNumber,
         confirmations: confirmations,
-        statusText: `Transaction Expired: This transaction was mined ${ageText} ago on Binance Smart Chain. For security, transactions older than 5 minutes cannot be accepted. Please make a fresh payment for this session.`,
+        statusText: `Transaction Expired: This transaction was mined ${ageText} ago on Binance Smart Chain. For security, transactions older than 2 minutes cannot be accepted. Please make a fresh payment for this session.`,
         error: 'TX_EXPIRED'
       };
     }
