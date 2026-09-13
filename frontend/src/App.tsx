@@ -826,11 +826,23 @@ export const App: React.FC = () => {
   const [blockNumber, setBlockNumber] = useState(34912882);
 
   const showToast = (msg: string) => {
+    if (showAdminPortal) return; // Completely isolate user-facing toasts from admin portal
     setToastMessage(msg);
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
     toastTimeoutRef.current = window.setTimeout(() => {
       setToastMessage(null);
     }, 4000);
   };
+
+  // Isolate Admin Portal: Dismiss promotional popup and user toasts whenever Admin is active
+  useEffect(() => {
+    if (showAdminPortal) {
+      setShowPromoPopup(false);
+      setToastMessage(null);
+    }
+  }, [showAdminPortal]);
 
   // Multi-Language Retrigger Hook (Ensures Google Translate processes dynamic modals, popups, and route changes)
   useEffect(() => {
@@ -1296,13 +1308,16 @@ export const App: React.FC = () => {
       return () => clearInterval(sessionInterval);
   }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
-  // Automatically trigger promotional popup modal 2.5 seconds after opening
+  // Automatically trigger promotional popup modal 2.5 seconds after opening (User side only)
   useEffect(() => {
+    if (showAdminPortal) return;
     const promoTimer = setTimeout(() => {
-      setShowPromoPopup(true);
+      if (!showAdminPortal) {
+        setShowPromoPopup(true);
+      }
     }, 2500);
     return () => clearTimeout(promoTimer);
-  }, []);
+  }, [showAdminPortal]);
 
   // Check URL query parameters (?ref=CODE, ?admin=portal) on mount
   useEffect(() => {
@@ -3583,7 +3598,7 @@ export const App: React.FC = () => {
 
         {/* Multi-Step Realistic Plan Checkout Wizard Modal */}
         <PlanCheckoutModal
-          isOpen={!!selectedPlanForCheckout}
+          isOpen={!!selectedPlanForCheckout && !showAdminPortal}
           plan={selectedPlanForCheckout}
           isUpgrade={isUpgradeModal}
           activeMiningPower={activeMiningPower}
@@ -3606,7 +3621,7 @@ export const App: React.FC = () => {
 
         {/* Demo Deposit Dialog */}
         <DepositDemoDialog
-          isOpen={showDepositDialog}
+          isOpen={showDepositDialog && !showAdminPortal}
           onDismiss={() => setShowDepositDialog(false)}
           onDepositConfirmed={handleDepositConfirmed}
           vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
@@ -3615,7 +3630,7 @@ export const App: React.FC = () => {
 
         {/* P2P Member Transfer Modal */}
         <P2PTransferModal
-          isOpen={showP2PTransferModal}
+          isOpen={showP2PTransferModal && !showAdminPortal}
           onDismiss={() => setShowP2PTransferModal(false)}
           depositBalance={depositBalance}
           availableBalance={+availableWithdrawal.toFixed(2)}
@@ -3627,7 +3642,7 @@ export const App: React.FC = () => {
 
         {/* Withdrawal History Modal */}
         <WithdrawalHistoryModal
-          isOpen={showWithdrawalHistoryModal}
+          isOpen={showWithdrawalHistoryModal && !showAdminPortal}
           onDismiss={() => setShowWithdrawalHistoryModal(false)}
           withdrawalRequests={withdrawalRequests}
           onRequestNewWithdrawal={() => {
@@ -3642,13 +3657,13 @@ export const App: React.FC = () => {
 
         {/* Dedicated 6-Digit Create Fund Password Modal */}
         <CreateFundPasswordModal
-          isOpen={showCreateFundPasswordModal}
+          isOpen={showCreateFundPasswordModal && !showAdminPortal}
           onDismiss={() => setShowCreateFundPasswordModal(false)}
           onSuccess={handleFundPasswordCreated}
         />
 
         {/* Dedicated Withdrawal Popup Modal Window */}
-        {showWithdrawalModal && (
+        {showWithdrawalModal && !showAdminPortal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto">
             <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#081220] border border-[#1C3558] p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 animate-scaleUp">
               {/* Top Close Button */}
@@ -3705,7 +3720,7 @@ export const App: React.FC = () => {
 
         {/* Deposit & Inflow History Modal */}
         <DepositHistoryModal
-          isOpen={showDepositHistoryModal}
+          isOpen={showDepositHistoryModal && !showAdminPortal}
           onDismiss={() => setShowDepositHistoryModal(false)}
           depositRecords={depositRecords}
           onOpenDepositDialog={() => setShowDepositDialog(true)}
@@ -3713,7 +3728,7 @@ export const App: React.FC = () => {
 
         {/* Legal Policies Suite Modal */}
         <LegalPolicyModal
-          isOpen={showLegalModal}
+          isOpen={showLegalModal && !showAdminPortal}
           initialTab={activeLegalTab}
           onDismiss={() => setShowLegalModal(false)}
         />
@@ -3828,7 +3843,7 @@ export const App: React.FC = () => {
 
         {/* Auth Modal with Mobile + Country Flag + Random Username + Google Auth */}
         <AuthModalDialog
-          isOpen={showAuthModal && !isLoggedIn}
+          isOpen={showAuthModal && !isLoggedIn && !showAdminPortal}
           isSignUp={isSignUpMode}
           initialReferralCode={preFilledRefCode}
           incomingResetToken={incomingResetToken}
@@ -3842,25 +3857,29 @@ export const App: React.FC = () => {
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
 
-        {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal */}
-        <PromotionalPlanPopupModal
-          isOpen={showPromoPopup}
-          onDismiss={() => setShowPromoPopup(false)}
-          onSelectPlan={(plan) => {
-            setShowPromoPopup(false);
-            handleSelectPlan(plan);
-          }}
-          onViewAllPlans={() => {
-            setShowPromoPopup(false);
-            navigateTo('plans');
-          }}
-          adminPopupImageUrl={(platformSettings?.popupEnabled !== false) ? (platformSettings?.popupImageUrl || '') : ''}
-          adminPopupLinkUrl={platformSettings?.popupLinkUrl || ''}
-          miningPlans={miningPlans}
-        />
+        {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal - USER SIDE ONLY */}
+        {!showAdminPortal && (
+          <PromotionalPlanPopupModal
+            isOpen={showPromoPopup && !showAdminPortal}
+            onDismiss={() => setShowPromoPopup(false)}
+            onSelectPlan={(plan) => {
+              setShowPromoPopup(false);
+              handleSelectPlan(plan);
+            }}
+            onViewAllPlans={() => {
+              setShowPromoPopup(false);
+              navigateTo('plans');
+            }}
+            adminPopupImageUrl={(platformSettings?.popupEnabled !== false) ? (platformSettings?.popupImageUrl || '') : ''}
+            adminPopupLinkUrl={platformSettings?.popupLinkUrl || ''}
+            miningPlans={miningPlans}
+          />
+        )}
 
-        {/* Global Toast Notification */}
-        <ToastNotification message={toastMessage} onDismiss={() => setToastMessage(null)} />
+        {/* Global Toast Notification - USER SIDE ONLY */}
+        {!showAdminPortal && (
+          <ToastNotification message={toastMessage} onDismiss={() => setToastMessage(null)} />
+        )}
       </main>
     </div>
   );
