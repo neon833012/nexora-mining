@@ -409,20 +409,28 @@ export const AdminSystemPortal: React.FC<Props> = ({
     );
   }, [adminOrders, adminUsers]);
 
+  const normalizeOrderAmount = (amt: number): number => {
+    const PLAN_TIERS = [20, 60, 120, 250, 500, 1500, 3000, 5000, 10000];
+    for (const tier of PLAN_TIERS) {
+      if (amt >= tier - 0.50 && amt <= tier + 0.10) return tier;
+    }
+    return amt;
+  };
+
   const dynamicInflow = useMemo(() => {
-    return safeAdminOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+    return safeAdminOrders.reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
   }, [safeAdminOrders]);
 
   const dynamicExternalInflow = useMemo(() => {
     return safeAdminOrders
       .filter((o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p'))
-      .reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+      .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
   }, [safeAdminOrders]);
 
   const dynamicP2PInflow = useMemo(() => {
     return safeAdminOrders
       .filter((o) => o.paymentMethod === 'p2p' || o.planName?.toLowerCase().includes('p2p'))
-      .reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+      .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
   }, [safeAdminOrders]);
 
   const dynamicStaked = useMemo(() => {

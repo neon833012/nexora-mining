@@ -255,14 +255,20 @@ export async function verifyBscTransaction(
       };
     }
 
+    // Auto-normalize: If amount is within fee tolerance buffer (e.g. 19.70 - 20.10 for 20 USDT),
+    // normalize actualAmount to full expectedAmount so user, ledger, and admin count the full nominal amount.
+    const normalizedAmount = (transferAmount >= minAcceptableAmount && transferAmount <= expectedAmount + 0.10)
+      ? expectedAmount
+      : +(transferAmount).toFixed(2);
+
     return {
       verified: true,
-      actualAmount: transferAmount,
+      actualAmount: normalizedAmount,
       fromAddress: senderAddress,
       toAddress: recipientAddress,
       blockNumber: txBlockNumber,
       confirmations,
-      statusText: `✓ Verified on BNB Smart Chain! Confirmed ${transferAmount.toFixed(2)} USDT transfer to vault.`
+      statusText: `✓ Verified on BNB Smart Chain! Confirmed ${normalizedAmount.toFixed(2)} USDT transfer to vault.`
     };
   } catch (err: any) {
     return {

@@ -170,6 +170,14 @@ export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>
   } catch (e) {}
 };
 
+export const normalizeToPlanTier = (amt: number): number => {
+  const PLAN_TIERS = [20, 60, 120, 250, 500, 1500, 3000, 5000, 10000];
+  for (const tier of PLAN_TIERS) {
+    if (amt >= tier - 0.50 && amt <= tier + 0.10) return tier;
+  }
+  return +(amt).toFixed(2);
+};
+
 export const App: React.FC = () => {
   // Navigation & Multi-Page View
   const [activeRoute, setActiveRoute] = useState<NavRoute>('home');
@@ -862,20 +870,23 @@ export const App: React.FC = () => {
             if (depRes && depRes.success && Array.isArray(depRes.deposits)) {
               const liveOrders: AdminOrderRecord[] = depRes.deposits
                 .filter((d: any) => mappedUsers.some((u) => u.id === d.user_id || u.name === d.user_name))
-                .map((d: any) => ({
-                  id: d.order_id,
-                  orderNumber: d.order_id,
-                  userId: d.user_id,
-                  userName: d.user_name || d.user_id,
-                  planId: `plan_${d.amount}`,
-                  planName: d.network === 'P2P Transfer' ? `P2P Inbound Transfer ($${Number(d.amount).toFixed(2)})` : `BEP-20 USDT Deposit ($${Number(d.amount).toFixed(2)})`,
-                  planAmount: Number(d.amount),
-                  amountPaid: Number(d.amount),
-                  txHash: d.tx_hash,
-                  paymentMethod: d.network === 'P2P Transfer' ? 'p2p' : 'bep20',
-                  status: d.status === 'confirmed' ? 'completed' : (d.status as any),
-                  createdAt: d.created_at || 'Recently'
-                }));
+                .map((d: any) => {
+                  const normalizedAmt = normalizeToPlanTier(Number(d.amount) || 0);
+                  return {
+                    id: d.order_id,
+                    orderNumber: d.order_id,
+                    userId: d.user_id,
+                    userName: d.user_name || d.user_id,
+                    planId: `plan_${normalizedAmt}`,
+                    planName: d.network === 'P2P Transfer' ? `P2P Inbound Transfer ($${normalizedAmt.toFixed(2)})` : `BEP-20 USDT Deposit ($${normalizedAmt.toFixed(2)})`,
+                    planAmount: normalizedAmt,
+                    amountPaid: normalizedAmt,
+                    txHash: d.tx_hash,
+                    paymentMethod: d.network === 'P2P Transfer' ? 'p2p' : 'bep20',
+                    status: d.status === 'confirmed' ? 'completed' : (d.status as any),
+                    createdAt: d.created_at || 'Recently'
+                  };
+                });
               setAdminOrders(liveOrders);
               try {
                 localStorage.setItem('neon_admin_orders', JSON.stringify(liveOrders));
@@ -1104,7 +1115,7 @@ export const App: React.FC = () => {
               if (hashKey) seenHashes.add(hashKey);
               allDeposits.push({
                 id: d.order_id || `dep_${d.id || Date.now()}`,
-                amount: Number(d.amount) || 0,
+                amount: normalizeToPlanTier(Number(d.amount) || 0),
                 timestamp: d.created_at || d.confirmed_at || 'Recently',
                 timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
                 status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
@@ -1132,7 +1143,7 @@ export const App: React.FC = () => {
               const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
               allDeposits.push({
                 id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
-                amount: Number(t.amount) || 0,
+                amount: normalizeToPlanTier(Number(t.amount) || 0),
                 timestamp: t.created_at || 'Recently',
                 timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
                 status: 'completed',
@@ -2024,8 +2035,9 @@ export const App: React.FC = () => {
 
   // Deposit Confirmation (On-Chain BEP-20 Verified)
   const handleDepositConfirmed = (amount: number, txHash?: string, orderId?: string) => {
-    setDepositBalance((prev) => +(prev + amount).toFixed(2));
-    setTotalBalance((prev) => +(prev + amount).toFixed(2));
+    const effectiveAmount = normalizeToPlanTier(amount);
+    setDepositBalance((prev) => +(prev + effectiveAmount).toFixed(2));
+    setTotalBalance((prev) => +(prev + effectiveAmount).toFixed(2));
 
     const finalTxHash = txHash || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
     const finalOrderId = orderId || `DEP-BSC-${Date.now()}`;
@@ -2035,7 +2047,7 @@ export const App: React.FC = () => {
     const newDepRecord: DepositRecord = {
       id: `dep_${Date.now()}`,
       type: 'bep20_deposit',
-      amount: amount,
+      amount: effectiveAmount,
       txHash: finalTxHash,
       timestamp: formattedTimestamp,
       timestampMs: Date.now(),
@@ -2048,7 +2060,7 @@ export const App: React.FC = () => {
     const newTx: TransactionRecord = {
       id: `tx_${Date.now()}`,
       type: 'BEP-20 USDT Deposit (BSC)',
-      amount: amount,
+      amount: effectiveAmount,
       date: formattedTimestamp,
       status: 'Settled',
       txHash: finalTxHash
@@ -2064,9 +2076,9 @@ export const App: React.FC = () => {
         userEmail: userEmail || `${userName.toLowerCase()}@nexora.io`,
         planId: 'bep20_deposit',
         planName: 'USDT (BEP-20) Deposit',
-        planAmount: amount,
+        planAmount: effectiveAmount,
         paymentType: 'new_purchase',
-        amountPaid: amount,
+        amountPaid: effectiveAmount,
         previousCreditedAmount: 0,
         dailyRatePercent: 0,
         dailyYieldUSDT: 0,
@@ -2079,8 +2091,8 @@ export const App: React.FC = () => {
       // 3. Admin Telemetry Update
       setAdminTelemetry((prev) => ({
         ...prev,
-        totalPlatformRevenue: +(prev.totalPlatformRevenue + amount).toFixed(2),
-        platformNetReserves: +(prev.platformNetReserves + amount).toFixed(2)
+        totalPlatformRevenue: +(prev.totalPlatformRevenue + effectiveAmount).toFixed(2),
+        platformNetReserves: +(prev.platformNetReserves + effectiveAmount).toFixed(2)
       }));
 
       // 4. Update Current User Record in Admin Users Table
@@ -2089,7 +2101,7 @@ export const App: React.FC = () => {
           if (u.id.toUpperCase() === userName.toUpperCase() || u.name.toUpperCase() === userName.toUpperCase()) {
             return {
               ...u,
-              availableBalance: +(u.availableBalance + amount).toFixed(2)
+              availableBalance: +(u.availableBalance + effectiveAmount).toFixed(2)
             };
           }
           return u;
@@ -2100,7 +2112,7 @@ export const App: React.FC = () => {
     // 5. Synchronize deposit balance & order directly with Cloudflare D1 backend
     if (userName && !isTestAccount(userName, userName, userEmail)) {
       const cleanUserId = userName.toUpperCase();
-      const newDepBal = +(depositBalance + amount).toFixed(2);
+      const newDepBal = +(depositBalance + effectiveAmount).toFixed(2);
       saveUserSavedData(cleanUserId, {
         depositBalance: newDepBal,
         totalBalance: +(newDepBal + availableWithdrawal).toFixed(2)
@@ -2112,14 +2124,14 @@ export const App: React.FC = () => {
       nexoraApi.claimDepositTx({
         userId: userName,
         txHash: finalTxHash,
-        amount,
+        amount: effectiveAmount,
         network: 'BEP-20'
       }).then(() => {
         fetchLiveAdminUsers();
       }).catch(() => {});
     }
 
-    showToast(`✓ Received +$${amount.toFixed(2)} USDT on BNB Smart Chain! Confirmed in Deposit Balance & Admin Panel.`);
+    showToast(`✓ Received +$${effectiveAmount.toFixed(2)} USDT on BNB Smart Chain! Confirmed in Deposit Balance & Admin Panel.`);
   };
 
   // User creates/confirms their 6-digit fund password from CreateFundPasswordModal

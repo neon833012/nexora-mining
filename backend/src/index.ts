@@ -566,7 +566,17 @@ app.post('/api/tx/claim-deposit', async (c) => {
       return c.json({ success: false, message: 'Invalid 66-character transaction hash. Must start with 0x and have exactly 66 characters.' }, 400);
     }
 
-    const numAmount = Number(amount);
+    let numAmount = Number(amount);
+    // Automatic Plan Tier Normalization:
+    // If a user sends e.g. 19.97 or 19.98 USDT for a $20 plan (or similar due to BSC network gas/exchange fee deductions),
+    // normalize it to the exact plan tier ($20.00) everywhere across user wallet, transactions ledger, and admin inflow.
+    const PLAN_TIERS = [20, 60, 120, 250, 500, 1500, 3000, 5000, 10000];
+    for (const tier of PLAN_TIERS) {
+      if (numAmount >= tier - 0.50 && numAmount <= tier + 0.10) {
+        numAmount = tier;
+        break;
+      }
+    }
 
     // 1. Strict Anti-Replay Check
     const existingClaim = await c.env.DB.prepare(
@@ -760,6 +770,15 @@ app.post('/api/deposit/verify-tx', async (c) => {
     const effectiveUserId = userId || order.user_id;
     const txId = `TX-DEP-${Date.now().toString().slice(-6)}`;
 
+    let creditAmount = Number(order.amount);
+    const PLAN_TIERS = [20, 60, 120, 250, 500, 1500, 3000, 5000, 10000];
+    for (const tier of PLAN_TIERS) {
+      if (creditAmount >= tier - 0.50 && creditAmount <= tier + 0.10) {
+        creditAmount = tier;
+        break;
+      }
+    }
+
     // Check if user has an upline referrer for multi-level commission
     const user = await c.env.DB.prepare('SELECT upline_code FROM users WHERE id = ?').bind(effectiveUserId).first() as any;
 
@@ -767,27 +786,27 @@ app.post('/api/deposit/verify-tx', async (c) => {
       // Record in permanent immutable claimed_tx_hashes table
       c.env.DB.prepare(
         'INSERT OR IGNORE INTO claimed_tx_hashes (tx_hash, claimed_by_user, amount, purpose) VALUES (?, ?, ?, ?)'
-      ).bind(cleanTx, effectiveUserId, order.amount, 'bep20_deposit'),
+      ).bind(cleanTx, effectiveUserId, creditAmount, 'bep20_deposit'),
 
-      // Update order to confirmed
+      // Update order to confirmed and set amount to normalized tier
       c.env.DB.prepare(
         `UPDATE deposit_orders 
-         SET status = 'confirmed', tx_hash = ?, block_confirmations = ?, confirmed_at = CURRENT_TIMESTAMP 
+         SET status = 'confirmed', amount = ?, tx_hash = ?, block_confirmations = ?, confirmed_at = CURRENT_TIMESTAMP 
          WHERE order_id = ?`
-      ).bind(cleanTx, verification.confirmations, orderId),
+      ).bind(creditAmount, cleanTx, verification.confirmations, orderId),
 
       // Credit deposit balance
       c.env.DB.prepare(
         `UPDATE wallets 
          SET deposit_balance = deposit_balance + ?, updated_at = CURRENT_TIMESTAMP 
          WHERE user_id = ?`
-      ).bind(order.amount, effectiveUserId),
+      ).bind(creditAmount, effectiveUserId),
 
       // Insert ledger entry
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
          VALUES (?, ?, 'BEP-20 Deposit', ?, 'Settled', ?)`
-      ).bind(txId, effectiveUserId, order.amount, cleanTx)
+      ).bind(txId, effectiveUserId, creditAmount, cleanTx)
     ];
 
     // 3-Tier Multi-Level Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)

@@ -164,7 +164,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
       // Synchronous Atomic Backend Claim before crediting user
       const effectiveUserId = (userId && userId.trim()) || localStorage.getItem('neon_user_name') || 'DIRECT_MEMBER';
       const actualAmt = result.actualAmount || numAmount;
-      const creditedAmount = (actualAmt >= numAmount - 0.30 && actualAmt <= numAmount + 0.30)
+      const creditedAmount = (actualAmt >= numAmount - 0.50 && actualAmt <= numAmount + 0.50)
         ? numAmount
         : actualAmt;
 
