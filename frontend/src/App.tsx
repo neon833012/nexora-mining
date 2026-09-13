@@ -986,13 +986,18 @@ export const App: React.FC = () => {
 
   // Helper to perform full clean session logout
   const performLogout = useCallback((reasonMessage?: string) => {
-    localStorage.removeItem('neon_is_logged_in');
-    localStorage.removeItem('neon_user_name');
-    localStorage.removeItem('neon_user_mobile');
-    localStorage.removeItem('neon_user_email');
-    localStorage.removeItem('neon_fund_password');
-    localStorage.removeItem('neon_upline_code');
-    localStorage.removeItem('neon_session_token');
+    const keysToRemove = [
+      'neon_is_logged_in', 'neon_user_name', 'neon_user_mobile', 'neon_user_email',
+      'neon_fund_password', 'neon_upline_code', 'neon_referral_code', 'neon_session_token',
+      'neon_total_balance', 'neon_deposit_balance', 'neon_mining_power', 'neon_total_rewards',
+      'neon_referral_income', 'neon_referral_balance', 'neon_yesterdays_income',
+      'neon_available_withdrawal', 'neon_mining_active', 'neon_seconds_remaining',
+      'neon_unclaimed_yield', 'neon_transactions', 'neon_withdrawal_requests',
+      'neon_referred_users', 'neon_live_chat_sessions'
+    ];
+    keysToRemove.forEach((k) => {
+      try { localStorage.removeItem(k); } catch {}
+    });
 
     setIsLoggedIn(false);
     setUserName('');
@@ -1011,6 +1016,8 @@ export const App: React.FC = () => {
     setReferralBalance(0);
     setYesterdaysIncome(0);
     setTransactions([]);
+    setWithdrawalRequests([]);
+    setReferredUsers([]);
 
     if (reasonMessage) {
       showToast(reasonMessage);
@@ -1064,8 +1071,8 @@ export const App: React.FC = () => {
           if (res.user.fundPinSet !== undefined) {
             setUserFundPinSet(Boolean(res.user.fundPinSet));
           }
-        } else if (res && !res.success && res.message?.toLowerCase().includes('not found')) {
-          // Stale / invalid session (user deleted or not in D1)
+        } else if (res && !res.success) {
+          // Stale / invalid session (user deleted, wiped from D1, or not found)
           performLogout();
         }
       } catch (e) {}

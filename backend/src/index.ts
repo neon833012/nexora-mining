@@ -2087,6 +2087,16 @@ app.post('/api/admin/chats/resolve', async (c) => {
   }
 });
 
+// Admin Clear All Chat Sessions / Purge Queue
+app.post('/api/admin/chats/clear-all', async (c) => {
+  try {
+    await c.env.DB.prepare('DELETE FROM chat_sessions').run();
+    return c.json({ success: true, message: 'All chat sessions purged from queue' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 // ============================================================================
 // 8. Cloudflare Worker Module Export (Fetch + Scheduled Cron Trigger)
 // ============================================================================

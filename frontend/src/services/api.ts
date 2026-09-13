@@ -605,6 +605,18 @@ class NeonApiService {
       return { success: false, message: err.message };
     }
   }
+
+  async clearAllAdminChats() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/chats/clear-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 export const neonApi = new NeonApiService();

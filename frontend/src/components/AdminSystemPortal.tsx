@@ -698,7 +698,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
         if (res.success && Array.isArray(res.sessions)) {
           setLiveSessions(res.sessions);
           try {
-            localStorage.setItem('neon_live_chat_sessions', JSON.stringify(res.sessions));
+            if (res.sessions.length === 0) {
+              localStorage.removeItem('neon_live_chat_sessions');
+            } else {
+              localStorage.setItem('neon_live_chat_sessions', JSON.stringify(res.sessions));
+            }
           } catch {}
         }
       } catch (e) {}
@@ -716,6 +720,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
         const raw = localStorage.getItem('neon_live_chat_sessions');
         if (raw) {
           setLiveSessions(JSON.parse(raw));
+        } else {
+          setLiveSessions([]);
         }
       } catch (e) {
         console.error('Error syncing live chat sessions:', e);
@@ -819,6 +825,20 @@ export const AdminSystemPortal: React.FC<Props> = ({
     try {
       await nexoraApi.resolveAdminChat(sessionId);
     } catch (e) {}
+  };
+
+  const handlePurgeAllChats = async () => {
+    if (!window.confirm('⚠️ Are you sure you want to PURGE all chat sessions from queue? This will clear all waiting and active chats.')) return;
+    try {
+      await nexoraApi.clearAllAdminChats();
+      setLiveSessions([]);
+      setSelectedSessionId(null);
+      localStorage.removeItem('neon_live_chat_sessions');
+      window.dispatchEvent(new Event('neon_chat_sync'));
+      triggerNotice('✓ All chat sessions and queues purged successfully!');
+    } catch (e: any) {
+      triggerNotice(`Error purging chats: ${e.message}`);
+    }
   };
 
   const waitingChatsCount = useMemo(() => {
@@ -2759,15 +2779,29 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       ))}
                     </div>
 
-                    <div className="relative min-w-[220px]">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input
-                        type="text"
-                        placeholder="Search miner name, phone, message..."
-                        value={chatSearchQuery}
-                        onChange={(e) => setChatSearchQuery(e.target.value)}
-                        className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
-                      />
+                    <div className="flex items-center gap-2">
+                      {liveSessions.length > 0 && !isSubadmin && (
+                        <button
+                          type="button"
+                          onClick={handlePurgeAllChats}
+                          className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-red-400 bg-red-950/40 border border-red-500/30 hover:bg-red-900/60 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                          title="Purge all active/waiting chat sessions from queue"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Clear Queue</span>
+                        </button>
+                      )}
+
+                      <div className="relative min-w-[220px]">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <input
+                          type="text"
+                          placeholder="Search miner name, phone, message..."
+                          value={chatSearchQuery}
+                          onChange={(e) => setChatSearchQuery(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
                     </div>
                   </div>
 

@@ -12,7 +12,8 @@ import {
   Headphones,
   UserCheck,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import { ChatMessage, SupportTicket, LiveChatSession } from '../types/mining';
 import { nexoraApi } from '../services/api';
@@ -190,19 +191,19 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     const loadSession = async () => {
       const all = getStoredSessions();
       const current = all.find((s) => s.id === sessionId);
-      if (current) {
+      if (current && current.status !== 'waiting_admin') {
         setMessages(current.messages.length > 0 ? current.messages : INITIAL_MESSAGES);
-        setIsWaitingHuman(current.status === 'waiting_admin');
         setHasHumanJoined(current.status === 'active_admin');
         setAssignedAdmin(current.assignedAdminName);
+        setIsWaitingHuman(false);
       } else {
-        setMessages(INITIAL_MESSAGES);
+        setMessages(current?.messages?.length ? current.messages : INITIAL_MESSAGES);
         setIsWaitingHuman(false);
         setHasHumanJoined(false);
         setAssignedAdmin(undefined);
       }
 
-      // Also pull latest state from Cloudflare D1
+      // Also pull latest authoritative state from Cloudflare D1
       try {
         const res = await nexoraApi.getChatSession(sessionId);
         if (res.success && res.session) {
@@ -217,9 +218,25 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           } else if (remote.status === 'waiting_admin') {
             setIsWaitingHuman(true);
             setHasHumanJoined(false);
+          } else {
+            // resolved or bot
+            setIsWaitingHuman(false);
+            setHasHumanJoined(false);
           }
+        } else {
+          // No session in D1 (database cleared or clean slate) -> Ensure no queue!
+          setIsWaitingHuman(false);
+          setHasHumanJoined(false);
+          setAssignedAdmin(undefined);
+          try {
+            const filtered = getStoredSessions().filter((s) => s.id !== sessionId);
+            saveStoredSessions(filtered);
+            localStorage.removeItem('neon_live_chat_sessions');
+          } catch {}
         }
-      } catch (e) {}
+      } catch (e) {
+        setIsWaitingHuman(false);
+      }
     };
 
     loadSession();
@@ -258,7 +275,13 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           } else if (remote.status === 'waiting_admin') {
             setIsWaitingHuman(true);
             setHasHumanJoined(false);
+          } else {
+            setIsWaitingHuman(false);
+            setHasHumanJoined(false);
           }
+        } else {
+          setIsWaitingHuman(false);
+          setHasHumanJoined(false);
         }
       } catch (err) {}
     };
@@ -351,6 +374,20 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         timestamp: 'Just now'
       });
     }
+  };
+
+  const handleClearChat = async () => {
+    setMessages(INITIAL_MESSAGES);
+    setIsWaitingHuman(false);
+    setHasHumanJoined(false);
+    setAssignedAdmin(undefined);
+    try {
+      await nexoraApi.resolveAdminChat(sessionId);
+      const all = getStoredSessions().filter((s) => s.id !== sessionId);
+      saveStoredSessions(all);
+      localStorage.removeItem(`neon_chat_session_${userIdentifier}`);
+      localStorage.removeItem('neon_live_chat_sessions');
+    } catch {}
   };
 
   const handleSendMessage = (textToSend?: string) => {
@@ -684,6 +721,14 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
               )}
 
               <button
+                onClick={handleClearChat}
+                title="Reset conversation & clear queue"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-cyan-400 hover:bg-[#0D1B2E] transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+
+              <button
                 onClick={() => setIsOpen(false)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
               >
@@ -699,7 +744,16 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-bounce" />
                 <span>Ticket dispatched to Live Support Desk</span>
               </div>
-              <span className="text-[10px] font-mono text-amber-400 bg-amber-900/40 px-1.5 py-0.5 rounded">In Queue</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-amber-400 bg-amber-900/40 px-1.5 py-0.5 rounded">In Queue</span>
+                <button
+                  onClick={handleClearChat}
+                  className="text-[10px] text-amber-300 hover:text-white underline cursor-pointer font-bold"
+                  title="Cancel human support request"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 
