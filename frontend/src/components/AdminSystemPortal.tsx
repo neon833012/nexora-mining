@@ -558,21 +558,28 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return safeWithdrawalRequests.filter((r) => r.status === 'rejected');
   }, [safeWithdrawalRequests]);
 
-  const dynamicApprovedWithdrawalsAmount = useMemo(() => {
+  const dynamicApprovedGrossAmount = useMemo(() => {
     return approvedWithdrawals.reduce((sum, r) => sum + (r.amount || 0), 0);
   }, [approvedWithdrawals]);
+
+  const dynamicApprovedNetPayout = useMemo(() => {
+    return approvedWithdrawals.reduce((sum, r) => sum + (r.netAmount !== undefined ? r.netAmount : (r.amount ? r.amount * 0.95 : 0)), 0);
+  }, [approvedWithdrawals]);
+
+  const dynamicApprovedWithdrawalsAmount = dynamicApprovedNetPayout;
 
   const dynamicPendingWithdrawalsAmount = useMemo(() => {
     return pendingWithdrawals.reduce((sum, r) => sum + (r.amount || 0), 0);
   }, [pendingWithdrawals]);
 
   const dynamicFees = useMemo(() => {
-    return approvedWithdrawals.reduce((sum, r) => sum + (r.fee || 0), 0);
+    return approvedWithdrawals.reduce((sum, r) => sum + (r.fee !== undefined ? r.fee : (r.amount ? r.amount * 0.05 : 0)), 0);
   }, [approvedWithdrawals]);
 
+  // Exact Vault Reserve = Total Inflow - Net Cashouts Outflow (Fee remains in company vault)
   const dynamicReserves = useMemo(() => {
-    return Math.max(0, dynamicInflow - dynamicApprovedWithdrawalsAmount);
-  }, [dynamicInflow, dynamicApprovedWithdrawalsAmount]);
+    return Math.max(0, dynamicInflow - dynamicApprovedNetPayout);
+  }, [dynamicInflow, dynamicApprovedNetPayout]);
 
   const dynamicActiveMinersCount = useMemo(() => {
     return (adminUsers || []).filter((u) => (u.stakedAmount || 0) > 0).length;
@@ -3127,18 +3134,22 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
                   <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL INFLOW</span>
                   <span className="text-xl font-black text-white font-mono">${dynamicInflow.toFixed(2)}</span>
+                  <span className="text-[9.5px] text-gray-400 block font-mono">Plans + Crypto Deposits</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
                   <span className="text-[10px] text-gray-500 block uppercase font-bold">SETTLED CASHOUTS</span>
-                  <span className="text-xl font-black text-emerald-400 font-mono">${dynamicApprovedWithdrawalsAmount.toFixed(2)}</span>
+                  <span className="text-xl font-black text-emerald-400 font-mono">${dynamicApprovedNetPayout.toFixed(2)}</span>
+                  <span className="text-[9.5px] text-emerald-400 block font-mono">Net Outflow (Gross: ${dynamicApprovedGrossAmount.toFixed(2)})</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
                   <span className="text-[10px] text-gray-500 block uppercase font-bold">FEES COLLECTED (5%)</span>
                   <span className="text-xl font-black text-cyan-400 font-mono">${dynamicFees.toFixed(2)}</span>
+                  <span className="text-[9.5px] text-cyan-400 block font-mono">Company Profit Retained</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
                   <span className="text-[10px] text-gray-500 block uppercase font-bold">NET COLD VAULT</span>
                   <span className="text-xl font-black text-purple-400 font-mono">${dynamicReserves.toFixed(2)}</span>
+                  <span className="text-[9.5px] text-purple-400 block font-mono">Available Vault Reserve</span>
                 </div>
               </div>
             </div>
