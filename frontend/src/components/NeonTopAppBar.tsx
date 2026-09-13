@@ -144,16 +144,16 @@ export const NeonTopAppBar: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Top Bar Action: "Get App" when logged in, "Sign In" when logged out */}
+          {/* Top Bar Action: User ID when logged in, "Sign In" when logged out */}
           {isLoggedIn ? (
-            <button
-              onClick={onGetAppClick || onLoginClick}
-              title="Download Neon Mining Official App"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 hover:from-[#00F0FF]/25 hover:to-[#0284C7]/30 border border-[#00F0FF]/50 text-[11.5px] lg:text-[12px] font-black text-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.25)] hover:shadow-[0_0_18px_rgba(0,240,255,0.4)] cursor-pointer transition-all active:scale-95"
+            <div
+              onClick={() => onRouteChange ? onRouteChange('dashboard') : undefined}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0A1628] border border-[#00F0FF]/40 text-[11.5px] lg:text-[12px] font-bold text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.2)] hover:border-[#00F0FF] transition-all cursor-pointer"
+              title="View Dashboard"
             >
-              <Smartphone className="w-3.5 h-3.5 text-[#00F0FF] shrink-0" />
-              <span>Get App</span>
-            </button>
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-mono">@{userName}</span>
+            </div>
           ) : (
             <button
               onClick={onLoginClick}

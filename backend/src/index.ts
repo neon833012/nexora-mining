@@ -640,53 +640,6 @@ app.post('/api/tx/claim-deposit', async (c) => {
       ).bind(orderId, effectiveUserId, numAmount, network, c.env.VAULT_ADDRESS || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d', cleanTx)
     ];
 
-    // 3-Tier Multi-Level Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)
-    if (user && user.upline_code) {
-      const tierConfig = [
-        { level: 1, rate: 0.10, label: 'L1 (10%)' },
-        { level: 2, rate: 0.05, label: 'L2 (5%)' },
-        { level: 3, rate: 0.02, label: 'L3 (2%)' }
-      ];
-
-      let currentUpline = user.upline_code;
-      for (const tier of tierConfig) {
-        if (!currentUpline) break;
-
-        const cleanUp = String(currentUpline).trim();
-        const uplineUser = await c.env.DB.prepare(
-          'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(referral_code) = UPPER(?) LIMIT 1'
-        ).bind(cleanUp, cleanUp).first() as any;
-
-        if (!uplineUser) break;
-
-        const commission = Number((numAmount * tier.rate).toFixed(2));
-        if (commission > 0) {
-          batchStatements.push(
-            c.env.DB.prepare(
-              `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
-               VALUES (?, 0, 0, 0, 0, 0, 0)`
-            ).bind(uplineUser.id),
-
-            c.env.DB.prepare(
-              `UPDATE wallets SET referral_balance = referral_balance + ?, withdrawable_balance = withdrawable_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
-            ).bind(commission, commission, uplineUser.id),
-
-            c.env.DB.prepare(
-              `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, 'Settled', ?)`
-            ).bind(
-              `REF-${Date.now().toString().slice(-6)}-L${tier.level}`,
-              uplineUser.id,
-              `Referral Commission ${tier.label} from ${effectiveUserId}`,
-              commission,
-              cleanTx
-            )
-          );
-        }
-
-        currentUpline = uplineUser.upline_code;
-      }
-    }
-
     await c.env.DB.batch(batchStatements);
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(effectiveUserId).first();

@@ -511,6 +511,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [payoutModalReq, setPayoutModalReq] = useState<WithdrawalRequest | null>(null);
   const [payoutTxHash, setPayoutTxHash] = useState('');
 
+  // Withdrawal Rejection Confirmation Modal State
+  const [rejectModalReq, setRejectModalReq] = useState<WithdrawalRequest | null>(null);
+  const [rejectReasonText, setRejectReasonText] = useState('Administrative review / Security compliance hold');
+
   // Filtered Users
   const filteredUsers = useMemo(() => {
     return (adminUsers || []).filter((u) => {
@@ -2505,8 +2509,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             </button>
                             <button
                               onClick={() => {
-                                onRejectWithdrawal(req.id, 'Security audit failed');
-                                triggerNotice(`Rejected withdrawal for ${req.userName} (Refunded)`);
+                                setRejectModalReq(req);
+                                setRejectReasonText('Administrative review / Security compliance hold');
                               }}
                               className="px-4 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 font-bold text-xs cursor-pointer transition-all"
                             >
@@ -3518,16 +3522,25 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
       {/* Admin Withdrawal Approval & Payout Reference Modal */}
       {payoutModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-lg rounded-2xl bg-[#081220] border border-cyan-500/40 p-5 sm:p-6 space-y-4 shadow-2xl animate-scaleUp">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-lg rounded-2xl bg-[#081220] border border-emerald-500/50 p-5 sm:p-6 space-y-4 shadow-2xl animate-scaleUp">
             <div className="flex items-center justify-between border-b border-[#14233C] pb-3">
-              <h3 className="text-sm font-black text-white flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Approve Payout & Enter Reference Hash</span>
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">
+                    ⚠️ Are you sure you want to APPROVE this withdrawal?
+                  </h3>
+                  <p className="text-[11px] text-emerald-300">
+                    Verify destination blockchain address and net payout before confirming on-chain dispatch.
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setPayoutModalReq(null)}
-                className="text-gray-400 hover:text-white text-sm cursor-pointer"
+                className="text-gray-400 hover:text-white text-sm cursor-pointer p-1"
               >
                 ✕
               </button>
@@ -3580,11 +3593,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 className="w-full p-2.5 rounded-xl bg-[#040812] border border-[#14233C] font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
               />
               <p className="text-[10.5px] text-gray-400">
-                This payout reference will be recorded in the database and displayed in the user's Withdrawal Ledger and history.
+                This payout reference will be permanently recorded in the database and displayed in the user's Withdrawal Ledger.
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#14233C]">
               <button
                 type="button"
                 onClick={() => setPayoutModalReq(null)}
@@ -3602,7 +3615,118 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 }}
                 className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs cursor-pointer shadow-lg shadow-emerald-950/40"
               >
-                ✓ Confirm & Dispatch Payout
+                ✓ Yes, Confirm & Approve Payout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Withdrawal Rejection & Refund Confirmation Modal */}
+      {rejectModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-lg rounded-2xl bg-[#081220] border border-red-500/50 p-5 sm:p-6 space-y-4 shadow-2xl animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-[#14233C] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">
+                    ⚠️ Are you sure you want to REJECT and refund this withdrawal?
+                  </h3>
+                  <p className="text-[11px] text-red-300">
+                    The requested amount will be returned to the miner's available balance immediately.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRejectModalReq(null)}
+                className="text-gray-400 hover:text-white text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Details Box */}
+            <div className="p-3.5 rounded-xl bg-[#050D18] border border-red-500/20 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Recipient Member:</span>
+                <span className="font-bold text-white">{rejectModalReq.userName} (@{rejectModalReq.userId})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Withdrawal Request ID:</span>
+                <span className="font-mono text-cyan-300">{rejectModalReq.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Target BEP-20 Wallet:</span>
+                <span className="font-mono text-gray-300 truncate max-w-[240px]">{rejectModalReq.walletAddress}</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-[#14233C]">
+                <span className="font-bold text-amber-400">Gross Refund Amount:</span>
+                <span className="font-mono font-black text-amber-400 text-sm">
+                  +${rejectModalReq.amount.toFixed(2)} USDT (Full Refund)
+                </span>
+              </div>
+            </div>
+
+            {/* Rejection Reason */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+                <span>Reason for Rejection</span>
+                <span className="text-red-400">*</span>
+                <span className="text-[10px] text-gray-500 font-normal">(Visible in user's audit ledger)</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                {[
+                  'Security compliance review required',
+                  'Incorrect BEP-20 destination address',
+                  'Suspicious network activity flagged',
+                  'Administrative settlement hold'
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setRejectReasonText(preset)}
+                    className={`p-2 rounded-lg text-left border text-[10.5px] transition-all cursor-pointer ${
+                      rejectReasonText === preset
+                        ? 'bg-red-500/20 border-red-500/60 text-red-200'
+                        : 'bg-[#040812] border-[#14233C] text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={rejectReasonText}
+                onChange={(e) => setRejectReasonText(e.target.value)}
+                placeholder="Enter specific rejection reason..."
+                className="w-full p-2.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white focus:outline-none focus:border-red-400 mt-1"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#14233C]">
+              <button
+                type="button"
+                onClick={() => setRejectModalReq(null)}
+                className="px-4 py-2 rounded-xl bg-[#14233C] text-gray-300 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const finalReason = rejectReasonText.trim() || 'Administrative review / Security compliance hold';
+                  onRejectWithdrawal(rejectModalReq.id, finalReason);
+                  triggerNotice(`✕ Rejected & refunded withdrawal for ${rejectModalReq.userName}`);
+                  setRejectModalReq(null);
+                }}
+                className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs cursor-pointer shadow-lg shadow-red-950/40 flex items-center gap-1.5"
+              >
+                ✕ Yes, Confirm & Reject Withdrawal
               </button>
             </div>
           </div>
