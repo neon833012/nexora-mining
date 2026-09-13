@@ -130,10 +130,13 @@ export const P2PTransferModal: React.FC<Props> = ({
               <Send className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <h3 className="text-base font-black text-white tracking-wide">P2P Member Transfer</h3>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9.5px] font-black uppercase">
                   0% Fee
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 text-[9.5px] font-black uppercase">
+                  Unlimited
                 </span>
               </div>
               <p className="text-[11px] text-[#94A3B8]">
@@ -148,6 +151,14 @@ export const P2PTransferModal: React.FC<Props> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Unlimited Notice Banner */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30 text-purple-200 text-[11px]">
+          <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          <span>
+            <strong className="text-purple-300">Unlimited Transfers:</strong> 0% gas fee, no daily limits, and unaffected by external withdrawal locks.
+          </span>
         </div>
 
         {/* Source Wallet Selector (Deposit Balance vs Withdrawable Balance) */}

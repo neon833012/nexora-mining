@@ -107,6 +107,7 @@ export interface DepositRecord {
   timestampMs: number;
   status: 'completed' | 'pending';
   network?: string;
+  token?: string;
 }
 
 export interface SupportTicket {

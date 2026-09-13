@@ -36,23 +36,27 @@ export const DepositHistoryModal: React.FC<Props> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const filteredRecords = depositRecords.filter((rec) => {
+  const validRecords = depositRecords.filter(
+    (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
+  );
+
+  const filteredRecords = validRecords.filter((rec) => {
     if (filter === 'all') return true;
     if (filter === 'bep20') return rec.type === 'bep20_deposit';
     if (filter === 'p2p') return rec.type === 'p2p_received';
     return true;
   });
 
-  const totalDeposited = depositRecords
+  const totalDeposited = validRecords
     .filter((r) => r.status === 'completed')
     .reduce((sum, r) => sum + r.amount, 0);
 
-  const totalP2PReceived = depositRecords
+  const totalP2PReceived = validRecords
     .filter((r) => r.type === 'p2p_received')
     .reduce((sum, r) => sum + r.amount, 0);
 
-  const bep20Count = depositRecords.filter((r) => r.type === 'bep20_deposit').length;
-  const p2pCount = depositRecords.filter((r) => r.type === 'p2p_received').length;
+  const bep20Count = validRecords.filter((r) => r.type === 'bep20_deposit').length;
+  const p2pCount = validRecords.filter((r) => r.type === 'p2p_received').length;
 
   return (
     <div
@@ -99,14 +103,14 @@ export const DepositHistoryModal: React.FC<Props> = ({
             <span className="text-[14px] font-mono font-black text-[#10B981] block mt-0.5">
               +${totalDeposited.toFixed(2)}
             </span>
-            <span className="text-[9.5px] text-[#94A3B8]">{depositRecords.length} Inflow{depositRecords.length !== 1 ? 's' : ''}</span>
+            <span className="text-[9.5px] text-[#94A3B8]">Completed Inflows</span>
           </div>
           <div className="p-2.5 rounded-xl bg-[#081525] border border-[#162C47]">
             <span className="text-[10px] uppercase font-bold text-[#64748B] block">P2P Inbound</span>
             <span className="text-[14px] font-mono font-black text-purple-400 block mt-0.5">
               +${totalP2PReceived.toFixed(2)}
             </span>
-            <span className="text-[9.5px] text-[#94A3B8]">{p2pCount} Transfer{p2pCount !== 1 ? 's' : ''}</span>
+            <span className="text-[9.5px] text-[#94A3B8]">Internal Transfers</span>
           </div>
           <div className="p-2.5 rounded-xl bg-[#081525] border border-[#162C47]">
             <span className="text-[10px] uppercase font-bold text-[#64748B] block">Deposit Fee</span>
@@ -128,7 +132,7 @@ export const DepositHistoryModal: React.FC<Props> = ({
                 : 'bg-[#0C192C] text-[#94A3B8] hover:text-white'
             }`}
           >
-            All ({depositRecords.length})
+            All
           </button>
           <button
             type="button"
@@ -140,7 +144,7 @@ export const DepositHistoryModal: React.FC<Props> = ({
             }`}
           >
             <CheckCircle2 className="w-3 h-3" />
-            <span>BEP-20 ({bep20Count})</span>
+            <span>BEP-20</span>
           </button>
           <button
             type="button"
@@ -152,7 +156,7 @@ export const DepositHistoryModal: React.FC<Props> = ({
             }`}
           >
             <Send className="w-3 h-3" />
-            <span>P2P Inbound ({p2pCount})</span>
+            <span>P2P Inbound</span>
           </button>
         </div>
 
@@ -232,12 +236,12 @@ export const DepositHistoryModal: React.FC<Props> = ({
                         {isP2P ? 'Transferred By (Sender Member):' : 'Receiving Network (BEP-20):'}
                       </span>
                       <span className={`font-mono text-[10.5px] truncate block ${isP2P ? 'text-purple-300 font-bold' : 'text-[#CBD5E1]'}`}>
-                        {isP2P ? `@${rec.senderId || 'Internal Member'}` : 'BNB Smart Chain (BEP-20)'}
+                        {isP2P ? `@${(rec.senderId || '').replace(/^@/, '') || 'Internal Member'}` : 'BNB Smart Chain (BEP-20)'}
                       </span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleCopy(isP2P ? (rec.senderId || 'Member') : 'BNB Smart Chain (BEP-20)', `dep_source_${rec.id}`)}
+                      onClick={() => handleCopy(isP2P ? ((rec.senderId || '').replace(/^@/, '') || 'Member') : 'BNB Smart Chain (BEP-20)', `dep_source_${rec.id}`)}
                       className="shrink-0 px-2 py-1 rounded bg-[#0D1E34] hover:bg-[#162D4C] text-[#00F0FF] text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       {copiedId === `dep_source_${rec.id}` ? (

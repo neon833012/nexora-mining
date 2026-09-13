@@ -217,6 +217,23 @@ export const App: React.FC = () => {
       localStorage.removeItem('neon_deleted_user_ids');
     } catch {}
 
+    // Purge any legacy demo / seeded records from neon_deposit_records
+    try {
+      const rawDeposits = localStorage.getItem('neon_deposit_records');
+      if (rawDeposits) {
+        const parsed = JSON.parse(rawDeposits);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (r: any) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
+          );
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem('neon_deposit_records', JSON.stringify(cleaned));
+            setDepositRecords(cleaned);
+          }
+        }
+      }
+    } catch {}
+
     try {
       // Purge test accounts from neon_admin_users
       const rawAdminUsers = localStorage.getItem('neon_admin_users');
@@ -556,24 +573,10 @@ export const App: React.FC = () => {
   const [depositRecords, setDepositRecords] = useState<DepositRecord[]>(() => {
     try {
       const saved = loadStorage<DepositRecord[]>('neon_deposit_records', []);
-      if (saved && saved.length > 0) return saved;
-      const curDepBalance = loadStorageNum('neon_deposit_balance', 0);
-      if (curDepBalance > 0) {
-        const now = new Date();
-        const datePart = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const timePart = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-        return [
-          {
-            id: `dep_seed_${Date.now()}`,
-            type: 'bep20_deposit',
-            amount: curDepBalance,
-            txHash: '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
-            timestamp: `${datePart}, ${timePart}`,
-            timestampMs: Date.now(),
-            status: 'completed',
-            network: 'BNB Smart Chain (BEP-20)'
-          }
-        ];
+      if (Array.isArray(saved)) {
+        return saved.filter(
+          (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('dep_demo_') && !r.id?.startsWith('demo_')
+        );
       }
       return [];
     } catch (e) {
@@ -1062,65 +1065,88 @@ export const App: React.FC = () => {
             setTransactions(mappedTxs);
           }
           if (Array.isArray(res.withdrawals)) {
-            const mappedWd: WithdrawalRequest[] = res.withdrawals.map((w: any) => ({
-              id: w.id,
-              userId: w.user_id,
-              userName: userName,
-              userMobile: userMobile,
-              amount: Number(w.amount) || 0,
-              fee: Number(w.fee) || 0,
-              netAmount: Number(w.net_amount) || 0,
-              walletAddress: w.wallet_address || '',
-              status: w.status || 'pending',
-              timestamp: w.created_at || 'Recently',
-              timestampMs: Date.now(),
-              txHash: w.tx_hash,
-              rejectionReason: w.rejection_reason
-            }));
+            const mappedWd: WithdrawalRequest[] = res.withdrawals.map((w: any) => {
+              const isP2P = w.wallet_address?.toLowerCase().includes('p2p');
+              const recipientMatch = isP2P ? w.wallet_address.match(/@([a-zA-Z0-9_]+)/) : null;
+              return {
+                id: w.id,
+                userId: w.user_id,
+                userName: userName,
+                userMobile: userMobile,
+                amount: Number(w.amount) || 0,
+                fee: Number(w.fee) || 0,
+                netAmount: Number(w.net_amount) || 0,
+                walletAddress: w.wallet_address || '',
+                status: w.status || 'pending',
+                timestamp: w.created_at || 'Recently',
+                timestampMs: w.created_at ? new Date(w.created_at).getTime() : Date.now(),
+                txHash: w.tx_hash,
+                type: isP2P ? 'p2p_transfer' : 'withdrawal',
+                recipientId: recipientMatch ? recipientMatch[1] : (isP2P ? w.wallet_address.replace(/.*@/, '') : undefined),
+                rejectionReason: w.rejection_reason
+              };
+            });
             setWithdrawalRequests(mappedWd);
           }
-          // Sync deposit history from D1 deposit orders and incoming P2P transfers
-          if (Array.isArray(res.deposits) && res.deposits.length > 0) {
-            const mappedDeps: DepositRecord[] = res.deposits.map((d: any) => ({
-              id: d.order_id || `dep_${d.id || Date.now()}`,
-              amount: Number(d.amount) || 0,
-              timestamp: d.created_at || d.confirmed_at || 'Recently',
-              timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
-              status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
-              type: d.network === 'P2P Transfer' ? 'p2p_received' : 'bep20_deposit',
-              token: d.token || 'USDT',
-              network: d.network || 'BNB Smart Chain (BEP-20)',
-              txHash: d.tx_hash,
-              senderId: d.network === 'P2P Transfer' ? d.vault_address : undefined
-            }));
-            setDepositRecords(mappedDeps);
-          } else if (Array.isArray(res.transactions)) {
+
+          // Sync deposit history: Merge real on-chain deposits + incoming P2P transfers
+          const allDeposits: DepositRecord[] = [];
+          const seenHashes = new Set<string>();
+
+          if (Array.isArray(res.deposits)) {
+            for (const d of res.deposits) {
+              const isP2P = d.network === 'P2P Transfer' || d.token === 'P2P' || (d.vault_address && d.vault_address.startsWith('@'));
+              const cleanSender = isP2P ? (d.vault_address || '').replace(/^@/, '') : undefined;
+              const hashKey = (d.tx_hash || d.order_id || '').toLowerCase();
+              if (hashKey) seenHashes.add(hashKey);
+              allDeposits.push({
+                id: d.order_id || `dep_${d.id || Date.now()}`,
+                amount: Number(d.amount) || 0,
+                timestamp: d.created_at || d.confirmed_at || 'Recently',
+                timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
+                status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
+                type: isP2P ? 'p2p_received' : 'bep20_deposit',
+                token: d.token || 'USDT',
+                network: isP2P ? 'P2P Transfer' : (d.network || 'BNB Smart Chain (BEP-20)'),
+                txHash: d.tx_hash,
+                senderId: cleanSender
+              });
+            }
+          }
+
+          if (Array.isArray(res.transactions)) {
             const incomingTxs = res.transactions.filter(
               (t: any) => Number(t.amount) > 0 && (
                 t.type?.toLowerCase().includes('deposit') || 
-                t.type?.toLowerCase().includes('p2p transfer received')
+                t.type?.toLowerCase().includes('p2p')
               )
             );
-            if (incomingTxs.length > 0) {
-              const mappedDeps: DepositRecord[] = incomingTxs.map((t: any) => {
-                const isP2P = t.type?.toLowerCase().includes('p2p');
-                const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
-                return {
-                  id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
-                  amount: Number(t.amount) || 0,
-                  timestamp: t.created_at || 'Recently',
-                  timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
-                  status: 'completed',
-                  type: isP2P ? 'p2p_received' : 'bep20_deposit',
-                  token: 'USDT',
-                  network: isP2P ? 'P2P Transfer' : 'BNB Smart Chain (BEP-20)',
-                  txHash: t.tx_hash || t.id,
-                  senderId: senderMatch ? senderMatch[1] : undefined
-                };
+            for (const t of incomingTxs) {
+              const hashKey = (t.tx_hash || t.id || '').toLowerCase();
+              if (hashKey && seenHashes.has(hashKey)) continue;
+              if (hashKey) seenHashes.add(hashKey);
+              const isP2P = t.type?.toLowerCase().includes('p2p');
+              const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
+              allDeposits.push({
+                id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
+                amount: Number(t.amount) || 0,
+                timestamp: t.created_at || 'Recently',
+                timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
+                status: 'completed',
+                type: isP2P ? 'p2p_received' : 'bep20_deposit',
+                token: 'USDT',
+                network: isP2P ? 'P2P Transfer' : 'BNB Smart Chain (BEP-20)',
+                txHash: t.tx_hash || t.id,
+                senderId: senderMatch ? senderMatch[1] : undefined
               });
-              setDepositRecords(mappedDeps);
             }
           }
+
+          // Clean out any legacy demo / seeded records
+          const cleanDeposits = allDeposits.filter(
+            (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
+          );
+          setDepositRecords(cleanDeposits);
         }
       }).catch(() => {});
 
@@ -2569,7 +2595,10 @@ export const App: React.FC = () => {
       setTransactions(savedData.transactions);
     }
     if (savedData?.depositRecords && savedData.depositRecords.length > 0) {
-      setDepositRecords(savedData.depositRecords);
+      const cleanSavedDeps = savedData.depositRecords.filter(
+        (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
+      );
+      setDepositRecords(cleanSavedDeps);
     }
 
     // 2. RESTORE / INITIALIZE FUND PASSWORD (PIN) PER USER:

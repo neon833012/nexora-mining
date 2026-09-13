@@ -12,7 +12,8 @@ import {
   Gift,
   Eye,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { WithdrawalRequest } from '../types/mining';
 
@@ -152,15 +153,23 @@ export const WithdrawalSection: React.FC<Props> = ({
   const miningYield = miningEarnings !== undefined ? miningEarnings : 0;
   const referralBonus = referralEarnings !== undefined ? referralEarnings : 0;
 
-  // Check 24-hour rate limit against existing requests
-  const latestRequest = withdrawalRequests[0];
-  const lastWithdrawalTime = latestRequest ? latestRequest.timestampMs : 0;
+  // Check 24-hour rate limit & pending queue strictly against real crypto withdrawals (NEVER P2P transfers)
+  const cryptoWithdrawals = withdrawalRequests.filter(
+    (r) => r.type === 'withdrawal' || (!r.walletAddress?.toLowerCase().includes('p2p') && r.type !== 'p2p_transfer')
+  );
+  const pendingCryptoWithdrawal = cryptoWithdrawals.find((r) => r.status === 'pending');
+  const hasPendingWithdrawal = Boolean(pendingCryptoWithdrawal);
+
+  const latestCryptoRequest = cryptoWithdrawals[0];
+  const lastWithdrawalTime = latestCryptoRequest ? latestCryptoRequest.timestampMs : 0;
   const timeSinceLastWithdrawal = Date.now() - lastWithdrawalTime;
   const is24hLocked = lastWithdrawalTime > 0 && timeSinceLastWithdrawal < 24 * 3600 * 1000;
   const msRemaining = Math.max(0, 24 * 3600 * 1000 - timeSinceLastWithdrawal);
 
   const hoursRemaining = Math.floor(msRemaining / (3600 * 1000));
   const minutesRemaining = Math.floor((msRemaining % (3600 * 1000)) / (60 * 1000));
+
+  const isWithdrawalLocked = hasPendingWithdrawal || is24hLocked;
 
   const amount = parseFloat(amountText) || 0;
   const isInsufficient = amount > effectiveBalance;
@@ -170,7 +179,16 @@ export const WithdrawalSection: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. Rate Limit: 24h / single
+    // 1. Pending Audit Lock
+    if (hasPendingWithdrawal) {
+      setFeedback({
+        text: `Withdrawal Locked: You currently have an active withdrawal request of $${pendingCryptoWithdrawal?.amount.toFixed(2)} USDT pending audit. Please wait for admin clearance before submitting a new request. (P2P transfers remain unlimited).`,
+        isError: true
+      });
+      return;
+    }
+
+    // 2. Rate Limit: 24h / single
     if (is24hLocked) {
       setFeedback({
         text: `Policy Limit: Only 1 withdrawal per 24 hours allowed. Next request unlocks in ${hoursRemaining}h ${minutesRemaining}m.`,
@@ -316,6 +334,24 @@ export const WithdrawalSection: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Active Pending Withdrawal Lock Banner */}
+        {hasPendingWithdrawal && (
+          <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-300 text-[12px] flex items-start gap-2.5 shadow-[0_0_15px_rgba(245,158,11,0.1)] animate-fadeIn">
+            <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 leading-relaxed">
+              <strong className="text-amber-200 block font-bold mb-0.5">
+                🔒 Withdrawal Request Pending in Audit Queue
+              </strong>
+              <span>
+                You have an active withdrawal of <strong>${pendingCryptoWithdrawal?.amount.toFixed(2)} USDT</strong> waiting for on-chain admin release. New external withdrawals are locked until your active payout is settled.
+              </span>
+              <span className="block mt-1 text-emerald-400 font-semibold">
+                ⚡ Note: P2P Member Transfers are UNLIMITED and can be performed at any time with 0% fee without any withdrawal locks.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Withdrawal Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
           {/* Amount Field */}
@@ -335,7 +371,7 @@ export const WithdrawalSection: React.FC<Props> = ({
               <input
                 type="text"
                 value={amountText}
-                disabled={is24hLocked}
+                disabled={isWithdrawalLocked}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (/^\d*\.?\d*$/.test(val)) {
@@ -426,7 +462,7 @@ export const WithdrawalSection: React.FC<Props> = ({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={1}
-                  disabled={is24hLocked}
+                  disabled={isWithdrawalLocked}
                   value={digit}
                   onChange={(e) => handlePinDigitChange(e.target.value, idx)}
                   onKeyDown={(e) => handlePinKeyDown(e, idx)}
@@ -515,16 +551,18 @@ export const WithdrawalSection: React.FC<Props> = ({
           {/* Submit Action */}
           <button
             type="submit"
-            disabled={is24hLocked || isInsufficient || amount < 2 || effectiveBalance < 2}
+            disabled={isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2}
             className={`w-full h-[46px] rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              is24hLocked || isInsufficient || amount < 2 || effectiveBalance < 2
+              isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2
                 ? 'bg-[#152236] text-[#64748B] border border-[#1F304B] cursor-not-allowed'
                 : 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021426] shadow-[0_0_15px_rgba(0,240,255,0.3)] hover:brightness-110'
             }`}
           >
             <Lock className="w-4 h-4" />
             <span>
-              {is24hLocked
+              {hasPendingWithdrawal
+                ? 'Withdrawal Locked (Active Request in Queue)'
+                : is24hLocked
                 ? `24H Limit (${hoursRemaining}h ${minutesRemaining}m Left)`
                 : effectiveBalance < 2
                 ? 'Balance Below Min $2.00 Limit'
