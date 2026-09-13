@@ -598,9 +598,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
     setTimeout(() => setCopiedWalletId(null), 2500);
   };
 
-  // Filtered Users
+  // Filtered Users (Platform users only, staff and admins strictly excluded)
   const filteredUsers = useMemo(() => {
     return (adminUsers || []).filter((u) => {
+      if (u.role === 'superadmin' || u.role === 'subadmin' || u.role === 'admin' || u.id === 'NEON_SUPERADMIN' || u.email === 'neon83301@gmail.com') {
+        return false;
+      }
       const matchSearch =
         u.id.toLowerCase().includes(userSearch.toLowerCase()) ||
         u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -730,41 +733,26 @@ export const AdminSystemPortal: React.FC<Props> = ({
   };
 
   const handleExportUsersCSV = () => {
-    if (!adminUsers || adminUsers.length === 0) {
+    // Only export real platform users (exclude admin / subadmin)
+    const exportableUsers = (adminUsers || []).filter(
+      (u) => u.role !== 'superadmin' && u.role !== 'subadmin' && u.role !== 'admin' && u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
+    );
+
+    if (!exportableUsers || exportableUsers.length === 0) {
       triggerNotice('No users registered in database to export.');
       return;
     }
 
     const headers = [
-      'User ID / Username',
       'Name',
-      'Email',
       'Phone Number',
-      'Account Status',
-      'Active Plan',
-      'Staked Capital (USDT)',
-      'Available Balance (USDT)',
-      'Total Mined Yield (USDT)',
-      'Total Withdrawn (USDT)',
-      'Referral Earnings (USDT)',
-      'Direct Referrals Count',
-      'Registration Date'
+      'Email'
     ];
 
-    const rows = adminUsers.map((u) => [
-      `"${u.id || ''}"`,
+    const rows = exportableUsers.map((u) => [
       `"${(u.name || '').replace(/"/g, '""')}"`,
-      `"${(u.email || '').replace(/"/g, '""')}"`,
       `"${(u.mobile || '').replace(/"/g, '""')}"`,
-      `"${u.status || 'active'}"`,
-      `"${(u.currentPlanName || (u.stakedAmount ? `$${u.stakedAmount} Node` : 'No Plan')).replace(/"/g, '""')}"`,
-      (u.stakedAmount || 0).toFixed(2),
-      (u.availableBalance || 0).toFixed(2),
-      (u.totalMinedYield || 0).toFixed(2),
-      (u.totalWithdrawn || 0).toFixed(2),
-      (u.referralEarnings || 0).toFixed(2),
-      u.directReferralsCount || 0,
-      `"${u.registeredAt || (u as any).created_at || (u as any).createdAt || ''}"`
+      `"${(u.email || '').replace(/"/g, '""')}"`
     ]);
 
     const csvString = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');

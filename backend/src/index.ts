@@ -159,12 +159,38 @@ app.post('/api/auth/login', async (c) => {
 
     const cleanId = identifier;
 
-    // Strict search: Email or Username (User ID)
-    const userRecord = await c.env.DB.prepare(`
+    // Strict search: Email or Username (User ID) in users table
+    let userRecord = await c.env.DB.prepare(`
       SELECT * FROM users 
       WHERE LOWER(email) = LOWER(?) OR UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?)
       LIMIT 1
     `).bind(cleanId, cleanId, cleanId).first() as any;
+
+    if (!userRecord) {
+      // Check admins table (Staff & Super Admin)
+      const adminRecord = await c.env.DB.prepare(`
+        SELECT * FROM admins 
+        WHERE LOWER(email) = LOWER(?) OR UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?)
+        LIMIT 1
+      `).bind(cleanId, cleanId, cleanId).first() as any;
+
+      if (adminRecord && adminRecord.password_hash === password) {
+        const sessionToken = `sess_adm_${Date.now()}_${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+        return c.json({
+          success: true,
+          message: 'Admin authorization granted',
+          user: {
+            id: adminRecord.id,
+            name: adminRecord.name,
+            email: adminRecord.email,
+            role: adminRecord.role || 'subadmin',
+            status: 'active'
+          },
+          token: `nx_adm_${Date.now()}_${adminRecord.id}`,
+          sessionToken
+        });
+      }
+    }
 
     if (!userRecord || userRecord.password_hash !== password) {
       return c.json({ success: false, message: 'Invalid Email/Username or Password. Please check your credentials.' }, 401);
@@ -364,10 +390,20 @@ app.post('/api/auth/forgot-password', async (c) => {
       return c.json({ success: false, message: 'Please enter a valid email format (e.g. user@gmail.com)' }, 400);
     }
 
-    // STRICT DATABASE CHECK: Only registered emails in users table can reset password
-    const user = await c.env.DB.prepare(
+    // STRICT DATABASE CHECK: Check users and admins table
+    let user = await c.env.DB.prepare(
       'SELECT id, name, mobile, email FROM users WHERE LOWER(email) = ?'
     ).bind(cleanEmail).first() as any;
+
+    if (!user || !user.email) {
+      // Check admins table
+      const admin = await c.env.DB.prepare(
+        'SELECT id, name, email, role FROM admins WHERE LOWER(email) = ?'
+      ).bind(cleanEmail).first() as any;
+      if (admin && admin.email) {
+        user = { id: admin.id, name: admin.name, email: admin.email, role: admin.role };
+      }
+    }
 
     if (!user || !user.email) {
       return c.json({
@@ -576,7 +612,9 @@ app.post('/api/auth/reset-password', async (c) => {
       }
 
       const targetUserId = tokenRow.user_id;
-      await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newPassword, targetUserId).run();
+      const targetEmail = tokenRow.email || '';
+      await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ? OR LOWER(email) = LOWER(?)').bind(newPassword, targetUserId, targetEmail).run();
+      await c.env.DB.prepare('UPDATE admins SET password_hash = ? WHERE id = ? OR LOWER(email) = LOWER(?)').bind(newPassword, targetUserId, targetEmail).run();
       await c.env.DB.prepare('UPDATE password_reset_tokens SET used = 1 WHERE token = ?').bind(token).run();
 
       return c.json({
@@ -1672,7 +1710,7 @@ app.get('/api/wallet/history', async (c) => {
 app.get('/api/admin/overview', async (c) => {
   try {
     const [usersCount, activeMining, totalWithdrawn, pendingWithdrawals] = await Promise.all([
-      c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first(),
+      c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE (role = 'user' OR role IS NULL OR role = '')").first(),
       c.env.DB.prepare('SELECT SUM(active_mining_power) as total FROM wallets').first(),
       c.env.DB.prepare('SELECT SUM(total_withdrawn) as total FROM wallets').first(),
       c.env.DB.prepare('SELECT COUNT(*) as count, SUM(net_amount) as total FROM withdrawal_requests WHERE status = "pending"').first()
@@ -1703,7 +1741,7 @@ app.post('/api/admin/trigger-yield', async (c) => {
   }
 });
 
-// Admin Users List (with wallet balances, status, search)
+// Admin Users List (with wallet balances, status, search) - Real platform users only
 app.get('/api/admin/users', async (c) => {
   try {
     const search = c.req.query('search') || '';
@@ -1712,12 +1750,13 @@ app.get('/api/admin/users', async (c) => {
              w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield
       FROM users u
       LEFT JOIN wallets w ON u.id = w.user_id
+      WHERE (u.role = 'user' OR u.role IS NULL OR u.role = '')
     `;
     let params: any[] = [];
     if (search) {
-      query += ` WHERE u.id LIKE ? OR u.name LIKE ? OR u.mobile LIKE ?`;
+      query += ` AND (u.id LIKE ? OR u.name LIKE ? OR u.mobile LIKE ? OR u.email LIKE ?)`;
       const term = `%${search}%`;
-      params = [term, term, term];
+      params = [term, term, term, term];
     }
     query += ` ORDER BY u.created_at DESC LIMIT 100`;
 
@@ -1827,12 +1866,12 @@ app.post('/api/admin/users/purge-inactive', async (c) => {
   }
 });
 
-// Admin Sub-Admin Management (List, Create, Delete)
+// Admin Sub-Admin Management (List, Create, Delete - Stored in admins table, isolated from users)
 app.get('/api/admin/subadmins', async (c) => {
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT id, name, email, role, created_at, last_login 
-      FROM users 
+      SELECT id, name, email, role, created_at 
+      FROM admins 
       WHERE role = 'subadmin' 
       ORDER BY created_at DESC
     `).all();
@@ -1854,34 +1893,28 @@ app.post('/api/admin/subadmins/create', async (c) => {
     }
 
     const existing = await c.env.DB.prepare(
-      'SELECT id, email, role, name FROM users WHERE LOWER(email) = ?'
+      'SELECT id, email, role, name FROM admins WHERE LOWER(email) = ?'
     ).bind(email).first() as any;
 
     if (existing) {
       await c.env.DB.prepare(
-        'UPDATE users SET role = "subadmin", name = COALESCE(NULLIF(?, ""), name) WHERE id = ?'
-      ).bind(name, existing.id).run();
+        'UPDATE admins SET name = COALESCE(NULLIF(?, ""), name), password_hash = ? WHERE id = ?'
+      ).bind(name, password, existing.id).run();
 
       return c.json({
         success: true,
-        message: `Account (${email}) upgraded to Sub-Admin.`,
+        message: `Sub-Admin account updated for (${email}).`,
         subadmin: { id: existing.id, email, name: name || existing.name, role: 'subadmin' }
       });
     }
 
-    const subId = `NEON_SUB_${Math.floor(1000 + Math.random() * 9000)}`;
-    const officialName = name || 'Staff Sub-Admin';
-    const referralCode = `NEONSUB${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const subId = `admin_sub_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+    const officialName = name || email.split('@')[0];
 
     await c.env.DB.prepare(`
-      INSERT INTO users (id, name, mobile, email, password_hash, fund_pin, fund_pin_set, upline_code, referral_code, role, status)
-      VALUES (?, ?, ?, ?, ?, '123456', 1, NULL, ?, 'subadmin', 'active')
-    `).bind(subId, officialName, `+1000${Math.floor(1000000 + Math.random() * 9000000)}`, email, password, referralCode).run();
-
-    await c.env.DB.prepare(`
-      INSERT INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
-      VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    `).bind(subId).run();
+      INSERT INTO admins (id, name, email, password_hash, role)
+      VALUES (?, ?, ?, ?, 'subadmin')
+    `).bind(subId, officialName, email, password).run();
 
     return c.json({
       success: true,
@@ -1900,10 +1933,9 @@ app.post('/api/admin/subadmins/delete', async (c) => {
       return c.json({ success: false, message: 'Sub-admin id or email required' }, 400);
     }
     if (id) {
-      await c.env.DB.prepare('DELETE FROM users WHERE id = ? AND role = "subadmin"').bind(id).run();
-      await c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(id).run();
+      await c.env.DB.prepare('DELETE FROM admins WHERE id = ? AND role = "subadmin"').bind(id).run();
     } else if (email) {
-      await c.env.DB.prepare('DELETE FROM users WHERE LOWER(email) = LOWER(?) AND role = "subadmin"').bind(email).run();
+      await c.env.DB.prepare('DELETE FROM admins WHERE LOWER(email) = LOWER(?) AND role = "subadmin"').bind(email).run();
     }
     return c.json({ success: true, message: 'Sub-Admin access revoked successfully.' });
   } catch (err: any) {
