@@ -2632,15 +2632,12 @@ export const App: React.FC = () => {
     if (settings.p2pFeePercent !== undefined) payload.p2p_fee_percent = String(settings.p2pFeePercent);
     if (settings.popupImageUrl !== undefined) {
       payload.popup_image_url = settings.popupImageUrl;
-      payload.popupImageUrl = settings.popupImageUrl;
     }
     if (settings.popupLinkUrl !== undefined) {
       payload.popup_link_url = settings.popupLinkUrl;
-      payload.popupLinkUrl = settings.popupLinkUrl;
     }
     if (settings.popupEnabled !== undefined) {
       payload.popup_enabled = String(settings.popupEnabled);
-      payload.popupEnabled = String(settings.popupEnabled);
     }
 
     if (Object.keys(payload).length > 0) {
@@ -3847,7 +3844,7 @@ export const App: React.FC = () => {
 
         {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal */}
         <PromotionalPlanPopupModal
-          isOpen={showPromoPopup && (platformSettings?.popupEnabled !== false)}
+          isOpen={showPromoPopup}
           onDismiss={() => setShowPromoPopup(false)}
           onSelectPlan={(plan) => {
             setShowPromoPopup(false);
@@ -3857,7 +3854,7 @@ export const App: React.FC = () => {
             setShowPromoPopup(false);
             navigateTo('plans');
           }}
-          adminPopupImageUrl={platformSettings?.popupImageUrl || ''}
+          adminPopupImageUrl={(platformSettings?.popupEnabled !== false) ? (platformSettings?.popupImageUrl || '') : ''}
           adminPopupLinkUrl={platformSettings?.popupLinkUrl || ''}
           miningPlans={miningPlans}
         />

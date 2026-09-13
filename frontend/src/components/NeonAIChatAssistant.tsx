@@ -185,11 +185,11 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     }
   };
 
-  // Sync with localStorage on load and when storage events fire
+  // Sync with localStorage on load (no API call - polling handles remote sync)
   useEffect(() => {
     localStorage.setItem(`neon_chat_session_${userIdentifier}`, sessionId);
 
-    const loadSession = async () => {
+    const loadSessionFromStorage = () => {
       const all = getStoredSessions();
       const current = all.find((s) => s.id === sessionId);
       if (current && current.status !== 'waiting_admin') {
@@ -203,62 +203,27 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         setHasHumanJoined(false);
         setAssignedAdmin(undefined);
       }
-
-      // Also pull latest authoritative state from Cloudflare D1
-      try {
-        const res = await nexoraApi.getChatSession(sessionId);
-        if (res.success && res.session) {
-          const remote = res.session;
-          if (remote.messages && remote.messages.length > 0) {
-            setMessages(remote.messages);
-          }
-          if (remote.status === 'active_admin') {
-            setHasHumanJoined(true);
-            setIsWaitingHuman(false);
-            if (remote.assignedAdminName) setAssignedAdmin(remote.assignedAdminName);
-          } else if (remote.status === 'waiting_admin') {
-            setIsWaitingHuman(true);
-            setHasHumanJoined(false);
-          } else {
-            // resolved or bot
-            setIsWaitingHuman(false);
-            setHasHumanJoined(false);
-          }
-        } else {
-          // No session in D1 (database cleared or clean slate) -> Ensure no queue!
-          setIsWaitingHuman(false);
-          setHasHumanJoined(false);
-          setAssignedAdmin(undefined);
-          try {
-            const filtered = getStoredSessions().filter((s) => s.id !== sessionId);
-            saveStoredSessions(filtered);
-          } catch {}
-        }
-      } catch (e) {
-        setIsWaitingHuman(false);
-      }
     };
 
-    loadSession();
-
-    const handleSync = () => loadSession();
-    window.addEventListener('storage', handleSync);
-    window.addEventListener('neon_chat_sync', handleSync);
-
-    return () => {
-      window.removeEventListener('storage', handleSync);
-      window.removeEventListener('neon_chat_sync', handleSync);
-    };
+    loadSessionFromStorage();
+    // No storage event listener - prevents cascading API calls causing 429 errors
   }, [sessionId, userIdentifier]);
 
-  // Real-time Cloudflare D1 Polling when Chat Drawer is Open or Human Support Requested
+  // Real-time Cloudflare D1 Polling when Chat Drawer is Open
   useEffect(() => {
-    const shouldPoll = isOpen || isWaitingHuman || hasHumanJoined;
-    if (!shouldPoll) return;
+    if (!isOpen) return;
+
+    let cancelled = false;
+    let isPolling = false;
+    let errorCount = 0;
 
     const pollChat = async () => {
+      if (isPolling || cancelled) return;
+      isPolling = true;
       try {
         const res = await nexoraApi.getChatSession(sessionId);
+        if (cancelled) return;
+        errorCount = 0; // Reset on success
         if (res.success && res.session) {
           const remote = res.session;
           if (remote.messages && Array.isArray(remote.messages) && remote.messages.length > 0) {
@@ -277,22 +242,30 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
             setIsWaitingHuman(true);
             setHasHumanJoined(false);
           } else {
-            // resolved or bot -> reset back to normal mode (Green Blink)
             setIsWaitingHuman(false);
             setHasHumanJoined(false);
             setAssignedAdmin(undefined);
           }
-        } else {
-          setIsWaitingHuman(false);
-          setHasHumanJoined(false);
         }
-      } catch (err) {}
+      } catch (err) {
+        errorCount++;
+      } finally {
+        isPolling = false;
+      }
     };
 
-    pollChat();
-    const interval = setInterval(pollChat, isOpen ? 2500 : 3500);
-    return () => clearInterval(interval);
-  }, [isOpen, sessionId, isWaitingHuman, hasHumanJoined]);
+    // Initial poll after 1s delay (not instant to avoid burst on open)
+    const initTimer = setTimeout(pollChat, 1000);
+    // Poll every 8 seconds (prevents 429 rate limiting)
+    const interval = setInterval(() => {
+      if (errorCount < 5) pollChat();
+    }, 8000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initTimer);
+      clearInterval(interval);
+    };
+  }, [isOpen, sessionId]);
 
   useEffect(() => {
     if (isOpen) {

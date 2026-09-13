@@ -2183,7 +2183,7 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
     } else {
       const statements: any[] = [];
       for (const [key, value] of Object.entries(body)) {
-        if (key === 'adminRole' || key === 'role') continue;
+        if (key === 'adminRole' || key === 'role' || key === 'popupImageUrl' || key === 'popupLinkUrl' || key === 'popupEnabled' || key === 'vaultWalletAddress') continue;
         statements.push(
           c.env.DB.prepare(
             `INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)

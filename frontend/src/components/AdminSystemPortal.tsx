@@ -611,6 +611,19 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [popupImagePreview, setPopupImagePreview] = useState(safeSettings.popupImageUrl || '');
   const [popupSaveMsg, setPopupSaveMsg] = useState('');
 
+  useEffect(() => {
+    if (safeSettings.popupEnabled !== undefined) {
+      setPopupEnabled(safeSettings.popupEnabled !== false);
+    }
+    if (safeSettings.popupImageUrl !== undefined) {
+      setPopupImageUrl(safeSettings.popupImageUrl);
+      setPopupImagePreview(safeSettings.popupImageUrl);
+    }
+    if (safeSettings.popupLinkUrl !== undefined) {
+      setPopupLinkUrl(safeSettings.popupLinkUrl);
+    }
+  }, [safeSettings.popupEnabled, safeSettings.popupImageUrl, safeSettings.popupLinkUrl]);
+
   // Payout Reference / Approval Modal State
   const [payoutModalReq, setPayoutModalReq] = useState<WithdrawalRequest | null>(null);
   const [payoutTxHash, setPayoutTxHash] = useState('');
@@ -3985,13 +3998,51 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              const dataUrl = ev.target?.result as string;
-                              setPopupImageUrl(dataUrl);
-                              setPopupImagePreview(dataUrl);
+                            // Compress image to max ~150KB base64 using canvas resize
+                            const img = new Image();
+                            const objectUrl = URL.createObjectURL(file);
+                            img.onload = () => {
+                              URL.revokeObjectURL(objectUrl);
+                              const canvas = document.createElement('canvas');
+                              let w = img.naturalWidth;
+                              let h = img.naturalHeight;
+                              // Max dimension 800px to keep base64 small
+                              const MAX_DIM = 800;
+                              if (w > MAX_DIM || h > MAX_DIM) {
+                                if (w > h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+                                else { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+                              }
+                              canvas.width = w;
+                              canvas.height = h;
+                              const ctx = canvas.getContext('2d');
+                              if (ctx) {
+                                ctx.drawImage(img, 0, 0, w, h);
+                                // Use JPEG at 0.7 quality for small size
+                                let dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                                // If still too big, reduce further
+                                if (dataUrl.length > 200000) {
+                                  const scale = 0.6;
+                                  canvas.width = Math.round(w * scale);
+                                  canvas.height = Math.round(h * scale);
+                                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                  dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                                }
+                                setPopupImageUrl(dataUrl);
+                                setPopupImagePreview(dataUrl);
+                              }
                             };
-                            reader.readAsDataURL(file);
+                            img.onerror = () => {
+                              URL.revokeObjectURL(objectUrl);
+                              // Fallback: read as-is
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const dataUrl = ev.target?.result as string;
+                                setPopupImageUrl(dataUrl);
+                                setPopupImagePreview(dataUrl);
+                              };
+                              reader.readAsDataURL(file);
+                            };
+                            img.src = objectUrl;
                           }}
                         />
                         <label
