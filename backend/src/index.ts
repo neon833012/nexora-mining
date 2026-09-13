@@ -69,9 +69,9 @@ app.post('/api/auth/register', async (c) => {
     // Mobile numbers CAN be reused across multiple accounts
 
     const userId = `NEON${Math.floor(10000 + Math.random() * 90000)}`;
-    const referralCode = `NEX${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const referralCode = `NEON${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
-    // Resolve uplineCode whether it is a referral code (e.g. NEX...) or a User ID (e.g. NEON...)
+    // Resolve uplineCode whether it is a referral code (e.g. NEON...) or a User ID (e.g. NEON...)
     let uplineUserId: string | null = null;
     if (uplineCode) {
       const cleanRef = String(uplineCode).trim().toUpperCase();
@@ -1822,6 +1822,90 @@ app.post('/api/admin/users/purge-inactive', async (c) => {
     }
     await c.env.DB.batch(stmts);
     return c.json({ success: true, message: `Purged ${ids.length} inactive test accounts`, purgedCount: ids.length, ids });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Admin Sub-Admin Management (List, Create, Delete)
+app.get('/api/admin/subadmins', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT id, name, email, role, created_at, last_login 
+      FROM users 
+      WHERE role = 'subadmin' 
+      ORDER BY created_at DESC
+    `).all();
+    return c.json({ success: true, subadmins: results || [] });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.post('/api/admin/subadmins/create', async (c) => {
+  try {
+    const body = await c.req.json();
+    const email = (body.email || '').trim().toLowerCase();
+    const name = (body.name || '').trim();
+    const password = (body.password || '123456').trim();
+
+    if (!email) {
+      return c.json({ success: false, message: 'Valid email address is required' }, 400);
+    }
+
+    const existing = await c.env.DB.prepare(
+      'SELECT id, email, role, name FROM users WHERE LOWER(email) = ?'
+    ).bind(email).first() as any;
+
+    if (existing) {
+      await c.env.DB.prepare(
+        'UPDATE users SET role = "subadmin", name = COALESCE(NULLIF(?, ""), name) WHERE id = ?'
+      ).bind(name, existing.id).run();
+
+      return c.json({
+        success: true,
+        message: `Account (${email}) upgraded to Sub-Admin.`,
+        subadmin: { id: existing.id, email, name: name || existing.name, role: 'subadmin' }
+      });
+    }
+
+    const subId = `NEON_SUB_${Math.floor(1000 + Math.random() * 9000)}`;
+    const officialName = name || 'Staff Sub-Admin';
+    const referralCode = `NEONSUB${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    await c.env.DB.prepare(`
+      INSERT INTO users (id, name, mobile, email, password_hash, fund_pin, fund_pin_set, upline_code, referral_code, role, status)
+      VALUES (?, ?, ?, ?, ?, '123456', 1, NULL, ?, 'subadmin', 'active')
+    `).bind(subId, officialName, `+1000${Math.floor(1000000 + Math.random() * 9000000)}`, email, password, referralCode).run();
+
+    await c.env.DB.prepare(`
+      INSERT INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
+      VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    `).bind(subId).run();
+
+    return c.json({
+      success: true,
+      message: `Sub-Admin account registered for ${email}.`,
+      subadmin: { id: subId, email, name: officialName, role: 'subadmin' }
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.post('/api/admin/subadmins/delete', async (c) => {
+  try {
+    const { id, email } = await c.req.json();
+    if (!id && !email) {
+      return c.json({ success: false, message: 'Sub-admin id or email required' }, 400);
+    }
+    if (id) {
+      await c.env.DB.prepare('DELETE FROM users WHERE id = ? AND role = "subadmin"').bind(id).run();
+      await c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(id).run();
+    } else if (email) {
+      await c.env.DB.prepare('DELETE FROM users WHERE LOWER(email) = LOWER(?) AND role = "subadmin"').bind(email).run();
+    }
+    return c.json({ success: true, message: 'Sub-Admin access revoked successfully.' });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

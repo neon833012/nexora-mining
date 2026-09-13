@@ -232,7 +232,6 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           try {
             const filtered = getStoredSessions().filter((s) => s.id !== sessionId);
             saveStoredSessions(filtered);
-            localStorage.removeItem('neon_live_chat_sessions');
           } catch {}
         }
       } catch (e) {
@@ -390,7 +389,6 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       const all = getStoredSessions().filter((s) => s.id !== sessionId);
       saveStoredSessions(all);
       localStorage.removeItem(`neon_chat_session_${userIdentifier}`);
-      localStorage.removeItem('neon_live_chat_sessions');
     } catch {}
   };
 
@@ -439,6 +437,8 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     setIsTyping(true);
 
     setTimeout(() => {
+      let aiResponse = '';
+
       // 0. PDF / PRESENTATION / WHITEPAPER / BUSINESS PLAN
       if (
         lower.includes('pdf') ||
