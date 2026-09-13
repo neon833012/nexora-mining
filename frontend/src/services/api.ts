@@ -102,9 +102,14 @@ class NeonApiService {
     }
   }
 
-  async getUserProfile(userId: string) {
+  async getUserProfile(userId: string, sessionToken?: string) {
     try {
-      const res = await fetch(`${this.baseUrl}/api/auth/me?userId=${encodeURIComponent(userId)}`);
+      const url = sessionToken
+        ? `${this.baseUrl}/api/auth/me?userId=${encodeURIComponent(userId)}&sessionToken=${encodeURIComponent(sessionToken)}`
+        : `${this.baseUrl}/api/auth/me?userId=${encodeURIComponent(userId)}`;
+      const res = await fetch(url, {
+        headers: sessionToken ? { 'X-Session-Token': sessionToken } : {}
+      });
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message };
@@ -516,13 +521,13 @@ class NeonApiService {
 
   async updatePlatformSettings(settings: Record<string, any>, adminRole: string = 'master') {
     try {
-      const res = await fetch(`${this.baseUrl}/api/admin/settings`, {
-        method: 'PUT',
+      const res = await fetch(`${this.baseUrl}/api/admin/settings?role=${encodeURIComponent(adminRole)}`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Admin-Role': adminRole
         },
-        body: JSON.stringify(settings)
+        body: JSON.stringify({ ...settings, adminRole, role: adminRole })
       });
       return await res.json();
     } catch (err: any) {

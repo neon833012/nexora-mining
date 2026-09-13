@@ -111,6 +111,11 @@ export const AuthModalDialog: React.FC<Props> = ({
         });
 
         if (res && res.success && res.user) {
+          if (res.sessionToken) {
+            try {
+              localStorage.setItem('neon_session_token', res.sessionToken);
+            } catch (e) {}
+          }
           const assignedId = res.user.id;
           const now = new Date();
           const joiningDate = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
@@ -149,6 +154,11 @@ export const AuthModalDialog: React.FC<Props> = ({
         });
 
         if (res && res.success && res.user) {
+          if (res.sessionToken) {
+            try {
+              localStorage.setItem('neon_session_token', res.sessionToken);
+            } catch (e) {}
+          }
           onAuthSuccess(res.user.id, res.user.mobile || '', undefined, res.user.email || identifier, res.user.uplineCode || undefined, res.user.referralCode || undefined);
         } else {
           if (res?.suspended || res?.message?.toLowerCase().includes('suspended')) {

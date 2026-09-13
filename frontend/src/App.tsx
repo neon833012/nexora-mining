@@ -918,11 +918,60 @@ export const App: React.FC = () => {
     return () => clearInterval(syncInterval);
   }, [fetchLiveAdminUsers, fetchPlatformSettings]);
 
-  // 2. If user is logged in, verify session & sync real wallet from D1
+  // Helper to perform full clean session logout
+  const performLogout = useCallback((reasonMessage?: string) => {
+    localStorage.removeItem('neon_is_logged_in');
+    localStorage.removeItem('neon_user_name');
+    localStorage.removeItem('neon_user_mobile');
+    localStorage.removeItem('neon_user_email');
+    localStorage.removeItem('neon_fund_password');
+    localStorage.removeItem('neon_upline_code');
+    localStorage.removeItem('neon_session_token');
+
+    setIsLoggedIn(false);
+    setUserName('');
+    setUserMobile('');
+    setUserEmail('');
+    setUserFundPassword('');
+    setActiveMiningPower(0);
+    setIsMiningActive(false);
+    setSecondsRemaining(24 * 3600);
+    setDepositBalance(0);
+    setAvailableWithdrawal(0);
+    setTotalBalance(0);
+    setTotalRewards(0);
+    setReferralIncome(0);
+    setReferralBalance(0);
+    setYesterdaysIncome(0);
+    setTransactions([]);
+
+    if (reasonMessage) {
+      showToast(reasonMessage);
+    }
+  }, []);
+
+  // 2. If user is logged in, verify session & sync real wallet from D1 (Single Active Session Enforcement)
   useEffect(() => {
-    if (isLoggedIn && userName) {
-      nexoraApi.getUserProfile(userName).then((res) => {
+    if (!isLoggedIn || !userName) return;
+
+    const verifyAndSyncSession = async () => {
+      try {
+        const storedToken = localStorage.getItem('neon_session_token') || '';
+        const res = await nexoraApi.getUserProfile(userName, storedToken);
+
+        // CONCURRENT LOGIN DETECTION:
+        // If another device logged in with the same user ID & password, kick this session out immediately!
+        if (res && res.sessionInvalidated) {
+          performLogout('⚠️ Session Expired: Aapka account dusre device/browser par login ho chuka hai. Yahan se logout ho gaya.');
+          return;
+        }
+
         if (res && res.success && res.user && res.wallet) {
+          if (res.sessionToken && !storedToken) {
+            try {
+              localStorage.setItem('neon_session_token', res.sessionToken);
+            } catch (e) {}
+          }
           const w = res.wallet;
           const dep = Number(w.deposit_balance) || 0;
           const withdr = Number(w.withdrawable_balance) || 0;
@@ -941,21 +990,17 @@ export const App: React.FC = () => {
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
-        } else if (res && !res.success) {
+        } else if (res && !res.success && res.message?.toLowerCase().includes('not found')) {
           // Stale / invalid session (user deleted or not in D1)
-          setIsLoggedIn(false);
-          setUserName('');
-          setUserMobile('');
-          setUserEmail('');
-          setTotalBalance(0);
-          setDepositBalance(0);
-          setAvailableWithdrawal(0);
-          setActiveMiningPower(0);
-          setReferralBalance(0);
-          setReferralIncome(0);
-          setTransactions([]);
+          performLogout();
         }
-      }).catch(() => {});
+      } catch (e) {}
+    };
+
+    verifyAndSyncSession();
+
+    // Fast polling: check every 3.5 seconds so if someone else signs in, this session gets kicked out immediately!
+    const sessionInterval = setInterval(verifyAndSyncSession, 3500);
 
       // 3. Fetch real wallet history (transactions, withdrawals)
       nexoraApi.getWalletHistory(userName).then((res) => {
@@ -1025,8 +1070,9 @@ export const App: React.FC = () => {
           }));
         }
       }).catch(() => {});
-    }
-  }, [isLoggedIn, userName, showAdminPortal]);
+
+      return () => clearInterval(sessionInterval);
+  }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
   // Automatically trigger promotional plan popup modal 3 seconds after opening
   useEffect(() => {

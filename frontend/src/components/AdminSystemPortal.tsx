@@ -472,11 +472,13 @@ export const AdminSystemPortal: React.FC<Props> = ({
     safeSettings.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
   );
 
+  const [isEditingVault, setIsEditingVault] = useState(false);
+
   useEffect(() => {
-    if (safeSettings.vaultWalletAddress) {
+    if (safeSettings.vaultWalletAddress && !isEditingVault) {
       setEditVaultWalletAddress(safeSettings.vaultWalletAddress);
     }
-  }, [safeSettings.vaultWalletAddress]);
+  }, [safeSettings.vaultWalletAddress, isEditingVault]);
 
   // Popup management state
   const [popupEnabled, setPopupEnabled] = useState(safeSettings.popupEnabled !== false);
@@ -3235,7 +3237,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         <input
                           type="text"
                           value={editVaultWalletAddress}
-                          onChange={(e) => setEditVaultWalletAddress(e.target.value)}
+                          onFocus={() => setIsEditingVault(true)}
+                          onChange={(e) => {
+                            setIsEditingVault(true);
+                            setEditVaultWalletAddress(e.target.value);
+                          }}
                           placeholder="0x... (42-character BSC address)"
                           className="flex-1 p-2 rounded-xl bg-[#040812] border border-[#14233C] font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
                         />
@@ -3246,6 +3252,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               triggerNotice('Error: Must be a valid 42-character BSC address starting with 0x');
                               return;
                             }
+                            setIsEditingVault(false);
                             await onUpdatePlatformSettings({ vaultWalletAddress: clean });
                             setEditVaultWalletAddress(clean);
                             triggerNotice(`✓ Saved Custody Vault Address to Database: ${clean.slice(0, 8)}...${clean.slice(-6)}`);

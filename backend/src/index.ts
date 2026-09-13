@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Admin-Role', 'x-admin-role', '*'],
   exposeHeaders: ['Content-Length'],
   maxAge: 86400,
 }));
@@ -31,20 +31,6 @@ app.get('/', (c) => {
 
 app.get('/api/health', (c) => {
   return c.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
-
-// Platform public settings
-app.get('/api/settings', async (c) => {
-  try {
-    const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
-    const settings: Record<string, string> = {};
-    for (const row of (results as any[])) {
-      settings[row.key] = row.value;
-    }
-    return c.json({ success: true, settings });
-  } catch (err: any) {
-    return c.json({ success: false, error: err.message }, 500);
-  }
 });
 
 // ============================================================================
@@ -110,11 +96,13 @@ app.post('/api/auth/register', async (c) => {
       ? name.trim()
       : userId;
 
+    const sessionToken = `sess_${Date.now()}_${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+
     // Insert user and initialize wallet atomically
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO users (id, name, mobile, email, password_hash, fund_pin, fund_pin_set, upline_code, referral_code) 
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        `INSERT INTO users (id, name, mobile, email, password_hash, fund_pin, fund_pin_set, upline_code, referral_code, session_token) 
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
       ).bind(
         userId,
         officialName,
@@ -123,7 +111,8 @@ app.post('/api/auth/register', async (c) => {
         password,
         fundPin,
         uplineUserId,
-        referralCode
+        referralCode,
+        sessionToken
       ),
 
       c.env.DB.prepare(
@@ -156,7 +145,8 @@ app.post('/api/auth/register', async (c) => {
       message: 'Account registered successfully',
       user,
       wallet,
-      token: `nx_tok_${Date.now()}_${userId}`
+      token: `nx_tok_${Date.now()}_${userId}`,
+      sessionToken
     }, 201);
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -233,11 +223,16 @@ app.post('/api/auth/login', async (c) => {
       totalMinedYield: 0
     };
 
+    // Generate new unique session token to enforce SINGLE ACTIVE SESSION
+    const newSessionToken = `sess_${Date.now()}_${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+    await c.env.DB.prepare('UPDATE users SET session_token = ?, last_login = CURRENT_TIMESTAMP WHERE id = ?').bind(newSessionToken, userRecord.id).run();
+
     return c.json({
       success: true,
       user,
       wallet,
-      token: `nx_tok_${Date.now()}_${userRecord.id}`
+      token: `nx_tok_${Date.now()}_${userRecord.id}`,
+      sessionToken: newSessionToken
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -247,16 +242,30 @@ app.post('/api/auth/login', async (c) => {
 app.get('/api/auth/me', async (c) => {
   try {
     const userId = c.req.query('userId') || c.req.header('X-User-Id');
+    const clientSessionToken = c.req.query('sessionToken') || c.req.header('X-Session-Token');
     if (!userId) {
       return c.json({ success: false, message: 'User ID required' }, 400);
     }
 
-    const userRecord = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first() as any;
+    const userRecord = await c.env.DB.prepare(
+      'SELECT * FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(name) = UPPER(?) LIMIT 1'
+    ).bind(userId, userId).first() as any;
     if (!userRecord) {
       return c.json({ success: false, message: 'User not found' }, 404);
     }
 
-    const walletRecord = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first() as any;
+    // STRICT SINGLE ACTIVE SESSION CONCURRENCY CHECK:
+    // If client supplied a sessionToken and user has an active session_token in DB,
+    // they MUST match. If they don't, it means another login happened on another device/browser!
+    if (clientSessionToken && userRecord.session_token && clientSessionToken !== userRecord.session_token) {
+      return c.json({
+        success: false,
+        sessionInvalidated: true,
+        message: 'Your account was logged in from another device or browser. You have been logged out for security.'
+      }, 401);
+    }
+
+    const walletRecord = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userRecord.id).first() as any;
 
     return c.json({
       success: true,
@@ -269,7 +278,8 @@ app.get('/api/auth/me', async (c) => {
         uplineCode: userRecord.upline_code,
         role: userRecord.role
       },
-      wallet: walletRecord || {}
+      wallet: walletRecord || {},
+      sessionToken: userRecord.session_token
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -1760,15 +1770,21 @@ app.get('/api/admin/settings', async (c) => {
 });
 
 // Admin Update Platform Settings (Fees, Min limits, Vault Address)
-app.put('/api/admin/settings', async (c) => {
+app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
   try {
     const body = await c.req.json();
-    const adminRole = c.req.header('X-Admin-Role') || body.adminRole || body.role;
+    const adminRole = c.req.header('X-Admin-Role') || c.req.query('role') || body.adminRole || body.role;
     if (adminRole === 'subadmin') {
       return c.json({
         success: false,
         message: 'Forbidden: Sub-Admin accounts have read-only audit permissions. Only Master Super Admin can modify system settings.'
       }, 403);
+    }
+
+    const cleanVault = (body.vault_address || body.vaultWalletAddress || '').trim();
+    if (cleanVault && cleanVault.startsWith('0x') && cleanVault.length === 42) {
+      body.vault_address = cleanVault;
+      body.vaultWalletAddress = cleanVault;
     }
 
     if (body.key && body.value !== undefined) {
@@ -1791,7 +1807,11 @@ app.put('/api/admin/settings', async (c) => {
         await c.env.DB.batch(statements);
       }
     }
-    return c.json({ success: true, message: 'Platform settings updated successfully in database' });
+    return c.json({
+      success: true,
+      message: 'Platform settings updated successfully in database',
+      vaultAddress: cleanVault || undefined
+    });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
