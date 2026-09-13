@@ -76,6 +76,20 @@ export const NeonTopAppBar: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Center: "Get App" button on Mobile - ONLY on Home Screen */}
+        {activeRoute === 'home' && (
+          <div className="lg:hidden flex items-center justify-center">
+            <button
+              onClick={onGetAppClick}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 hover:from-[#00F0FF]/25 hover:to-[#0284C7]/30 border border-[#00F0FF]/40 text-[11px] font-black text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.2)] hover:border-[#00F0FF] transition-all cursor-pointer active:scale-95"
+              title="Download Official Neon Mining App"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#00F0FF]" />
+              <span className="tracking-wide uppercase font-mono">Get App</span>
+            </button>
+          </div>
+        )}
+
         {/* Center: Desktop Navigation Bar (Visible only on desktop screens) */}
         <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
           {DESKTOP_NAV_ITEMS.map((item) => {
@@ -99,6 +113,18 @@ export const NeonTopAppBar: React.FC<Props> = ({
               </button>
             );
           })}
+
+          {/* Desktop "Get App" Button - ONLY on Home Screen */}
+          {activeRoute === 'home' && (
+            <button
+              onClick={onGetAppClick}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/25 to-[#00F0FF]/15 hover:from-[#00F0FF]/30 hover:to-[#0284C7]/40 border border-[#00F0FF]/50 text-[12px] font-black text-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.25)] hover:border-[#00F0FF] transition-all cursor-pointer active:scale-95 ml-2"
+              title="Download Official Neon Mining App"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#00F0FF]" />
+              <span className="tracking-wide uppercase font-mono">Get App</span>
+            </button>
+          )}
         </nav>
 
         {/* Right Actions */}
@@ -152,7 +178,7 @@ export const NeonTopAppBar: React.FC<Props> = ({
               title="View Dashboard"
             >
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-mono">@{userName}</span>
+              <span className="font-mono">{userName}</span>
             </div>
           ) : (
             <button

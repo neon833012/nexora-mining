@@ -2906,6 +2906,10 @@ export const App: React.FC = () => {
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
+            const el = document.getElementById('official-get-app-section');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
             showToast('📲 Neon Mining Official Android App APK download starting soon!');
           }}
           onLoginClick={() => {
@@ -2938,7 +2942,7 @@ export const App: React.FC = () => {
               />
 
               {/* Centered Official Mobile App Download Banner */}
-              <div className="flex justify-center px-3.5 lg:px-0">
+              <div id="official-get-app-section" className="flex justify-center px-3.5 lg:px-0 scroll-mt-20">
                 <div className="w-full max-w-2xl p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#071324] via-[#0D213D] to-[#071324] border border-[#00F0FF]/40 shadow-[0_0_25px_rgba(0,240,255,0.15)] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
                   <div className="flex flex-col sm:flex-row items-center gap-3.5">
                     <div className="w-12 h-12 rounded-2xl bg-[#00F0FF]/15 border border-[#00F0FF]/50 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(0,240,255,0.3)]">

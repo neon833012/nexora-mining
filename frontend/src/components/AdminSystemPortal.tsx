@@ -3650,7 +3650,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             <div className="p-3.5 rounded-xl bg-[#050D18] border border-[#14233C] space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-400">Recipient Member:</span>
-                <span className="font-bold text-white">{payoutModalReq.userName} (@{payoutModalReq.userId})</span>
+                <span className="font-bold text-white">{payoutModalReq.userName} ({payoutModalReq.userId})</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Destination BEP-20 Wallet:</span>
@@ -3753,7 +3753,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             <div className="p-3.5 rounded-xl bg-[#050D18] border border-red-500/20 space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-400">Recipient Member:</span>
-                <span className="font-bold text-white">{rejectModalReq.userName} (@{rejectModalReq.userId})</span>
+                <span className="font-bold text-white">{rejectModalReq.userName} ({rejectModalReq.userId})</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Withdrawal Request ID:</span>
