@@ -2982,13 +2982,8 @@ export const App: React.FC = () => {
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
-            const link = document.createElement('a');
-            link.href = '/neon-mining.apk';
-            link.download = 'Neon_Mining_App.apk';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast('📲 Downloading Neon Mining Official Android APK...');
+            window.location.href = '/Neon_Mining_v1.apk';
+            showToast('📲 Downloading Neon Mining Official Android APK (2.6 MB)...');
           }}
           onLoginClick={() => {
             setIsSignUpMode(false);
