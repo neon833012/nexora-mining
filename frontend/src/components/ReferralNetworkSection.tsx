@@ -3,9 +3,10 @@ import {
   Copy,
   Sparkles,
   Users,
-  Clock
+  Clock,
+  Layers
 } from 'lucide-react';
-import { ReferredUserItem } from '../types/mining';
+import { ReferredUserItem, TeamTurnover } from '../types/mining';
 
 interface Props {
   referralLink?: string;
@@ -13,6 +14,8 @@ interface Props {
   onCopyReferral: () => void;
   referralIncome?: number;
   referredUsers?: ReferredUserItem[];
+  myStake?: number;
+  teamTurnover?: TeamTurnover;
 }
 
 export const ReferralNetworkSection: React.FC<Props> = ({
@@ -20,7 +23,9 @@ export const ReferralNetworkSection: React.FC<Props> = ({
   isAccountActive = true,
   onCopyReferral,
   referralIncome = 0.0,
-  referredUsers = []
+  referredUsers = [],
+  myStake = 0,
+  teamTurnover
 }) => {
   const [activeLevelTab, setActiveLevelTab] = useState<'all' | 1 | 2 | 3>('all');
 
@@ -193,7 +198,103 @@ export const ReferralNetworkSection: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* ── CARD 2: MY STAKE & TEAM TURNOVER PORTFOLIO ── */}
+      {(() => {
+        const effectiveMyStake = Number(myStake) || (teamTurnover?.personalStaked ? Number(teamTurnover.personalStaked) : 0);
+        const effectiveTeamStake = l1Turnover + l2Turnover + l3Turnover;
+        const combinedTotalTurnover = effectiveMyStake + effectiveTeamStake;
+        const currentBoostRate = (effectiveMyStake + l1Turnover) >= 2500 ? 2.5 : (effectiveMyStake + l1Turnover) >= 1000 ? 1.5 : 1.0;
+        const nextTarget = (effectiveMyStake + l1Turnover) >= 1000 ? 2500 : 1000;
+        const progressPercent = Math.min(100, Math.floor(((effectiveMyStake + l1Turnover) / nextTarget) * 100));
 
+        return (
+          <div className="rounded-2xl bg-gradient-to-r from-[#071324] via-[#0B1C33] to-[#08152A] border border-[#00F0FF]/30 p-4 lg:p-6 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#142642] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#00F0FF]/15 border border-[#00F0FF]/30 flex items-center justify-center text-[#00F0FF]">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-[16px] lg:text-[18px] font-black text-white">
+                    Staking & Team Turnover Analytics
+                  </h3>
+                  <p className="text-[11px] text-[#94A3B8]">
+                    Personal staked power combined with multi-tier downline team volume
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10.5px] font-mono text-[#10B981] bg-[#10B981]/15 px-3 py-1 rounded-full border border-[#10B981]/30 font-bold">
+                  Boost Rate: {currentBoostRate.toFixed(1)}% Daily
+                </span>
+              </div>
+            </div>
+
+            {/* 4 KPI Cards Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Card 1: My Personal Stake */}
+              <div className="p-3.5 rounded-xl bg-[#050C18] border border-[#142338]">
+                <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider block">
+                  My Stake
+                </span>
+                <div className="text-[20px] font-black text-[#00F0FF] font-mono mt-1">
+                  ${effectiveMyStake.toFixed(2)}
+                </div>
+                <span className="text-[9.5px] text-[#64748B]">Active Personal Node</span>
+              </div>
+
+              {/* Card 2: Team Downline Stake */}
+              <div className="p-3.5 rounded-xl bg-[#050C18] border border-[#142338]">
+                <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider block">
+                  Team Stake
+                </span>
+                <div className="text-[20px] font-black text-[#38BDF8] font-mono mt-1">
+                  ${effectiveTeamStake.toFixed(2)}
+                </div>
+                <span className="text-[9.5px] text-[#64748B]">L1: ${l1Turnover.toFixed(0)} · L2: ${l2Turnover.toFixed(0)} · L3: ${l3Turnover.toFixed(0)}</span>
+              </div>
+
+              {/* Card 3: Total Combined Turnover */}
+              <div className="p-3.5 rounded-xl bg-[#050C18] border border-[#142338]">
+                <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider block">
+                  Total Turnover
+                </span>
+                <div className="text-[20px] font-black text-white font-mono mt-1">
+                  ${combinedTotalTurnover.toFixed(2)}
+                </div>
+                <span className="text-[9.5px] text-[#10B981]">My Stake + Team Stake</span>
+              </div>
+
+              {/* Card 4: Total Referral Income Earned */}
+              <div className="p-3.5 rounded-xl bg-[#050C18] border border-[#142338]">
+                <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider block">
+                  Referral Income
+                </span>
+                <div className="text-[20px] font-black text-[#10B981] font-mono mt-1">
+                  +${(referralIncome || totalCommissionEarned).toFixed(2)}
+                </div>
+                <span className="text-[9.5px] text-[#94A3B8]">Paid to Wallet</span>
+              </div>
+            </div>
+
+            {/* Turnover Boost Progress Bar */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#94A3B8]">Turnover Boost Progress:</span>
+                <span className="font-mono font-bold text-[#00F0FF]">
+                  ${(effectiveMyStake + l1Turnover).toFixed(0)} / ${nextTarget} USD ({progressPercent}%)
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-[#050B14] border border-[#142338] overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#0284C7] via-[#00F0FF] to-[#10B981] transition-all duration-500 rounded-full"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 3-LEVEL DOWNLINE TEAM HIERARCHY HUB ── */}
       <div className="mt-6 rounded-[16px] lg:rounded-[24px] bg-[#0C1424] border border-[#1B2A42] p-4 lg:p-7 shadow-xl space-y-5">

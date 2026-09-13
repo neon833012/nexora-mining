@@ -145,6 +145,9 @@ export const LegalPolicyModal: React.FC<Props> = ({
                 <p>
                   Minimum withdrawal is 2.00 USDT. All on-chain withdrawals are subject to a flat 5% network gas fee for automated BSC smart contract dispatch. Payout requests are verified by treasury multi-sig protocols, settled on BNB Smart Chain, and permanently logged with public BscScan transaction reference hashes.
                 </p>
+                <p className="mt-2 text-purple-300 bg-purple-950/40 p-2.5 rounded-xl border border-purple-500/30 text-[12px] leading-relaxed">
+                  ⚡ <strong>Unlimited P2P Member Transfers (0% Fee):</strong> Unlike external on-chain crypto withdrawals which are subject to rate limits and administrative audit holds, internal member-to-member P2P transfers are <strong>100% UNLIMITED</strong>. Members can transfer funds to any registered member User ID as many times per day as they desire with <strong>0% network fee</strong>. There is no daily limit, no cooldown period, and P2P transfers can be performed even when an external crypto withdrawal is locked or pending in audit.
+                </p>
               </section>
 
               <section className="space-y-2">

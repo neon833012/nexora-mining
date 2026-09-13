@@ -3426,6 +3426,8 @@ export const App: React.FC = () => {
                 }}
                 referralIncome={referralIncome}
                 referredUsers={referredUsers}
+                myStake={activeMiningPower}
+                teamTurnover={teamTurnover}
               />
             )}
           </div>
