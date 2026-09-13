@@ -1844,6 +1844,250 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
 });
 
 // ============================================================================
+// 7.5. Real-Time Support Chat Desk (D1 Persistent Multi-User Sync)
+// ============================================================================
+// Sync / Upsert user chat session
+app.post('/api/chat/sync', async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      sessionId,
+      userId,
+      userName,
+      userMobile,
+      userEmail,
+      userPlan,
+      userBalance,
+      status,
+      messages,
+      lastMessageText
+    } = body;
+
+    if (!sessionId) {
+      return c.json({ success: false, message: 'sessionId is required' }, 400);
+    }
+
+    const messagesJson = JSON.stringify(messages || []);
+    const lastMsg = lastMessageText || (messages && messages.length > 0 ? messages[messages.length - 1].text : '');
+    const cleanStatus = status || 'bot';
+
+    await c.env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_name TEXT,
+        user_mobile TEXT,
+        user_email TEXT,
+        user_plan TEXT,
+        user_balance REAL DEFAULT 0,
+        status TEXT DEFAULT 'bot',
+        last_message_text TEXT,
+        unread_admin_count INTEGER DEFAULT 0,
+        unread_user_count INTEGER DEFAULT 0,
+        assigned_admin_name TEXT,
+        messages_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
+    await c.env.DB.prepare(`
+      INSERT INTO chat_sessions (
+        id, user_id, user_name, user_mobile, user_email, user_plan, user_balance, 
+        status, last_message_text, unread_admin_count, unread_user_count, messages_json, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        user_id = excluded.user_id,
+        user_name = excluded.user_name,
+        user_mobile = excluded.user_mobile,
+        user_email = excluded.user_email,
+        user_plan = excluded.user_plan,
+        user_balance = excluded.user_balance,
+        status = excluded.status,
+        last_message_text = excluded.last_message_text,
+        unread_admin_count = chat_sessions.unread_admin_count + 1,
+        messages_json = excluded.messages_json,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(
+      sessionId,
+      userId || 'guest',
+      userName || 'Guest Miner',
+      userMobile || '',
+      userEmail || '',
+      userPlan || 'No Active Plan',
+      Number(userBalance || 0),
+      cleanStatus,
+      lastMsg,
+      messagesJson
+    ).run();
+
+    return c.json({ success: true, message: 'Chat synced to Cloudflare D1' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// User / Client get their chat session
+app.get('/api/chat/session', async (c) => {
+  try {
+    const sessionId = c.req.query('sessionId');
+    if (!sessionId) {
+      return c.json({ success: false, message: 'sessionId required' }, 400);
+    }
+    const row = await c.env.DB.prepare('SELECT * FROM chat_sessions WHERE id = ?').bind(sessionId).first() as any;
+    if (!row) {
+      return c.json({ success: true, session: null });
+    }
+    let parsedMessages = [];
+    try {
+      parsedMessages = JSON.parse(row.messages_json || '[]');
+    } catch {}
+
+    return c.json({
+      success: true,
+      session: {
+        id: row.id,
+        userId: row.user_id,
+        userName: row.user_name,
+        userMobile: row.user_mobile,
+        userEmail: row.user_email,
+        userPlan: row.user_plan,
+        userBalance: row.user_balance,
+        status: row.status,
+        lastMessageText: row.last_message_text,
+        unreadAdminCount: row.unread_admin_count,
+        unreadUserCount: row.unread_user_count,
+        assignedAdminName: row.assigned_admin_name,
+        messages: parsedMessages,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Admin Get all chats from D1
+app.get('/api/admin/chats', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM chat_sessions 
+      ORDER BY 
+        CASE 
+          WHEN status = 'waiting_admin' THEN 0 
+          WHEN status = 'active_admin' THEN 1 
+          ELSE 2 
+        END,
+        updated_at DESC
+      LIMIT 100
+    `).all();
+
+    const mapped = (results || []).map((row: any) => {
+      let parsed = [];
+      try {
+        parsed = JSON.parse(row.messages_json || '[]');
+      } catch {}
+      return {
+        id: row.id,
+        userId: row.user_id,
+        userName: row.user_name,
+        userMobile: row.user_mobile,
+        userEmail: row.user_email,
+        userPlan: row.user_plan,
+        userBalance: row.user_balance,
+        status: row.status,
+        lastMessageText: row.last_message_text,
+        unreadAdminCount: row.unread_admin_count,
+        unreadUserCount: row.unread_user_count,
+        assignedAdminName: row.assigned_admin_name,
+        messages: parsed,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    });
+
+    return c.json({ success: true, sessions: mapped });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Admin Reply to chat
+app.post('/api/admin/chats/reply', async (c) => {
+  try {
+    const { sessionId, adminName, messageText } = await c.req.json();
+    if (!sessionId || !messageText) {
+      return c.json({ success: false, message: 'sessionId and messageText required' }, 400);
+    }
+
+    const row = await c.env.DB.prepare('SELECT * FROM chat_sessions WHERE id = ?').bind(sessionId).first() as any;
+    if (!row) {
+      return c.json({ success: false, message: 'Session not found' }, 404);
+    }
+
+    let existingMessages = [];
+    try {
+      existingMessages = JSON.parse(row.messages_json || '[]');
+    } catch {}
+
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const adminMsg = {
+      id: `admin_msg_${Date.now()}`,
+      sender: 'admin',
+      senderName: adminName || 'Support Specialist',
+      text: messageText.trim(),
+      timestamp: nowStr
+    };
+
+    existingMessages.push(adminMsg);
+
+    await c.env.DB.prepare(`
+      UPDATE chat_sessions 
+      SET messages_json = ?,
+          last_message_text = ?,
+          status = 'active_admin',
+          assigned_admin_name = ?,
+          unread_admin_count = 0,
+          unread_user_count = unread_user_count + 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      JSON.stringify(existingMessages),
+      messageText.trim(),
+      adminName || 'Support Specialist',
+      sessionId
+    ).run();
+
+    return c.json({ success: true, message: 'Admin reply dispatched', newMessage: adminMsg });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Admin Resolve Chat
+app.post('/api/admin/chats/resolve', async (c) => {
+  try {
+    const { sessionId } = await c.req.json();
+    if (!sessionId) {
+      return c.json({ success: false, message: 'sessionId required' }, 400);
+    }
+    await c.env.DB.prepare(`
+      UPDATE chat_sessions 
+      SET status = 'resolved',
+          unread_admin_count = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(sessionId).run();
+
+    return c.json({ success: true, message: 'Session marked resolved' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// ============================================================================
 // 8. Cloudflare Worker Module Export (Fetch + Scheduled Cron Trigger)
 // ============================================================================
 export default {

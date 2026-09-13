@@ -534,6 +534,77 @@ class NeonApiService {
       return { success: false, message: err.message };
     }
   }
+
+  // ==========================================================================
+  // Real-Time Persistent Chat Support (Multi-Device & Cross-Browser)
+  // ==========================================================================
+  async syncChatSession(params: {
+    sessionId: string;
+    userId?: string;
+    userName?: string;
+    userMobile?: string;
+    userEmail?: string;
+    userPlan?: string;
+    userBalance?: number;
+    status?: 'bot' | 'waiting_admin' | 'active_admin' | 'resolved';
+    messages?: any[];
+    lastMessageText?: string;
+  }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/chat/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getChatSession(sessionId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/chat/session?sessionId=${encodeURIComponent(sessionId)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getAdminChats() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/chats`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async sendAdminChatReply(params: { sessionId: string; adminName: string; messageText: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/chats/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async resolveAdminChat(sessionId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/chats/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 export const neonApi = new NeonApiService();

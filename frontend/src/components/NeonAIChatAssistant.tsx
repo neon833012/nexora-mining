@@ -15,6 +15,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { ChatMessage, SupportTicket, LiveChatSession } from '../types/mining';
+import { nexoraApi } from '../services/api';
 
 interface Props {
   onDispatchEmergencyTicket?: (ticket: SupportTicket) => void;
@@ -70,7 +71,15 @@ const PRESET_PROMPTS = [
 
 export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket, currentUser }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const userIdentifier = currentUser?.id || 'guest';
+  const rawUserId = currentUser?.id && currentUser.id !== 'guest_user' ? currentUser.id : null;
+  const userIdentifier = rawUserId || (typeof window !== 'undefined' ? localStorage.getItem('neon_guest_chat_id') || `guest_${Date.now().toString().slice(-4)}` : 'guest');
+  
+  useEffect(() => {
+    if (!rawUserId && typeof window !== 'undefined' && !localStorage.getItem('neon_guest_chat_id') && userIdentifier.startsWith('guest_')) {
+      localStorage.setItem('neon_guest_chat_id', userIdentifier);
+    }
+  }, [rawUserId, userIdentifier]);
+
   const [sessionId, setSessionId] = useState<string>(() => {
     return localStorage.getItem(`neon_chat_session_${userIdentifier}`) || `session_${userIdentifier}`;
   });
@@ -84,6 +93,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     }
     setSessionId(sId);
   }, [userIdentifier]);
+
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -177,7 +187,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
   useEffect(() => {
     localStorage.setItem(`neon_chat_session_${userIdentifier}`, sessionId);
 
-    const loadSession = () => {
+    const loadSession = async () => {
       const all = getStoredSessions();
       const current = all.find((s) => s.id === sessionId);
       if (current) {
@@ -191,6 +201,25 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         setHasHumanJoined(false);
         setAssignedAdmin(undefined);
       }
+
+      // Also pull latest state from Cloudflare D1
+      try {
+        const res = await nexoraApi.getChatSession(sessionId);
+        if (res.success && res.session) {
+          const remote = res.session;
+          if (remote.messages && remote.messages.length > 0) {
+            setMessages(remote.messages);
+          }
+          if (remote.status === 'active_admin') {
+            setHasHumanJoined(true);
+            setIsWaitingHuman(false);
+            if (remote.assignedAdminName) setAssignedAdmin(remote.assignedAdminName);
+          } else if (remote.status === 'waiting_admin') {
+            setIsWaitingHuman(true);
+            setHasHumanJoined(false);
+          }
+        }
+      } catch (e) {}
     };
 
     loadSession();
@@ -205,6 +234,40 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     };
   }, [sessionId, userIdentifier]);
 
+  // Real-time Cloudflare D1 Polling when Chat Drawer is Open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const pollChat = async () => {
+      try {
+        const res = await nexoraApi.getChatSession(sessionId);
+        if (res.success && res.session) {
+          const remote = res.session;
+          if (remote.messages && Array.isArray(remote.messages) && remote.messages.length > 0) {
+            setMessages((prev) => {
+              if (remote.messages.length !== prev.length || JSON.stringify(remote.messages) !== JSON.stringify(prev)) {
+                return remote.messages;
+              }
+              return prev;
+            });
+          }
+          if (remote.status === 'active_admin') {
+            setHasHumanJoined(true);
+            setIsWaitingHuman(false);
+            if (remote.assignedAdminName) setAssignedAdmin(remote.assignedAdminName);
+          } else if (remote.status === 'waiting_admin') {
+            setIsWaitingHuman(true);
+            setHasHumanJoined(false);
+          }
+        }
+      } catch (err) {}
+    };
+
+    pollChat();
+    const interval = setInterval(pollChat, 3000);
+    return () => clearInterval(interval);
+  }, [isOpen, sessionId]);
+
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -216,16 +279,17 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     const existingIndex = all.findIndex((s) => s.id === sessionId);
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const lastMsg = newMessages[newMessages.length - 1]?.text || '';
+    const resolvedStatus = newStatus || (isWaitingHuman ? 'waiting_admin' : hasHumanJoined ? 'active_admin' : 'bot');
 
     const sessionData: LiveChatSession = {
       id: sessionId,
-      userId: currentUser?.id || 'guest_user',
-      userName: currentUser?.name || 'Guest Miner',
-      userEmail: currentUser?.email || 'guest@neoncryptomining.com',
-      userMobile: currentUser?.mobile || '+91 9876543210',
+      userId: currentUser?.id || userIdentifier,
+      userName: currentUser?.name || (userIdentifier.startsWith('guest_') ? 'Guest Miner' : userIdentifier),
+      userEmail: currentUser?.email || '',
+      userMobile: currentUser?.mobile || '',
       userPlan: currentUser?.planName || 'No Active Plan',
       userBalance: currentUser?.availableBalance || 0,
-      status: newStatus || (isWaitingHuman ? 'waiting_admin' : hasHumanJoined ? 'active_admin' : 'bot'),
+      status: resolvedStatus,
       createdAt: existingIndex >= 0 ? all[existingIndex].createdAt : now,
       updatedAt: now,
       lastMessageText: lastMsg,
@@ -241,6 +305,20 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       all.unshift(sessionData);
     }
     saveStoredSessions(all);
+
+    // Sync to Cloudflare D1 real-time database
+    nexoraApi.syncChatSession({
+      sessionId,
+      userId: currentUser?.id || userIdentifier,
+      userName: currentUser?.name || (userIdentifier.startsWith('guest_') ? 'Guest Miner' : userIdentifier),
+      userEmail: currentUser?.email || '',
+      userMobile: currentUser?.mobile || '',
+      userPlan: currentUser?.planName || 'No Active Plan',
+      userBalance: currentUser?.availableBalance || 0,
+      status: resolvedStatus,
+      messages: newMessages,
+      lastMessageText: lastMsg
+    }).catch(() => {});
   };
 
   const handleEscalateToHuman = (customPrompt?: string) => {
@@ -250,7 +328,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     const escalationMsg: ChatMessage = {
       id: `sys_${Date.now()}`,
       sender: 'ai',
-      text: "🚨 **[CONNECTED TO LIVE HUMAN DESK]**\n\nYour chat session and account telemetry have been routed to our **24/7 Human Support Team**! A support specialist has received your request and will reply directly in this window shortly. Please type any questions or details below.",
+      text: "🚨 **[CONNECTED TO LIVE HUMAN DESK]**\n\nYour chat session and account telemetry have been routed to our **24/7 Human Support Team**! A support specialist has received an urgent on-screen notification and will reply directly in this window shortly. Please type any questions or details below.",
       timestamp: now,
       isEmergency: true
     };
@@ -263,8 +341,8 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       onDispatchEmergencyTicket({
         id: `ticket_${Date.now()}`,
         type: 'emergency_ai',
-        userId: currentUser?.id || 'usr_current',
-        userName: currentUser?.name || 'NeonMiner_Current',
+        userId: currentUser?.id || userIdentifier,
+        userName: currentUser?.name || userIdentifier,
         mobile: currentUser?.mobile || '+91 9876543210',
         subject: 'Live Chat Support Escalation',
         details: customPrompt || 'User requested live human agent from AI chat assistant.',

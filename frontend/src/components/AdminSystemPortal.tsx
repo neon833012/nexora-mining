@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield,
   ShieldCheck,
@@ -68,6 +68,7 @@ import {
   ChatMessage
 } from '../types/mining';
 import { MINING_PLANS } from '../data/miningPlans';
+import { nexoraApi } from '../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -689,6 +690,25 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [manualResetUserId, setManualResetUserId] = useState('');
   const [manualResetNewPin, setManualResetNewPin] = useState('888888');
 
+  // Real-Time Cloudflare D1 Poll for Admin Live Support Chats (Multi-Device & Cross-Browser)
+  useEffect(() => {
+    const fetchChatsFromD1 = async () => {
+      try {
+        const res = await nexoraApi.getAdminChats();
+        if (res.success && Array.isArray(res.sessions)) {
+          setLiveSessions(res.sessions);
+          try {
+            localStorage.setItem('neon_live_chat_sessions', JSON.stringify(res.sessions));
+          } catch {}
+        }
+      } catch (e) {}
+    };
+
+    fetchChatsFromD1();
+    const interval = setInterval(fetchChatsFromD1, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Sync sessions with localStorage and cross-window/tab events
   useEffect(() => {
     const syncSessions = () => {
@@ -719,7 +739,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }
   };
 
-  const handleSendAdminReply = (session: LiveChatSession, cannedText?: string) => {
+  const handleSendAdminReply = async (session: LiveChatSession, cannedText?: string) => {
     if (isSubadmin) {
       triggerNotice('⚠️ Sub-Admins have read-only access and cannot send replies.');
       return;
@@ -756,9 +776,18 @@ export const AdminSystemPortal: React.FC<Props> = ({
     saveLiveSessions(updatedSessions);
     setAdminReplyText('');
     triggerNotice(`✓ Live reply sent to ${session.userName}`);
+
+    // Persist to Cloudflare D1 for cross-device instant sync
+    try {
+      await nexoraApi.sendAdminChatReply({
+        sessionId: session.id,
+        adminName: isSuperadmin ? 'Super Admin' : 'Support Specialist',
+        messageText: textToSend
+      });
+    } catch (e) {}
   };
 
-  const handleResolveSession = (sessionId: string) => {
+  const handleResolveSession = async (sessionId: string) => {
     if (isSubadmin) {
       triggerNotice('⚠️ Only Super Admin can resolve customer support tickets.');
       return;
@@ -785,6 +814,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
     saveLiveSessions(updatedSessions);
     triggerNotice('✓ Support conversation marked as resolved');
+
+    // Persist to Cloudflare D1
+    try {
+      await nexoraApi.resolveAdminChat(sessionId);
+    } catch (e) {}
   };
 
   const waitingChatsCount = useMemo(() => {
@@ -825,6 +859,31 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
   const pendingTickets = supportTickets.filter((t) => t.status === 'pending');
 
+  // Play subtle notification chime when a user clicks 'Talk to Human'
+  const prevWaitingRef = useRef(0);
+  useEffect(() => {
+    if (waitingChatsCount > prevWaitingRef.current) {
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+          osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.12); // A5
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+          osc.start(audioCtx.currentTime);
+          osc.stop(audioCtx.currentTime + 0.35);
+        }
+      } catch (e) {}
+    }
+    prevWaitingRef.current = waitingChatsCount;
+  }, [waitingChatsCount]);
+
   const navItems = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, badge: null, category: 'Core' },
     { id: 'users', label: 'Miners', icon: Users, badge: adminUsers.length, category: 'Core' },
@@ -836,8 +895,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
       id: 'support',
       label: 'Support & PINs',
       icon: Headphones,
-      badge: (pendingTickets.length + waitingChatsCount) || null,
-      alert: pendingTickets.length > 0 || waitingChatsCount > 0,
+      badge: waitingChatsCount > 0 ? `🔴 ${waitingChatsCount}` : (pendingTickets.length || null),
+      alert: waitingChatsCount > 0 || pendingTickets.length > 0,
       category: 'Security'
     },
     { id: 'subadmins', label: 'Staff (RBAC)', icon: ShieldCheck, badge: subAdmins.length, category: 'Security' },
@@ -984,6 +1043,24 @@ export const AdminSystemPortal: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Urgent Human Support Red Alert Button */}
+            {waitingChatsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('support');
+                  setSupportSubTab('chats');
+                  setSessionFilter('waiting');
+                  const firstWaiting = liveSessions.find((s) => s.status === 'waiting_admin');
+                  if (firstWaiting) setSelectedSessionId(firstWaiting.id);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-red-600/35 border border-red-500 text-white text-[10px] font-black animate-pulse cursor-pointer shadow-md shadow-red-900/50"
+              >
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span className="text-red-200 font-bold">🔴 {waitingChatsCount} Waiting!</span>
+              </button>
+            )}
+
             {/* Cloudflare D1 Pulse Status */}
             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[9.5px] font-mono font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1226,6 +1303,30 @@ export const AdminSystemPortal: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-2.5">
+            {/* Urgent Human Support Red Alert Banner */}
+            {waitingChatsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('support');
+                  setSupportSubTab('chats');
+                  setSessionFilter('waiting');
+                  const firstWaiting = liveSessions.find((s) => s.status === 'waiting_admin');
+                  if (firstWaiting) setSelectedSessionId(firstWaiting.id);
+                }}
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-red-600/30 border border-red-500 text-white text-xs font-black animate-pulse cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:bg-red-600/50 transition-all"
+                title="Click to view live support request"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                <span className="text-red-200">
+                  🔴 URGENT: {waitingChatsCount} Miner{waitingChatsCount > 1 ? 's' : ''} Requesting Human Support!
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-white text-black text-[10px] font-bold uppercase ml-1">
+                  Open Chat →
+                </span>
+              </button>
+            )}
+
             {/* Direct Admin Link Copy */}
             <button
               onClick={() => {
