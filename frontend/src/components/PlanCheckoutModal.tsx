@@ -63,8 +63,6 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   const [qrFormat, setQrFormat] = useState<'auto_amount' | 'web3_eip' | 'raw_address'>('auto_amount');
   const [enteredTxHash, setEnteredTxHash] = useState('');
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
-  const [countdownMinutes, setCountdownMinutes] = useState(14);
-  const [countdownSeconds, setCountdownSeconds] = useState(59);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
@@ -85,28 +83,10 @@ export const PlanCheckoutModal: React.FC<Props> = ({
       setEnteredTxHash('');
       setVerificationError(null);
       setIsVerifying(false);
-      setCountdownMinutes(14);
-      setCountdownSeconds(59);
       // If user has 0 or insufficient balance, automatically default to on-chain BEP20
       setPaymentMethod(hasEnoughInternalBalance ? 'internal' : 'bep20_chain');
     }
   }, [isOpen, plan, availableBalance, diffAmount, hasEnoughInternalBalance]);
-
-  // Payment countdown timer for on-chain transfer
-  useEffect(() => {
-    if (isOpen && currentStep === 2 && paymentMethod === 'bep20_chain') {
-      const timer = setInterval(() => {
-        setCountdownSeconds((sec) => {
-          if (sec === 0) {
-            setCountdownMinutes((min) => (min > 0 ? min - 1 : 0));
-            return 59;
-          }
-          return sec - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [isOpen, currentStep, paymentMethod]);
 
   if (!isOpen || !plan) return null;
 
@@ -409,14 +389,15 @@ export const PlanCheckoutModal: React.FC<Props> = ({
               {/* METHOD 1: ON-CHAIN BEP-20 DEPOSIT (Matches User's Requested Architecture) */}
               {paymentMethod === 'bep20_chain' && (
                 <div className="p-3.5 rounded-xl bg-[#06101E] border border-[#162B47] space-y-3">
-                  {/* Countdown Timer */}
+                  {/* Settlement Network Info */}
                   <div className="flex items-center justify-between p-2 rounded-lg bg-[#040A14] border border-[#122135]">
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#FBBF24]">
-                      <Clock className="w-3.5 h-3.5 animate-pulse" />
-                      <span>Payment Window:</span>
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span>Settlement Network:</span>
                     </div>
-                    <span className="text-[12px] font-mono font-bold text-white">
-                      {countdownMinutes.toString().padStart(2, '0')}:{countdownSeconds.toString().padStart(2, '0')}
+                    <span className="text-[12px] font-mono font-bold text-[#00F0FF] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
+                      <span>BNB Smart Chain (BEP-20)</span>
                     </span>
                   </div>
 

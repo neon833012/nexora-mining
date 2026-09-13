@@ -134,13 +134,45 @@ export async function verifyBscTransaction(
       };
     }
 
-    // 3. Fetch Current Latest Block for confirmation count
+    // 3. Fetch Current Latest Block for confirmation count & 5-minute age validation
     let confirmations = 3;
+    let latestBlock = txBlockNumber + 3;
     try {
       const blockData = await callBscRpc('eth_blockNumber', []);
-      const latestBlock = parseInt(blockData.result, 16);
+      latestBlock = parseInt(blockData.result, 16);
       confirmations = Math.max(1, latestBlock - txBlockNumber + 1);
     } catch {}
+
+    // STRICT 5-MINUTE BLOCK AGE ENFORCEMENT:
+    // Binance Smart Chain produces 1 block every 3.0 seconds (100 blocks = 5 minutes).
+    let blockAgeSeconds = Math.max(0, (latestBlock - txBlockNumber) * 3);
+
+    try {
+      const blockDetails = await callBscRpc('eth_getBlockByNumber', [txData.result.blockNumber, false]);
+      if (blockDetails && blockDetails.result && blockDetails.result.timestamp) {
+        const blockTimestampSec = parseInt(blockDetails.result.timestamp, 16);
+        const currentTimestampSec = Math.floor(Date.now() / 1000);
+        blockAgeSeconds = Math.max(0, currentTimestampSec - blockTimestampSec);
+      }
+    } catch {}
+
+    const MAX_ALLOWED_AGE_SECONDS = 5 * 60; // Strictly 5 minutes (300 seconds)
+    if (blockAgeSeconds > MAX_ALLOWED_AGE_SECONDS) {
+      const ageMinutes = Math.floor(blockAgeSeconds / 60);
+      const ageText = ageMinutes >= 60
+        ? `${(ageMinutes / 60).toFixed(1)} hours`
+        : `${ageMinutes} minutes`;
+      return {
+        verified: false,
+        actualAmount: 0,
+        fromAddress: '',
+        toAddress: '',
+        blockNumber: txBlockNumber,
+        confirmations: confirmations,
+        statusText: `Transaction Expired: This transaction was mined ${ageText} ago on Binance Smart Chain. For security, transactions older than 5 minutes cannot be accepted. Please make a fresh payment for this session.`,
+        error: 'TX_EXPIRED'
+      };
+    }
 
     // 4. Inspect Receipt Logs for BEP-20 USDT Transfer Event
     let transferFound = false;

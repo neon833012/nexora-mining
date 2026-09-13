@@ -48,7 +48,6 @@ export const DepositDemoDialog: React.FC<Props> = ({
   const [userTxHash, setUserTxHash] = useState<string>('');
   const [orderId, setOrderId] = useState<string>('');
   const [orderCreatedAt, setOrderCreatedAt] = useState<number>(Date.now());
-  const [timeLeftSeconds, setTimeLeftSeconds] = useState<number>(900); // 15:00 minutes
 
   // Verification Animation States
   const [verifyStage, setVerifyStage] = useState<number>(0);
@@ -68,29 +67,13 @@ export const DepositDemoDialog: React.FC<Props> = ({
       setUserTxHash('');
       setVerificationError(null);
       setIsVerifying(false);
-      setTimeLeftSeconds(900);
       setOrderId(`DEP-BSC-${Math.floor(100000 + Math.random() * 900000)}`);
     }
   }, [isOpen]);
 
-  // 15-minute countdown timer during AWAITING_PAYMENT
-  useEffect(() => {
-    if (!isOpen || step !== 'AWAITING_PAYMENT') return;
-    const timer = setInterval(() => {
-      setTimeLeftSeconds((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isOpen, step]);
-
   if (!isOpen) return null;
 
   const numAmount = parseFloat(depositAmount) || 0;
-
-  const formatTimer = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   const handleCopy = (text: string, field: 'address' | 'amount' | 'tx') => {
     navigator.clipboard?.writeText(text);
@@ -103,7 +86,6 @@ export const DepositDemoDialog: React.FC<Props> = ({
     if (numAmount < 2) return;
     setVerificationError(null);
     setOrderCreatedAt(Date.now());
-    setTimeLeftSeconds(900);
     setStep('AWAITING_PAYMENT');
   };
 
@@ -352,17 +334,17 @@ export const DepositDemoDialog: React.FC<Props> = ({
         {/* ========================================================================= */}
         {step === 'AWAITING_PAYMENT' && (
           <div className="p-5 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
-            {/* Order Status & Countdown Timer */}
+            {/* Order Status & Settlement Network Info */}
             <div className="p-3 rounded-xl bg-[#06101E] border border-[#182F4D] flex items-center justify-between">
               <div>
                 <span className="text-[10px] uppercase font-bold text-[#64748B] block">Order Reference</span>
                 <span className="text-[12px] font-mono font-bold text-white">{orderId}</span>
               </div>
               <div className="text-right">
-                <span className="text-[10px] uppercase font-bold text-[#64748B] block">Expires In</span>
-                <span className="text-[14px] font-mono font-black text-[#FBBF24] flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 animate-pulse text-[#FBBF24]" />
-                  <span>{formatTimer(timeLeftSeconds)}</span>
+                <span className="text-[10px] uppercase font-bold text-[#64748B] block">Settlement Network</span>
+                <span className="text-[12px] font-mono font-bold text-[#00F0FF] flex items-center gap-1.5 justify-end">
+                  <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
+                  <span>BNB Smart Chain (BEP-20)</span>
                 </span>
               </div>
             </div>
