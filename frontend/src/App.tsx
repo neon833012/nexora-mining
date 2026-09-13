@@ -980,22 +980,23 @@ export const App: React.FC = () => {
       const data = await nexoraApi.getSettings();
       if (data) {
         const vaultAddr = (data.vault_address || data.vaultWalletAddress || '').trim();
-        if (vaultAddr && vaultAddr.startsWith('0x') && vaultAddr.length === 42) {
-          setPlatformSettings((prev) => {
-            const updated = {
-              ...prev,
-              vaultWalletAddress: vaultAddr,
-              minDepositAmount: data.min_deposit ? parseFloat(data.min_deposit) : prev.minDepositAmount,
-              minWithdrawalAmount: data.min_withdrawal ? parseFloat(data.min_withdrawal) : prev.minWithdrawalAmount,
-              withdrawalFeePercent: data.withdrawal_fee_percent ? parseFloat(data.withdrawal_fee_percent) : prev.withdrawalFeePercent,
-              p2pFeePercent: data.p2p_fee_percent ? parseFloat(data.p2p_fee_percent) : prev.p2pFeePercent
-            };
-            try {
-              localStorage.setItem('neon_platform_settings', JSON.stringify(updated));
-            } catch (e) {}
-            return updated;
-          });
-        }
+        setPlatformSettings((prev) => {
+          const updated = {
+            ...prev,
+            vaultWalletAddress: (vaultAddr && vaultAddr.startsWith('0x') && vaultAddr.length === 42) ? vaultAddr : prev.vaultWalletAddress,
+            minDepositAmount: data.min_deposit ? parseFloat(data.min_deposit) : prev.minDepositAmount,
+            minWithdrawalAmount: data.min_withdrawal ? parseFloat(data.min_withdrawal) : prev.minWithdrawalAmount,
+            withdrawalFeePercent: data.withdrawal_fee_percent ? parseFloat(data.withdrawal_fee_percent) : prev.withdrawalFeePercent,
+            p2pFeePercent: data.p2p_fee_percent ? parseFloat(data.p2p_fee_percent) : prev.p2pFeePercent,
+            popupImageUrl: data.popup_image_url !== undefined ? data.popup_image_url : (data.popupImageUrl !== undefined ? data.popupImageUrl : prev.popupImageUrl),
+            popupLinkUrl: data.popup_link_url !== undefined ? data.popup_link_url : (data.popupLinkUrl !== undefined ? data.popupLinkUrl : prev.popupLinkUrl),
+            popupEnabled: data.popup_enabled !== undefined ? (String(data.popup_enabled) === 'true' || String(data.popup_enabled) === '1') : prev.popupEnabled
+          };
+          try {
+            localStorage.setItem('neon_platform_settings', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
       }
     } catch (err) {
       console.warn('[App] Failed to sync platform settings from D1:', err);
@@ -1295,15 +1296,13 @@ export const App: React.FC = () => {
       return () => clearInterval(sessionInterval);
   }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
-  // Automatically trigger promotional plan popup modal 3 seconds after opening (only if user has no active plan)
+  // Automatically trigger promotional popup modal 2.5 seconds after opening
   useEffect(() => {
     const promoTimer = setTimeout(() => {
-      if (activeMiningPower <= 0) {
-        setShowPromoPopup(true);
-      }
-    }, 3000);
+      setShowPromoPopup(true);
+    }, 2500);
     return () => clearTimeout(promoTimer);
-  }, [activeMiningPower]);
+  }, []);
 
   // Check URL query parameters (?ref=CODE, ?admin=portal) on mount
   useEffect(() => {
@@ -2631,12 +2630,24 @@ export const App: React.FC = () => {
     if (settings.minWithdrawalAmount !== undefined) payload.min_withdrawal = String(settings.minWithdrawalAmount);
     if (settings.withdrawalFeePercent !== undefined) payload.withdrawal_fee_percent = String(settings.withdrawalFeePercent);
     if (settings.p2pFeePercent !== undefined) payload.p2p_fee_percent = String(settings.p2pFeePercent);
+    if (settings.popupImageUrl !== undefined) {
+      payload.popup_image_url = settings.popupImageUrl;
+      payload.popupImageUrl = settings.popupImageUrl;
+    }
+    if (settings.popupLinkUrl !== undefined) {
+      payload.popup_link_url = settings.popupLinkUrl;
+      payload.popupLinkUrl = settings.popupLinkUrl;
+    }
+    if (settings.popupEnabled !== undefined) {
+      payload.popup_enabled = String(settings.popupEnabled);
+      payload.popupEnabled = String(settings.popupEnabled);
+    }
 
     if (Object.keys(payload).length > 0) {
       try {
         const res = await nexoraApi.updatePlatformSettings(payload, 'master');
         if (res && res.success) {
-          showToast('✓ Platform rules & vault address updated live across all users!');
+          showToast('✓ Platform rules & popup updated live across all users!');
           await fetchPlatformSettings();
         } else {
           showToast(`✓ Local updated (${res?.message || 'Saved locally'})`);
@@ -3834,9 +3845,9 @@ export const App: React.FC = () => {
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
 
-        {/* 3-Second Welcome Promotional Mining Plans Showcase Popup Modal */}
+        {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal */}
         <PromotionalPlanPopupModal
-          isOpen={showPromoPopup && (platformSettings?.popupEnabled !== false) && activeMiningPower <= 0}
+          isOpen={showPromoPopup && (platformSettings?.popupEnabled !== false)}
           onDismiss={() => setShowPromoPopup(false)}
           onSelectPlan={(plan) => {
             setShowPromoPopup(false);

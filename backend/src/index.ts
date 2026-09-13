@@ -2062,7 +2062,13 @@ app.get('/api/settings', async (c) => {
       withdrawal_fee_percent: '5.0',
       p2p_fee_percent: '0.0',
       vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
-      vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+      vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+      popup_enabled: 'true',
+      popupEnabled: 'true',
+      popup_image_url: '',
+      popupImageUrl: '',
+      popup_link_url: '',
+      popupLinkUrl: ''
     };
     for (const row of results as any[]) {
       settingsMap[row.key] = row.value;
@@ -2071,6 +2077,24 @@ app.get('/api/settings', async (c) => {
       }
       if (row.key === 'vaultWalletAddress') {
         settingsMap.vault_address = row.value;
+      }
+      if (row.key === 'popup_image_url') {
+        settingsMap.popupImageUrl = row.value;
+      }
+      if (row.key === 'popupImageUrl') {
+        settingsMap.popup_image_url = row.value;
+      }
+      if (row.key === 'popup_link_url') {
+        settingsMap.popupLinkUrl = row.value;
+      }
+      if (row.key === 'popupLinkUrl') {
+        settingsMap.popup_link_url = row.value;
+      }
+      if (row.key === 'popup_enabled') {
+        settingsMap.popupEnabled = row.value;
+      }
+      if (row.key === 'popupEnabled') {
+        settingsMap.popup_enabled = row.value;
       }
     }
     return c.json({ success: true, settings: settingsMap });
@@ -2082,7 +2106,13 @@ app.get('/api/settings', async (c) => {
         min_withdrawal: '2.0',
         withdrawal_fee_percent: '5.0',
         vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
-        vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+        vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+        popup_enabled: 'true',
+        popupEnabled: 'true',
+        popup_image_url: '',
+        popupImageUrl: '',
+        popup_link_url: '',
+        popupLinkUrl: ''
       }
     });
   }
@@ -2092,9 +2122,34 @@ app.get('/api/settings', async (c) => {
 app.get('/api/admin/settings', async (c) => {
   try {
     const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
-    const settingsMap: Record<string, string> = {};
+    const settingsMap: Record<string, string> = {
+      popup_enabled: 'true',
+      popupEnabled: 'true',
+      popup_image_url: '',
+      popupImageUrl: '',
+      popup_link_url: '',
+      popupLinkUrl: ''
+    };
     for (const row of results as any[]) {
       settingsMap[row.key] = row.value;
+      if (row.key === 'popup_image_url') {
+        settingsMap.popupImageUrl = row.value;
+      }
+      if (row.key === 'popupImageUrl') {
+        settingsMap.popup_image_url = row.value;
+      }
+      if (row.key === 'popup_link_url') {
+        settingsMap.popupLinkUrl = row.value;
+      }
+      if (row.key === 'popupLinkUrl') {
+        settingsMap.popup_link_url = row.value;
+      }
+      if (row.key === 'popup_enabled') {
+        settingsMap.popupEnabled = row.value;
+      }
+      if (row.key === 'popupEnabled') {
+        settingsMap.popup_enabled = row.value;
+      }
     }
     return c.json({ success: true, settings: settingsMap });
   } catch (err: any) {
