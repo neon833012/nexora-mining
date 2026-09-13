@@ -490,21 +490,14 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return amt;
   };
 
-  const dynamicInflow = useMemo(() => {
-    return safeAdminOrders.reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
-  }, [safeAdminOrders]);
-
   const dynamicExternalInflow = useMemo(() => {
     return safeAdminOrders
       .filter((o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p'))
       .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
   }, [safeAdminOrders]);
 
-  const dynamicP2PInflow = useMemo(() => {
-    return safeAdminOrders
-      .filter((o) => o.paymentMethod === 'p2p' || o.planName?.toLowerCase().includes('p2p'))
-      .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
-  }, [safeAdminOrders]);
+  // Platform Gross Inflow is strictly On-Chain BEP-20 Deposits (P2P is purely internal transfer)
+  const dynamicInflow = dynamicExternalInflow;
 
   const dynamicStaked = useMemo(() => {
     return (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
@@ -1640,8 +1633,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     ${dynamicInflow.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-[#94A3B8] border-t border-[#14233C] pt-1.5 mt-0.5">
-                    <span className="text-emerald-400 font-bold font-mono">BEP-20: ${dynamicExternalInflow.toFixed(2)}</span>
-                    <span className="text-purple-400 font-bold font-mono">P2P: ${dynamicP2PInflow.toFixed(2)}</span>
+                    <span className="text-emerald-400 font-bold font-mono">BEP-20 Vault Inflow</span>
+                    <span className="text-cyan-400 font-bold font-mono">On-Chain Verified</span>
                   </div>
                 </div>
 
