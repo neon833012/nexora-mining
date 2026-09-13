@@ -60,7 +60,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [paymentMethod, setPaymentMethod] = useState<'internal' | 'bep20_chain'>('internal');
-  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'web3_eip' | 'raw_address'>('auto_amount');
+  const [qrFormat, setQrFormat] = useState<'auto_amount' | 'trust_scheme' | 'raw_address'>('auto_amount');
   const [enteredTxHash, setEnteredTxHash] = useState('');
   const [copiedField, setCopiedField] = useState<'address' | 'amount' | 'tx' | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -411,12 +411,16 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                       const fracWei = BigInt(frac) * (BigInt(10) ** BigInt(12));
                       return (wholeWei + fracWei).toString();
                     };
+                    // Standard EIP-681 URI (natively parsed by Trust Wallet Home Scanner, MetaMask, OKX)
                     const eip681Uri = `ethereum:0x55d398326f99059fF775485246999027B3197955@56/transfer?address=${activeVault}&uint256=${toWeiUSDT(payableCost)}`;
+                    // Trust Wallet native scheme
+                    const trustNativeUri = `trust://send?asset=c56_t0x55d398326f99059fF775485246999027B3197955&address=${activeVault}&amount=${payableCost}`;
+                    // Mobile 1-click Universal Link
                     const trustWalletDeepLink = `https://link.trustwallet.com/send?asset=c56_t0x55d398326f99059fF775485246999027B3197955&address=${activeVault}&amount=${payableCost}`;
-                    const qrData = qrFormat === 'auto_amount' ? trustWalletDeepLink : (qrFormat === 'web3_eip' ? eip681Uri : activeVault);
+                    const qrData = qrFormat === 'auto_amount' ? eip681Uri : (qrFormat === 'trust_scheme' ? trustNativeUri : activeVault);
 
                     return (
-                      <div className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#040A14] border border-[#122135] text-center space-y-2.5 shadow-inner">
+                      <div className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#040A14] border border-[#122135] text-center space-y-3 shadow-inner">
                         {/* QR Format Selector Toggle */}
                         <div className="flex items-center p-1 rounded-xl bg-[#02060E] border border-[#14263E] text-[10.5px] w-full max-w-sm">
                           <button
@@ -428,18 +432,18 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                                 : 'text-[#94A3B8] hover:text-white'
                             }`}
                           >
-                            ⚡ Trust Wallet
+                            ⚡ Auto-Fill (Web3)
                           </button>
                           <button
                             type="button"
-                            onClick={() => setQrFormat('web3_eip')}
+                            onClick={() => setQrFormat('trust_scheme')}
                             className={`flex-1 py-1.5 px-1 rounded-lg font-bold transition-all cursor-pointer ${
-                              qrFormat === 'web3_eip'
+                              qrFormat === 'trust_scheme'
                                 ? 'bg-[#00F0FF] text-[#04111D] shadow-[0_0_8px_rgba(0,240,255,0.4)]'
                                 : 'text-[#94A3B8] hover:text-white'
                             }`}
                           >
-                            🦊 MetaMask
+                            📲 Trust Native URI
                           </button>
                           <button
                             type="button"
@@ -450,100 +454,134 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                                 : 'text-[#94A3B8] hover:text-white'
                             }`}
                           >
-                            📋 Binance / CEX
+                            📋 Direct Address
                           </button>
                         </div>
 
-                        <div className="p-2 bg-white rounded-xl shadow-lg relative">
+                        {/* Clean 100% Unobstructed High-Res QR Code (No center watermark covering QR data) */}
+                        <div className="p-3 bg-white rounded-xl shadow-xl flex flex-col items-center">
                           <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}&margin=2`}
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrData)}&margin=1&ecc=M`}
                             alt="BEP-20 USDT Deposit QR Code"
-                            className="w-[130px] h-[130px] block select-none"
+                            className="w-[145px] h-[145px] block select-none"
                           />
-                          <div className="absolute inset-0 m-auto w-7 h-7 rounded-full bg-[#F0B90B] border-2 border-white flex items-center justify-center text-black font-black text-[8.5px] shadow-md pointer-events-none">
-                            BSC
-                          </div>
+                        </div>
+
+                        {/* Network Badge Below QR Code */}
+                        <div className="inline-flex items-center gap-1.5 py-0.5 px-2.5 rounded-full bg-[#F0B90B]/10 border border-[#F0B90B]/30 text-[#F0B90B] text-[10px] font-bold font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#F0B90B] animate-ping"></span>
+                          <span>BNB Smart Chain (BEP-20) USDT Official Vault</span>
                         </div>
 
                         {qrFormat === 'auto_amount' && (
-                          <div className="text-[9.5px] text-[#10B981] font-mono bg-[#10B981]/10 px-2.5 py-0.5 rounded-full border border-[#10B981]/30">
-                            ✓ Auto-fills ${payableCost.toFixed(2)} USDT in Trust Wallet & Phone Camera!
+                          <div className="text-[10px] text-[#10B981] font-mono bg-[#10B981]/10 px-2.5 py-0.5 rounded-full border border-[#10B981]/30">
+                            ✓ Auto-fills ${payableCost.toFixed(2)} USDT in Trust Wallet (Home Screen Scanner) & MetaMask!
                           </div>
                         )}
-                        {qrFormat === 'web3_eip' && (
-                          <div className="text-[9.5px] text-[#38BDF8] font-mono bg-[#38BDF8]/10 px-2.5 py-0.5 rounded-full border border-[#38BDF8]/30">
-                            ✓ EIP-681 Web3 Mode for MetaMask
+                        {qrFormat === 'trust_scheme' && (
+                          <div className="text-[10px] text-[#38BDF8] font-mono bg-[#38BDF8]/10 px-2.5 py-0.5 rounded-full border border-[#38BDF8]/30">
+                            ✓ Trust Wallet native protocol URI for in-app barcode scanner
                           </div>
                         )}
                         {qrFormat === 'raw_address' && (
-                          <div className="text-[9.5px] text-[#94A3B8] font-mono bg-[#14263E]/40 px-2.5 py-0.5 rounded-full border border-[#14263E]">
-                            Raw Address Mode: For Binance / Bybit / CEX withdrawal camera (Enter amount manually)
+                          <div className="text-[10px] text-[#94A3B8] font-mono bg-[#14263E]/40 px-2.5 py-0.5 rounded-full border border-[#14263E]">
+                            Raw Address Mode: For Binance / Bybit withdrawal or Trust Wallet 'Send' screen
                           </div>
                         )}
 
-                        {/* 1-Click Pay Link */}
+                        {/* 1-Click Pay in Trust Wallet (Best for Mobile Users) */}
                         <a
                           href={trustWalletDeepLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full max-w-xs py-1.5 px-3 rounded-lg bg-[#F0B90B]/15 hover:bg-[#F0B90B]/25 border border-[#F0B90B]/40 text-[#F0B90B] text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                          className="w-full max-w-sm py-2 px-3 rounded-xl bg-gradient-to-r from-[#0052FF] via-[#0284C7] to-[#00F0FF] text-[#02060E] hover:text-black font-extrabold text-[12px] flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(0,240,255,0.3)] hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer"
                         >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>1-Click Pay in Trust Wallet</span>
+                          <ExternalLink className="w-4 h-4 text-[#02060E]" />
+                          <span>⚡ 1-Tap Pay in Trust Wallet (Auto-Fills ${payableCost.toFixed(2)})</span>
                         </a>
 
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">
-                            Exact Amount to Transfer:
-                          </span>
-                          <div className="flex items-baseline justify-center gap-1 mt-0.5">
-                            <span className="text-[22px] font-black font-mono text-white">
-                              {payableCost.toFixed(2)}
+                        {/* Exact Amount Card with Copy */}
+                        <div className="w-full p-2.5 rounded-xl bg-[#02060E] border border-[#14263E] flex items-center justify-between">
+                          <div className="text-left">
+                            <span className="text-[9.5px] uppercase font-bold text-[#94A3B8] block">
+                              Exact Amount to Transfer:
                             </span>
-                            <span className="text-[12px] font-bold text-[#00F0FF] font-mono">
-                              USDT (BEP-20)
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(payableCost.toFixed(2), 'amount')}
-                              className="ml-1 p-1 rounded hover:bg-[#0E1E34] text-[#94A3B8] hover:text-[#00F0FF] transition-colors cursor-pointer"
-                              title="Copy Amount"
-                            >
-                              {copiedField === 'amount' ? (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
+                            <div className="flex items-baseline gap-1.5 mt-0.5">
+                              <span className="text-[20px] font-black font-mono text-white">
+                                {payableCost.toFixed(2)}
+                              </span>
+                              <span className="text-[11.5px] font-bold text-[#00F0FF] font-mono">
+                                USDT (BEP-20)
+                              </span>
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="w-full flex items-center justify-between p-2 rounded-lg bg-[#081220] border border-[#14263D]">
-                          <span className="font-mono text-[10.5px] text-[#00F0FF] truncate mr-2">
-                            {activeVault}
-                          </span>
                           <button
                             type="button"
-                            onClick={() => handleCopy(activeVault, 'address')}
-                            className="px-2 py-1 rounded bg-[#0D1F36] hover:bg-[#152E50] text-[#00F0FF] text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                            onClick={() => handleCopy(payableCost.toFixed(2), 'amount')}
+                            className="px-3 py-1.5 rounded-lg bg-[#0E1E34] hover:bg-[#162F52] text-[#00F0FF] text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 border border-[#1C365B]"
+                            title="Copy Exact Amount"
                           >
-                            {copiedField === 'address' ? (
+                            {copiedField === 'amount' ? (
                               <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span className="text-emerald-400">Copied</span>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span className="text-emerald-400">Copied!</span>
                               </>
                             ) : (
                               <>
-                                <Copy className="w-3 h-3" />
-                                <span>Copy</span>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy Amount</span>
                               </>
                             )}
                           </button>
                         </div>
 
-                        <span className="text-[9.5px] text-[#64748B] block">
-                          Send via: Trust Wallet, MetaMask, Binance, OKX · BEP-20 Only
-                        </span>
+                        {/* Custody Vault Address Card with Copy */}
+                        <div className="w-full p-2.5 rounded-xl bg-[#02060E] border border-[#14263E] flex items-center justify-between gap-2">
+                          <div className="text-left min-w-0 flex-1">
+                            <span className="text-[9.5px] uppercase font-bold text-[#94A3B8] block">
+                              Official BEP-20 Vault Address:
+                            </span>
+                            <span className="font-mono text-[11px] text-[#00F0FF] truncate block mt-0.5">
+                              {activeVault}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(activeVault, 'address')}
+                            className="px-3 py-1.5 rounded-lg bg-[#0E1E34] hover:bg-[#162F52] text-[#00F0FF] text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 border border-[#1C365B]"
+                            title="Copy Vault Address"
+                          >
+                            {copiedField === 'address' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span className="text-emerald-400">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy Address</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Trust Wallet Auto-Fill Guidance Card */}
+                        <div className="w-full text-left p-2.5 rounded-xl bg-[#02060E]/90 border border-[#152B47] text-[10.5px] space-y-1.5 text-[#94A3B8]">
+                          <div className="font-bold text-[#F0B90B] flex items-center gap-1.5">
+                            <span>💡</span>
+                            <span>Trust Wallet Se Transfer Karne Ki Guide:</span>
+                          </div>
+                          <p className="leading-relaxed">
+                            • <strong className="text-white">Mobile par:</strong> Upar diye gaye <span className="text-[#00F0FF] font-bold">"1-Tap Pay in Trust Wallet"</span> button par click karein, app direct amount aur address ke sath khul jayegi!
+                          </p>
+                          <p className="leading-relaxed">
+                            • <strong className="text-white">Home Screen Scanner:</strong> Dusre phone se scan kar rahe hain to Trust Wallet ke <span className="text-[#10B981] font-bold">Home Screen ke top-right QR icon</span> se scan karein — amount auto-fill aayega.
+                          </p>
+                          <p className="leading-relaxed">
+                            • <strong className="text-white">Send Screen:</strong> Agar aap pehle se USDT ke andar 'Send' screen par hain, to camera sirf address leta hai — upar se <span className="text-[#38BDF8] font-bold">'Copy Amount'</span> karke paste kar dein.
+                          </p>
+                        </div>
+
                         <span className="text-[9.5px] text-emerald-400/90 font-medium block">
                           ⚡ Exchange Fee Buffer: Transfers with up to 0.30 USDT deducted by exchange withdrawal fees (e.g. Binance/OKX) are automatically accepted with full plan value!
                         </span>
