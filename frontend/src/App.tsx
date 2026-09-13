@@ -1037,37 +1037,72 @@ export const App: React.FC = () => {
         }
       }).catch(() => {});
 
-      // 4. Fetch real referred downlines from Cloudflare D1
+      // 4. Fetch real referred downlines (L1 + L2 + L3) from Cloudflare D1
       nexoraApi.getDownlines(userName).then((res) => {
-        if (res && res.success && Array.isArray(res.downlines)) {
-          const mappedDownlines: ReferredUserItem[] = res.downlines.map((d: any) => ({
-            id: d.id,
-            name: d.name || d.id,
-            mobile: d.mobile || '',
-            registeredAt: d.created_at || 'Recently',
-            planName: Number(d.active_mining_power) > 0 ? `Active Node ($${d.active_mining_power})` : 'No Plan',
-            planAmount: Number(d.active_mining_power) || 0,
-            commissionEarned: +(Number(d.active_mining_power) * 0.10).toFixed(2),
-            status: d.status === 'active' ? 'active' : 'inactive',
-            level: 1,
-            invitedBy: 'Direct (You)'
-          }));
-          setReferredUsers(mappedDownlines);
+        if (res && res.success) {
+          // Helper to map a downline record with correct level info
+          const mapDownline = (d: any, lvl: 1 | 2 | 3): ReferredUserItem => {
+            const power = Number(d.active_mining_power) || 0;
+            const commissionRate = lvl === 1 ? 0.10 : lvl === 2 ? 0.05 : 0.02;
+            return {
+              id: d.id,
+              name: d.name || d.id,
+              mobile: d.mobile || '',
+              registeredAt: d.created_at || 'Recently',
+              planName: power > 0 ? `Active Node ($${power})` : 'No Plan',
+              planAmount: power,
+              commissionEarned: +(power * commissionRate).toFixed(2),
+              status: d.status === 'active' ? 'active' : 'inactive',
+              level: lvl,
+              invitedBy: lvl === 1 ? 'Direct (You)' : lvl === 2 ? 'Your L1 Referral' : 'Your L2 Referral'
+            };
+          };
 
-          const totalEarnedCommission = mappedDownlines.reduce((sum, d) => sum + (d.commissionEarned || 0), 0);
-          if (totalEarnedCommission > 0) {
-            setReferralIncome((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
-            setReferralBalance((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
-            setAvailableWithdrawal((prev) => +(Math.max(prev, totalEarnedCommission)).toFixed(2));
+          // Use structured l1/l2/l3 from API if available, else fall back to flat list
+          let allMapped: ReferredUserItem[] = [];
+          if (Array.isArray(res.l1) || Array.isArray(res.l2) || Array.isArray(res.l3)) {
+            const l1Mapped = (res.l1 || []).map((d: any) => mapDownline(d, 1));
+            const l2Mapped = (res.l2 || []).map((d: any) => mapDownline(d, 2));
+            const l3Mapped = (res.l3 || []).map((d: any) => mapDownline(d, 3));
+            allMapped = [...l1Mapped, ...l2Mapped, ...l3Mapped];
+
+            // Update team turnover for all 3 levels
+            const l1Vol = l1Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l2Vol = l2Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l3Vol = l3Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            setTeamTurnover((prev) => ({
+              ...prev,
+              downlineL1: l1Vol,
+              downlineL2: l2Vol,
+              downlineL3: l3Vol,
+              totalVolume: prev.personalStaked + l1Vol + l2Vol + l3Vol,
+              boostedRate: (prev.personalStaked + l1Vol) >= 2500 ? 2.5 : (prev.personalStaked + l1Vol) >= 1000 ? 1.5 : 1.0
+            }));
+          } else if (Array.isArray(res.downlines)) {
+            // Fallback: use level field from API if present, else default L1
+            allMapped = res.downlines.map((d: any) => mapDownline(d, (d.level === 2 ? 2 : d.level === 3 ? 3 : 1) as 1 | 2 | 3));
+            const l1Vol = allMapped.filter((d: ReferredUserItem) => d.level === 1).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l2Vol = allMapped.filter((d: ReferredUserItem) => d.level === 2).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l3Vol = allMapped.filter((d: ReferredUserItem) => d.level === 3).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            setTeamTurnover((prev) => ({
+              ...prev,
+              downlineL1: l1Vol,
+              downlineL2: l2Vol,
+              downlineL3: l3Vol,
+              totalVolume: prev.personalStaked + l1Vol + l2Vol + l3Vol,
+              boostedRate: (prev.personalStaked + l1Vol) >= 2500 ? 2.5 : (prev.personalStaked + l1Vol) >= 1000 ? 1.5 : 1.0
+            }));
           }
 
-          const l1Volume = mappedDownlines.reduce((sum, d) => sum + d.planAmount, 0);
-          setTeamTurnover((prev) => ({
-            ...prev,
-            downlineL1: l1Volume,
-            totalVolume: prev.personalStaked + l1Volume + prev.downlineL2 + prev.downlineL3,
-            boostedRate: (prev.personalStaked + l1Volume) >= 2500 ? 2.5 : (prev.personalStaked + l1Volume) >= 1000 ? 1.5 : 1.0
-          }));
+          setReferredUsers(allMapped);
+
+          // Update referral income based on commission earned across all levels
+          const totalCommission = allMapped.reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
+          if (totalCommission > 0) {
+            setReferralIncome((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
+            setReferralBalance((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
+            setAvailableWithdrawal((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
+          }
         }
       }).catch(() => {});
 

@@ -293,27 +293,68 @@ app.get('/api/referrals/downlines', async (c) => {
       return c.json({ success: false, message: 'User ID required' }, 400);
     }
 
-    // Find the user's referral code
-    const user = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(userId).first() as any;
-    const refCode = user?.referral_code;
+    // Find the requesting user's referral code and ID
+    const rootUser = await c.env.DB.prepare('SELECT id, referral_code FROM users WHERE id = ?').bind(userId).first() as any;
+    if (!rootUser) {
+      return c.json({ success: false, downlines: [], l1: [], l2: [], l3: [] });
+    }
 
-    // Fetch all users who have this user as upline
-    const query = refCode 
-      ? `SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, w.active_mining_power
-         FROM users u
-         LEFT JOIN wallets w ON u.id = w.user_id
-         WHERE u.upline_code = ? OR u.upline_code = ?
-         ORDER BY u.created_at DESC`
-      : `SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, w.active_mining_power
-         FROM users u
-         LEFT JOIN wallets w ON u.id = w.user_id
-         WHERE u.upline_code = ?
-         ORDER BY u.created_at DESC`;
+    const rootId = rootUser.id.toUpperCase();
+    const rootRefCode = (rootUser.referral_code || '').toUpperCase();
 
-    const params = refCode ? [userId, refCode] : [userId];
-    const { results } = await c.env.DB.prepare(query).bind(...params).all();
+    // Helper: get direct referrals of a given user (by user id + referral code)
+    const getDirectRefs = async (uid: string, refCode: string) => {
+      const qry = refCode
+        ? `SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, w.active_mining_power
+           FROM users u LEFT JOIN wallets w ON u.id = w.user_id
+           WHERE UPPER(u.upline_code) = ? OR UPPER(u.upline_code) = ?
+           ORDER BY u.created_at DESC`
+        : `SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, w.active_mining_power
+           FROM users u LEFT JOIN wallets w ON u.id = w.user_id
+           WHERE UPPER(u.upline_code) = ?
+           ORDER BY u.created_at DESC`;
+      const params = refCode ? [uid, refCode] : [uid];
+      const { results } = await c.env.DB.prepare(qry).bind(...params).all();
+      return results as any[];
+    };
 
-    return c.json({ success: true, downlines: results || [] });
+    // L1 — direct referrals of root user
+    const l1Results = await getDirectRefs(rootId, rootRefCode);
+    const l1 = l1Results.map(u => ({ ...u, level: 1 }));
+
+    // L2 — referrals of each L1 user
+    const l2: any[] = [];
+    for (const l1user of l1Results) {
+      const l1uid = (l1user.id || '').toUpperCase();
+      const l1ref = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(l1user.id).first() as any;
+      const l1refCode = (l1ref?.referral_code || '').toUpperCase();
+      const l2refs = await getDirectRefs(l1uid, l1refCode);
+      l2.push(...l2refs.map(u => ({ ...u, level: 2, referredBy: l1user.id })));
+    }
+
+    // L3 — referrals of each L2 user
+    const l3: any[] = [];
+    for (const l2user of l2) {
+      const l2uid = (l2user.id || '').toUpperCase();
+      const l2ref = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(l2user.id).first() as any;
+      const l2refCode = (l2ref?.referral_code || '').toUpperCase();
+      const l3refs = await getDirectRefs(l2uid, l2refCode);
+      l3.push(...l3refs.map(u => ({ ...u, level: 3, referredBy: l2user.id })));
+    }
+
+    // Combined flat list for backward compatibility
+    const allDownlines = [...l1, ...l2, ...l3];
+
+    return c.json({
+      success: true,
+      downlines: allDownlines,
+      l1,
+      l2,
+      l3,
+      totalL1: l1.length,
+      totalL2: l2.length,
+      totalL3: l3.length
+    });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
