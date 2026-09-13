@@ -244,12 +244,16 @@ export const App: React.FC = () => {
     } catch {}
 
     try {
-      // Purge test accounts from neon_admin_users
+      // Purge test accounts and admin/subadmin staff from neon_admin_users
       const rawAdminUsers = localStorage.getItem('neon_admin_users');
       if (rawAdminUsers) {
         const parsedUsers = JSON.parse(rawAdminUsers);
         if (Array.isArray(parsedUsers)) {
-          const cleanUsers = parsedUsers.filter((u: any) => !isTestAccount(u.id, u.name, u.email));
+          const cleanUsers = parsedUsers.filter((u: any) => 
+            !isTestAccount(u.id, u.name, u.email) &&
+            u.role !== 'superadmin' && u.role !== 'subadmin' && u.role !== 'admin' &&
+            u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
+          );
           if (cleanUsers.length !== parsedUsers.length) {
             localStorage.setItem('neon_admin_users', JSON.stringify(cleanUsers));
             setAdminUsers(cleanUsers);
@@ -367,7 +371,18 @@ export const App: React.FC = () => {
   // Enterprise Admin System State (Users, Orders, Telemetry, Rules) - Persisted in LocalStorage
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>(() => {
     const loaded = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
-    return (loaded || []).filter((u) => !isTestAccount(u.id, u.name, u.email));
+    return (loaded || []).filter((u) => 
+      !isTestAccount(u.id, u.name, u.email) &&
+      u.role !== 'superadmin' && u.role !== 'subadmin' && u.role !== 'admin' &&
+      u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
+    ).map((u) => {
+      const ud = loadUserSavedData(u.id) || loadUserSavedData(u.name);
+      const isMining = Boolean(ud?.isMiningActive && ud?.miningStartTime && (Date.now() - ud.miningStartTime < 24 * 3600 * 1000));
+      return {
+        ...u,
+        isMiningActive: isMining
+      };
+    });
   });
   const [adminOrders, setAdminOrders] = useState<AdminOrderRecord[]>(() => {
     const loadedUsers = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
@@ -1010,7 +1025,7 @@ export const App: React.FC = () => {
       'neon_referral_income', 'neon_referral_balance', 'neon_yesterdays_income',
       'neon_available_withdrawal', 'neon_mining_active', 'neon_seconds_remaining',
       'neon_unclaimed_yield', 'neon_transactions', 'neon_withdrawal_requests',
-      'neon_referred_users', 'neon_live_chat_sessions'
+      'neon_referred_users'
     ];
     keysToRemove.forEach((k) => {
       try { localStorage.removeItem(k); } catch {}
@@ -1511,6 +1526,7 @@ export const App: React.FC = () => {
               return {
                 ...u,
                 status: 'active',
+                isMiningActive: true,
                 lastLogin: '🟢 Mining Active'
               };
             }
@@ -1774,6 +1790,19 @@ export const App: React.FC = () => {
     }));
 
     showToast(`🎉 Successfully activated ${plan.planNumber} ($${plan.amount} USD)! Mining rig is live.`);
+
+    // Dispatch real stake event to Home Screen Live Staking ticker
+    try {
+      window.dispatchEvent(new CustomEvent('neon_real_stake', {
+        detail: {
+          miner: activeUser || 'NEON MEMBER',
+          amount: `${plan.amount.toFixed(2)} USDT`,
+          plan: `${plan.planNumber || 'PLAN'} · ${plan.planName || 'Mining Node'} ($${plan.amount})`,
+          txHash: txHash || ('0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')),
+          time: 'Just now'
+        }
+      }));
+    } catch (e) {}
 
     // ================= 10% DIRECT UPLINE REFERRAL COMMISSION =================
     const upline = userUplineCode || preFilledRefCode;
@@ -3473,10 +3502,10 @@ export const App: React.FC = () => {
               )
             ) : (
               <ReferralNetworkSection
-                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${(userReferralCode || userName).toUpperCase()}`}
+                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`}
                 isAccountActive={activeMiningPower > 0}
                 onCopyReferral={() => {
-                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://nexora-mining.pages.dev'}?ref=${(userReferralCode || userName).toUpperCase()}`;
+                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`;
                   navigator.clipboard?.writeText(link);
                   showToast('✓ Referral link copied to clipboard!');
                 }}
@@ -3771,21 +3800,23 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Floating AI Mining Assistant Widget with Emergency Ticket Escalation */}
-        <NeonAIChatAssistant
-          currentUser={{
-            id: userName || 'guest_user',
-            name: userName || 'Guest Miner',
-            mobile: userMobile || '',
-            email: userEmail || '',
-            planName: activeMiningPower > 0 ? (getPlanForAmount(activeMiningPower, miningPlans)?.planName || `$${activeMiningPower} Active Rig`) : 'No Active Plan',
-            availableBalance: availableWithdrawal
-          }}
-          onDispatchEmergencyTicket={(ticket) => {
-            setSupportTickets((prev) => [ticket, ...prev]);
-            showToast('🚨 Emergency ticket dispatched to Admin On-Call Desk!');
-          }}
-        />
+        {/* Floating AI Mining Assistant Widget with Emergency Ticket Escalation (Home Page Only) */}
+        {activeRoute === 'home' && !showAdminPortal && (
+          <NeonAIChatAssistant
+            currentUser={{
+              id: userName || 'guest_user',
+              name: userName || 'Guest Miner',
+              mobile: userMobile || '',
+              email: userEmail || '',
+              planName: activeMiningPower > 0 ? (getPlanForAmount(activeMiningPower, miningPlans)?.planName || `$${activeMiningPower} Active Rig`) : 'No Active Plan',
+              availableBalance: availableWithdrawal
+            }}
+            onDispatchEmergencyTicket={(ticket) => {
+              setSupportTickets((prev) => [ticket, ...prev]);
+              showToast('🚨 Emergency ticket dispatched to Admin On-Call Desk!');
+            }}
+          />
+        )}
 
         {/* Auth Modal with Mobile + Country Flag + Random Username + Google Auth */}
         <AuthModalDialog

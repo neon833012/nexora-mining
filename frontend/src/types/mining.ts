@@ -191,6 +191,8 @@ export interface AdminUserRecord {
   referralEarnings?: number;
   lastLogin: string;
   walletAddress?: string;
+  isMiningActive?: boolean;
+  role?: string;
 }
 
 export interface AdminOrderRecord {

@@ -11,22 +11,19 @@ interface LiveEvent {
   time: string;
 }
 
-// 85% of node activations are $20 (Neon Lite) and $50 (Cryptera)
+// 80% of node activations are $20 (Neon Lite) and $50 (Cryptera)
 const LOW_TIER_PLANS = [
   { amount: '20.00 USDT', plan: 'PLAN 01 · Neon Lite ($20)' },
   { amount: '50.00 USDT', plan: 'PLAN 02 · Cryptera ($50)' }
 ];
 
-// 15% of node activations are higher tiers ($150, $350, $700, $1500, $3000)
+// 20% of node activations are higher tiers (Capped at MAX $350 Hypervex)
 const HIGH_TIER_PLANS = [
   { amount: '150.00 USDT', plan: 'PLAN 03 · Novacore ($150)' },
-  { amount: '350.00 USDT', plan: 'PLAN 04 · Hypervex ($350)' },
-  { amount: '700.00 USDT', plan: 'PLAN 05 · Vantamine ($700)' },
-  { amount: '1,500.00 USDT', plan: 'PLAN 06 · Nexhash ($1,500)' },
-  { amount: '3,000.00 USDT', plan: 'PLAN 07 · OmegaVIP ($3,000)' }
+  { amount: '350.00 USDT', plan: 'PLAN 04 · Hypervex ($350)' }
 ];
 
-// Flexible withdrawal / payout amounts across all ranges
+// Flexible withdrawal / payout amounts realistic for plans up to $350
 const REAL_PAYOUTS_POOL = [
   { amount: '2.40 USDT', plan: 'Neon Lite (12-Day Yield)' },
   { amount: '3.50 USDT', plan: 'Cryptera (7-Day Yield)' },
@@ -37,14 +34,19 @@ const REAL_PAYOUTS_POOL = [
   { amount: '18.00 USDT', plan: 'Novacore (10-Day Yield)' },
   { amount: '24.50 USDT', plan: 'Daily Mining Yield Cashout' },
   { amount: '35.00 USDT', plan: 'L1 Direct Bonus (Hypervex)' },
-  { amount: '47.25 USDT', plan: 'Hypervex (10-Day Yield)' },
-  { amount: '68.00 USDT', plan: 'BEP-20 Settled Withdrawal' },
-  { amount: '105.00 USDT', plan: 'Vantamine (10-Day Yield)' },
-  { amount: '150.00 USDT', plan: 'Nexhash (6-Day Yield)' },
-  { amount: '240.00 USDT', plan: 'BEP-20 Treasury Cashout' }
+  { amount: '47.25 USDT', plan: 'Hypervex (10-Day Yield)' }
 ];
 
 const INITIAL_EVENTS: LiveEvent[] = [
+  {
+    id: 'evt_real_10770',
+    type: 'stake',
+    miner: 'NEON10770',
+    amount: '20.00 USDT',
+    plan: 'PLAN 01 · Neon Lite ($20)',
+    txHash: '0x3d63...9bd2',
+    time: 'Confirmed',
+  },
   {
     id: 'evt_1',
     type: 'payout',
@@ -58,8 +60,8 @@ const INITIAL_EVENTS: LiveEvent[] = [
     id: 'evt_2',
     type: 'stake',
     miner: 'NEON810342',
-    amount: '20.00 USDT',
-    plan: 'PLAN 01 · Neon Lite ($20)',
+    amount: '50.00 USDT',
+    plan: 'PLAN 02 · Cryptera ($50)',
     txHash: '0x3c11...88b4',
     time: '1m ago',
   },
@@ -76,8 +78,8 @@ const INITIAL_EVENTS: LiveEvent[] = [
     id: 'evt_4',
     type: 'stake',
     miner: 'NEON902318',
-    amount: '50.00 USDT',
-    plan: 'PLAN 02 · Cryptera ($50)',
+    amount: '150.00 USDT',
+    plan: 'PLAN 03 · Novacore ($150)',
     txHash: '0x17b3...55cc',
     time: '3m ago',
   },
@@ -94,8 +96,8 @@ const INITIAL_EVENTS: LiveEvent[] = [
     id: 'evt_6',
     type: 'stake',
     miner: 'NEON339102',
-    amount: '150.00 USDT',
-    plan: 'PLAN 03 · Novacore ($150)',
+    amount: '350.00 USDT',
+    plan: 'PLAN 04 · Hypervex ($350)',
     txHash: '0x55ee...192b',
     time: '5m ago',
   },
@@ -104,7 +106,30 @@ const INITIAL_EVENTS: LiveEvent[] = [
 export const HomeLivePayoutsTicker: React.FC = () => {
   const [events, setEvents] = useState<LiveEvent[]>(INITIAL_EVENTS);
 
-  // Periodically add a new simulated live event using real plans & payouts
+  // Listen for REAL LIVE user purchases and dynamically insert them at the top!
+  useEffect(() => {
+    const handleRealStakeEvent = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      const rawHash = detail.txHash || '0x3d630a6557afc64f43e6e29d05fdac80ef6827d31d1cb8d63700525b774e9bd2';
+      const shortHash = rawHash.length > 12 ? `${rawHash.slice(0, 6)}...${rawHash.slice(-4)}` : rawHash;
+      const realEvt: LiveEvent = {
+        id: `evt_real_${Date.now()}`,
+        type: 'stake',
+        miner: detail.miner || 'NEON MEMBER',
+        amount: detail.amount || '20.00 USDT',
+        plan: detail.plan || 'PLAN 01 · Neon Lite ($20)',
+        txHash: shortHash,
+        time: 'Just now'
+      };
+      setEvents((prev) => [realEvt, ...prev.slice(0, 5)]);
+    };
+
+    window.addEventListener('neon_real_stake', handleRealStakeEvent);
+    return () => window.removeEventListener('neon_real_stake', handleRealStakeEvent);
+  }, []);
+
+  // Periodically add a new simulated live event (MAX $350 plan)
   useEffect(() => {
     const interval = setInterval(() => {
       const isPayout = Math.random() > 0.45;
@@ -113,8 +138,8 @@ export const HomeLivePayoutsTicker: React.FC = () => {
       
       const payoutItem = REAL_PAYOUTS_POOL[Math.floor(Math.random() * REAL_PAYOUTS_POOL.length)];
       
-      // 85% probability for $20 or $50 plans, 15% probability for higher plans
-      const isLowTier = Math.random() < 0.85;
+      // 80% probability for $20 or $50 plans, 20% for $150 or $350 (Max $350)
+      const isLowTier = Math.random() < 0.80;
       const stakeItem = isLowTier
         ? LOW_TIER_PLANS[Math.floor(Math.random() * LOW_TIER_PLANS.length)]
         : HIGH_TIER_PLANS[Math.floor(Math.random() * HIGH_TIER_PLANS.length)];
