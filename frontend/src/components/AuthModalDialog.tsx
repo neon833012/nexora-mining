@@ -111,8 +111,14 @@ export const AuthModalDialog: React.FC<Props> = ({
           setIsLoading(false);
           return;
         }
-        if (!loginPassword || loginPassword.length < 4) {
-          setApiError('Password must be at least 4 characters.');
+        if (!loginPassword || loginPassword.length < 6) {
+          setApiError('Password must be at least 6 characters.');
+          setIsLoading(false);
+          return;
+        }
+        const isAlphaNumeric = /[a-zA-Z]/.test(loginPassword) && /[0-9]/.test(loginPassword);
+        if (!isAlphaNumeric) {
+          setApiError('Password must be alphanumeric (contain both letters and numbers, e.g. Pass123).');
           setIsLoading(false);
           return;
         }
@@ -245,6 +251,11 @@ export const AuthModalDialog: React.FC<Props> = ({
     const cleanPass = newPasswordInput.trim();
     if (!cleanPass || cleanPass.length < 6) {
       setApiError('New password must be at least 6 characters long.');
+      return;
+    }
+    const isAlphaNumeric = /[a-zA-Z]/.test(cleanPass) && /[0-9]/.test(cleanPass);
+    if (!isAlphaNumeric) {
+      setApiError('New password must be alphanumeric (contain both letters and numbers, e.g. Pass123).');
       return;
     }
 
@@ -525,7 +536,7 @@ export const AuthModalDialog: React.FC<Props> = ({
                     setNewPasswordInput(e.target.value);
                     if (apiError) setApiError('');
                   }}
-                  placeholder="At least 6 characters"
+                  placeholder="Alphanumeric (letters & numbers, min 6)"
                   className="w-full rounded-xl bg-[#050B14] border border-[#162740] pl-8 pr-9 py-2.5 text-[13px] text-white focus:outline-none focus:border-[#00F0FF]"
                 />
                 <button
@@ -738,7 +749,7 @@ export const AuthModalDialog: React.FC<Props> = ({
                     setLoginPassword(e.target.value);
                     if (apiError) setApiError('');
                   }}
-                  placeholder="Enter login password"
+                  placeholder={isSignUp ? "Alphanumeric (letters & numbers, min 6)" : "Enter login password"}
                   className="w-full rounded-xl bg-[#050B14] border border-[#162740] pl-8 pr-9 py-2 text-[13px] text-white focus:outline-none focus:border-[#00F0FF]"
                 />
                 <button

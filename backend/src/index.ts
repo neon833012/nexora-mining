@@ -44,35 +44,29 @@ app.post('/api/auth/register', async (c) => {
     if (!password) {
       return c.json({ success: false, message: 'Password is required' }, 400);
     }
-    if (!mobile && !email) {
-      return c.json({ success: false, message: 'Mobile number or Email address is required' }, 400);
+
+    // Password must be alphanumeric (contain both letters and numbers, min 6 chars)
+    const isAlphaNumeric = /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
+    if (!isAlphaNumeric || password.length < 6) {
+      return c.json({ success: false, message: 'Password must be alphanumeric (contain both letters and numbers, min 6 characters)' }, 400);
+    }
+
+    if (!email) {
+      return c.json({ success: false, message: 'Email address is required' }, 400);
     }
 
     const cleanMobile = mobile ? mobile.trim() : null;
-    const cleanEmail = email ? email.trim().toLowerCase() : null;
+    const cleanEmail = email.trim().toLowerCase();
 
-    // Check if mobile already exists (if provided)
-    if (cleanMobile) {
-      const cleanNoSpaces = cleanMobile.replace(/\s+/g, '');
-      const existingMobile = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE mobile = ? OR REPLACE(mobile, " ", "") = ?'
-      ).bind(cleanMobile, cleanNoSpaces).first();
+    // STRICT EMAIL UNIQUENESS: An email can only belong to one account
+    const existingEmail = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE LOWER(email) = ?'
+    ).bind(cleanEmail).first();
 
-      if (existingMobile) {
-        return c.json({ success: false, message: 'Mobile number is already registered' }, 409);
-      }
+    if (existingEmail) {
+      return c.json({ success: false, message: 'This email address is already registered. Please sign in or use another email.' }, 409);
     }
-
-    // Check if email already exists (if provided)
-    if (cleanEmail) {
-      const existingEmail = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE LOWER(email) = ?'
-      ).bind(cleanEmail).first();
-
-      if (existingEmail) {
-        return c.json({ success: false, message: 'Email address is already registered' }, 409);
-      }
-    }
+    // Mobile numbers CAN be reused across multiple accounts
 
     const userId = `NEON${Math.floor(10000 + Math.random() * 90000)}`;
     const referralCode = `NEX${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
@@ -556,6 +550,11 @@ app.post('/api/auth/reset-password', async (c) => {
 
     if (!newPassword || newPassword.length < 6) {
       return c.json({ success: false, message: 'New password must be at least 6 characters' }, 400);
+    }
+
+    const isAlphaNumeric = /[a-zA-Z]/.test(newPassword) && /[0-9]/.test(newPassword);
+    if (!isAlphaNumeric) {
+      return c.json({ success: false, message: 'New password must be alphanumeric (contain both letters and numbers)' }, 400);
     }
 
     // Path 1: Reset with Token from Email Link
