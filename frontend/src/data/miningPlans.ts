@@ -121,8 +121,8 @@ export function getPlanForAmount(amount: number, plans: MiningPlan[] = MINING_PL
 
 
 export const COUNTRY_CODES: CountryCode[] = [
-  { code: '+1', name: 'Canada', flag: '🇨🇦' },
   { code: '+1', name: 'United States', flag: '🇺🇸' },
+  { code: '+1', name: 'Canada', flag: '🇨🇦' },
   { code: '+7', name: 'Kazakhstan', flag: '🇰🇿' },
   { code: '+7', name: 'Russia', flag: '🇷🇺' },
   { code: '+20', name: 'Egypt', flag: '🇪🇬' },

@@ -365,18 +365,28 @@ app.get('/api/referrals/downlines', async (c) => {
 // Forgot Password / Recovery Verification with Resend Email Dispatch
 app.post('/api/auth/forgot-password', async (c) => {
   try {
-    const { identifier } = await c.req.json();
-    if (!identifier) {
-      return c.json({ success: false, message: 'Please provide registered email, mobile number or User ID' }, 400);
+    const body = await c.req.json();
+    const rawInput = (body.email || body.identifier || '').trim();
+    if (!rawInput) {
+      return c.json({ success: false, message: 'Please enter your registered email address' }, 400);
     }
 
-    const clean = identifier.trim();
-    const user = await c.env.DB.prepare(
-      'SELECT id, name, mobile, email, fund_pin_set FROM users WHERE id = ? OR mobile = ? OR LOWER(email) = LOWER(?)'
-    ).bind(clean, clean, clean).first() as any;
+    const cleanEmail = rawInput.toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return c.json({ success: false, message: 'Please enter a valid email format (e.g. user@gmail.com)' }, 400);
+    }
 
-    if (!user) {
-      return c.json({ success: false, message: 'Account not found with provided email, mobile, or ID' }, 404);
+    // STRICT DATABASE CHECK: Only registered emails in users table can reset password
+    const user = await c.env.DB.prepare(
+      'SELECT id, name, mobile, email FROM users WHERE LOWER(email) = ?'
+    ).bind(cleanEmail).first() as any;
+
+    if (!user || !user.email) {
+      return c.json({
+        success: false,
+        message: 'This email is not registered in our database. Please check your email or sign up for a new account.'
+      }, 404);
     }
 
     const resetToken = `rst_${Date.now()}_${Math.random().toString(36).substring(2, 10)}_${user.id}`;
@@ -386,9 +396,9 @@ app.post('/api/auth/forgot-password', async (c) => {
     await c.env.DB.prepare(`
       INSERT INTO password_reset_tokens (token, user_id, email, expires_at, used)
       VALUES (?, ?, ?, ?, 0)
-    `).bind(resetToken, user.id, user.email || clean, expiresAt).run();
+    `).bind(resetToken, user.id, user.email, expiresAt).run();
 
-    const resetLink = `https://nexora-mining.pages.dev/?reset_token=${resetToken}&email=${encodeURIComponent(user.email || clean)}`;
+    const resetLink = `https://nexora-mining.pages.dev/?reset_token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     // Dispatch real email via Resend API
     let emailSent = false;
@@ -484,24 +494,23 @@ app.post('/api/auth/forgot-password', async (c) => {
         if (resendRes.ok && resendData.id) {
           emailSent = true;
         } else {
-          resendError = resendData.message || 'Resend delivery rejected';
+          resendError = resendData.message || 'Resend email delivery was not accepted';
         }
       } catch (err: any) {
         resendError = err.message;
       }
     }
 
+    if (!emailSent) {
+      return c.json({
+        success: false,
+        message: resendError ? `Email dispatch error: ${resendError}` : 'Unable to dispatch recovery email. Please verify your email service.'
+      }, 400);
+    }
+
     return c.json({
       success: true,
-      emailSent,
-      resendError,
-      message: emailSent
-        ? `A secure password reset link has been dispatched to ${user.email}. Please check your email inbox!`
-        : `Reset authorization generated for ${user.email || user.id}.`,
-      userId: user.id,
-      email: user.email,
-      resetToken,
-      resetLink
+      message: `A secure password reset link has been dispatched to ${user.email}. Please check your email inbox and spam folder.`
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
