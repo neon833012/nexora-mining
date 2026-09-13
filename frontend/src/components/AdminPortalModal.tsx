@@ -14,6 +14,7 @@ import {
   Lock,
   ArrowUpRight,
   Copy,
+  Check,
   Link2,
   Settings,
   Sparkles
@@ -55,6 +56,13 @@ export const AdminPortalModal: React.FC<Props> = ({
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('Security audit pending');
   const [copiedAdminLink, setCopiedAdminLink] = useState(false);
+  const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+  const handleCopyWallet = (address: string, id: string) => {
+    if (!address) return;
+    navigator.clipboard?.writeText(address);
+    setCopiedWalletId(id);
+    setTimeout(() => setCopiedWalletId(null), 2000);
+  };
 
   if (!isOpen) return null;
 
@@ -250,9 +258,19 @@ export const AdminPortalModal: React.FC<Props> = ({
                     <div>
                       <strong className="text-white text-[13px]">{req.userName}</strong>
                       <span className="text-[10.5px] text-[#94A3B8] block font-mono">{req.userMobile}</span>
-                      <span className="text-[10px] text-[#64748B] font-mono truncate max-w-[200px] block">
-                        Wallet: {req.walletAddress}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyWallet(req.walletAddress, req.id)}
+                        className="mt-1 flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#0A1628] hover:bg-cyan-500/20 border border-[#162B48] hover:border-cyan-500/40 text-[10px] text-gray-300 hover:text-cyan-300 font-mono transition-all cursor-pointer group"
+                        title="Click to copy recipient wallet"
+                      >
+                        <span className="truncate max-w-[170px]">{req.walletAddress}</span>
+                        {copiedWalletId === req.id ? (
+                          <span className="text-[9px] text-emerald-400 font-bold">✓ Copied</span>
+                        ) : (
+                          <Copy className="w-2.5 h-2.5 text-gray-400 group-hover:text-cyan-300" />
+                        )}
+                      </button>
                     </div>
 
                     <div className="text-right">

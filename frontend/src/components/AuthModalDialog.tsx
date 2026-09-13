@@ -24,6 +24,8 @@ interface Props {
   isOpen: boolean;
   isSignUp: boolean;
   initialReferralCode?: string;
+  incomingResetToken?: string | null;
+  incomingResetEmail?: string | null;
   onDismiss: () => void;
   onAuthSuccess: (userName: string, mobile: string, fundPin?: string, email?: string, referralCode?: string, ownReferralCode?: string) => void;
   onSwitchAuthMode: () => void;
@@ -33,6 +35,8 @@ export const AuthModalDialog: React.FC<Props> = ({
   isOpen,
   isSignUp,
   initialReferralCode = '',
+  incomingResetToken = null,
+  incomingResetEmail = null,
   onDismiss,
   onAuthSuccess,
   onSwitchAuthMode
@@ -69,11 +73,24 @@ export const AuthModalDialog: React.FC<Props> = ({
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
   const [showSetNewPass, setShowSetNewPass] = useState(false);
+  const [activeResetToken, setActiveResetToken] = useState<string | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetSuccessMsg, setResetSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState('');
+
+  // Handle incoming email reset link
+  useEffect(() => {
+    if (incomingResetToken) {
+      setActiveResetToken(incomingResetToken);
+      setShowForgotPassword(true);
+      setShowSetNewPass(true);
+      if (incomingResetEmail) {
+        setResetEmail(incomingResetEmail);
+      }
+    }
+  }, [incomingResetToken, incomingResetEmail]);
 
   if (!isOpen) return null;
 
@@ -195,13 +212,25 @@ export const AuthModalDialog: React.FC<Props> = ({
     e.preventDefault();
     if (!resetEmail.trim()) return;
     setIsLoading(true);
+    setApiError('');
     try {
-      await nexoraApi.forgotPassword(resetEmail);
+      const res = await nexoraApi.forgotPassword(resetEmail.trim());
+      if (res.success) {
+        setResetSent(true);
+        if (res.resetToken) {
+          setActiveResetToken(res.resetToken);
+        }
+        if (res.message) {
+          setResetSuccessMsg(res.message);
+        }
+      } else {
+        setApiError(res.message || 'No registered account found with this email address.');
+      }
     } catch {
-      // safe fallback
+      setApiError('Unable to connect to recovery server. Please check your network connection.');
+    } finally {
+      setIsLoading(false);
     }
-    setResetSent(true);
-    setIsLoading(false);
   };
 
   const handleCopyId = () => {
@@ -472,20 +501,44 @@ export const AuthModalDialog: React.FC<Props> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!newPasswordInput.trim()) return;
-                        setLoginPassword(newPasswordInput);
-                        setResetSuccessMsg('✓ Password updated! You can now log in.');
-                        setTimeout(() => {
-                          setShowForgotPassword(false);
-                          setShowSetNewPass(false);
-                          setResetSent(false);
-                          setResetSuccessMsg('');
-                        }, 1800);
+                      disabled={isLoading}
+                      onClick={async () => {
+                        if (!newPasswordInput.trim() || newPasswordInput.trim().length < 6) {
+                          setApiError('New password must be at least 6 characters');
+                          return;
+                        }
+                        setIsLoading(true);
+                        setApiError('');
+                        try {
+                          const res = await nexoraApi.resetPassword({
+                            token: activeResetToken || incomingResetToken || undefined,
+                            userId: (!activeResetToken && !incomingResetToken) ? resetEmail : undefined,
+                            newPassword: newPasswordInput.trim()
+                          });
+                          if (res.success) {
+                            setLoginPassword(newPasswordInput.trim());
+                            setResetSuccessMsg(res.message || '✓ Password updated! You can now log in.');
+                            if (typeof window !== 'undefined') {
+                              window.history.replaceState({}, document.title, window.location.pathname);
+                            }
+                            setTimeout(() => {
+                              setShowForgotPassword(false);
+                              setShowSetNewPass(false);
+                              setResetSent(false);
+                              setResetSuccessMsg('');
+                            }, 1800);
+                          } else {
+                            setApiError(res.message || 'Failed to update password');
+                          }
+                        } catch (err: any) {
+                          setApiError(err.message || 'Error updating password');
+                        } finally {
+                          setIsLoading(false);
+                        }
                       }}
-                      className="w-full py-2 rounded-lg bg-[#0284C7] text-white font-bold text-[11.5px] hover:bg-[#0369A1] cursor-pointer"
+                      className="w-full py-2.5 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-[11.5px] cursor-pointer disabled:opacity-50 transition-all shadow-[0_0_12px_rgba(2,132,199,0.3)]"
                     >
-                      Save New Password & Sign In
+                      {isLoading ? 'SAVING NEW PASSWORD...' : 'Save New Password & Sign In'}
                     </button>
                     {resetSuccessMsg && (
                       <p className="text-[11px] text-emerald-300 font-bold">{resetSuccessMsg}</p>

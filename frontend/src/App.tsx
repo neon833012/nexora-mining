@@ -393,10 +393,27 @@ export const App: React.FC = () => {
   const [userFundPassword, setUserFundPassword] = useState<string>(() => loadStorageStr('neon_fund_password', ''));
   const [userFundPinSet, setUserFundPinSet] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [incomingResetToken, setIncomingResetToken] = useState<string | null>(null);
+  const [incomingResetEmail, setIncomingResetEmail] = useState<string | null>(null);
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [preFilledRefCode, setPreFilledRefCode] = useState('');
   const [userUplineCode, setUserUplineCode] = useState<string>(() => loadStorageStr('neon_upline_code', ''));
   const [userReferralCode, setUserReferralCode] = useState<string>(() => loadStorageStr('neon_referral_code', ''));
+
+  // Detect email reset link parameters (?reset_token=...&email=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('reset_token');
+      const email = params.get('email');
+      if (token) {
+        setIncomingResetToken(token);
+        if (email) setIncomingResetEmail(email);
+        setShowAuthModal(true);
+      }
+    } catch (e) {}
+  }, []);
 
   // 3-Second Promotional Plans Showcase Popup Modal State
   const [showPromoPopup, setShowPromoPopup] = useState(false);
@@ -3775,7 +3792,13 @@ export const App: React.FC = () => {
           isOpen={showAuthModal && !isLoggedIn}
           isSignUp={isSignUpMode}
           initialReferralCode={preFilledRefCode}
-          onDismiss={() => setShowAuthModal(false)}
+          incomingResetToken={incomingResetToken}
+          incomingResetEmail={incomingResetEmail}
+          onDismiss={() => {
+            setShowAuthModal(false);
+            setIncomingResetToken(null);
+            setIncomingResetEmail(null);
+          }}
           onAuthSuccess={handleAuthSuccess}
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />

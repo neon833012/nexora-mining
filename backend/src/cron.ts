@@ -10,6 +10,7 @@ export interface Env {
   USDT_CONTRACT: string;
   BSC_RPC_URL: string;
   CHAIN_ID: string;
+  RESEND_API_KEY?: string;
 }
 
 export interface CronYieldResult {

@@ -516,6 +516,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [rejectModalReq, setRejectModalReq] = useState<WithdrawalRequest | null>(null);
   const [rejectReasonText, setRejectReasonText] = useState('Administrative review / Security compliance hold');
 
+  // Instant 1-Click Recipient Wallet Copy State
+  const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+  const handleCopyWallet = (address: string, id: string) => {
+    if (!address) return;
+    navigator.clipboard?.writeText(address);
+    setCopiedWalletId(id);
+    triggerNotice(`✓ Recipient wallet copied: ${address.slice(0, 10)}...`);
+    setTimeout(() => setCopiedWalletId(null), 2500);
+  };
+
   // Filtered Users
   const filteredUsers = useMemo(() => {
     return (adminUsers || []).filter((u) => {
@@ -2597,9 +2607,28 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               {req.userId}
                             </span>
                           </div>
-                          <span className="text-xs text-gray-400 font-mono block mt-1">
-                            BEP20: {req.walletAddress}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyWallet(req.walletAddress, req.id)}
+                            className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#050D18] hover:bg-cyan-500/15 border border-[#14233C] hover:border-cyan-500/40 text-xs font-mono transition-all cursor-pointer group text-left"
+                            title="Click to copy recipient wallet address for payment"
+                          >
+                            <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider shrink-0">BEP20:</span>
+                            <span className="text-gray-300 group-hover:text-cyan-300 truncate max-w-[220px] sm:max-w-[340px]">
+                              {req.walletAddress}
+                            </span>
+                            {copiedWalletId === req.id ? (
+                              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold ml-1 bg-emerald-950/70 border border-emerald-500/40 px-1.5 py-0.5 rounded shrink-0">
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                <span>Copied!</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[10px] text-gray-400 group-hover:text-cyan-300 ml-1 shrink-0">
+                                <Copy className="w-3 h-3 text-gray-500 group-hover:text-cyan-400" />
+                                <span className="hidden sm:inline text-[9.5px]">Copy</span>
+                              </span>
+                            )}
+                          </button>
                         </div>
                         <div className="sm:text-right">
                           <span className="text-lg font-black text-white font-mono block">
@@ -3687,9 +3716,24 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <span className="text-gray-400">Recipient Member:</span>
                 <span className="font-bold text-white">{payoutModalReq.userName} ({payoutModalReq.userId})</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-gray-400">Destination BEP-20 Wallet:</span>
-                <span className="font-mono text-cyan-300 truncate max-w-[260px]">{payoutModalReq.walletAddress}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyWallet(payoutModalReq.walletAddress, `payout_${payoutModalReq.id}`)}
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#0E1B2E] hover:bg-cyan-500/20 border border-[#1A2F4C] hover:border-cyan-500/50 text-cyan-300 font-mono text-xs cursor-pointer transition-all"
+                  title="Click to copy destination wallet address"
+                >
+                  <span className="truncate max-w-[200px]">{payoutModalReq.walletAddress}</span>
+                  {copiedWalletId === `payout_${payoutModalReq.id}` ? (
+                    <span className="text-emerald-400 text-[10px] font-bold flex items-center gap-0.5">
+                      <Check className="w-3 h-3" />
+                      <span>Copied!</span>
+                    </span>
+                  ) : (
+                    <Copy className="w-3 h-3 text-cyan-400" />
+                  )}
+                </button>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Gross Amount:</span>

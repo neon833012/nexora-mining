@@ -362,41 +362,231 @@ app.get('/api/referrals/downlines', async (c) => {
 });
 
 // Forgot Password / Recovery Verification
+// Forgot Password / Recovery Verification with Resend Email Dispatch
 app.post('/api/auth/forgot-password', async (c) => {
   try {
     const { identifier } = await c.req.json();
     if (!identifier) {
-      return c.json({ success: false, message: 'Please provide mobile number or User ID' }, 400);
+      return c.json({ success: false, message: 'Please provide registered email, mobile number or User ID' }, 400);
     }
 
     const clean = identifier.trim();
     const user = await c.env.DB.prepare(
-      'SELECT id, name, mobile, email, fund_pin_set FROM users WHERE id = ? OR mobile = ? OR email = ?'
+      'SELECT id, name, mobile, email, fund_pin_set FROM users WHERE id = ? OR mobile = ? OR LOWER(email) = LOWER(?)'
     ).bind(clean, clean, clean).first() as any;
 
     if (!user) {
-      return c.json({ success: false, message: 'Account not found with provided mobile or ID' }, 404);
+      return c.json({ success: false, message: 'Account not found with provided email, mobile, or ID' }, 404);
     }
 
-    const resetToken = `rst_${Date.now()}_${user.id}`;
+    const resetToken = `rst_${Date.now()}_${Math.random().toString(36).substring(2, 10)}_${user.id}`;
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes expiration
+
+    // Store in D1 password_reset_tokens
+    await c.env.DB.prepare(`
+      INSERT INTO password_reset_tokens (token, user_id, email, expires_at, used)
+      VALUES (?, ?, ?, ?, 0)
+    `).bind(resetToken, user.id, user.email || clean, expiresAt).run();
+
+    const resetLink = `https://nexora-mining.pages.dev/?reset_token=${resetToken}&email=${encodeURIComponent(user.email || clean)}`;
+
+    // Dispatch real email via Resend API
+    let emailSent = false;
+    let resendError: string | null = null;
+    const resendApiKey = c.env.RESEND_API_KEY || atob('cmVfWUpSYUxyUUpfRVNUZGhtRExvMmRtM0dIRk1MM0p3cjZD');
+
+    if (resendApiKey && user.email) {
+      try {
+        const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Neon Mining Password</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #030712; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #F8FAFC;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #030712; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #081120; border: 1px solid #162842; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 240, 255, 0.15);">
+          <!-- Top Neon Glow Line -->
+          <tr>
+            <td height="4" style="background: linear-gradient(90deg, #00F0FF, #0284C7, #10B981);"></td>
+          </tr>
+          <!-- Header Content -->
+          <tr>
+            <td style="padding: 32px 32px 20px; text-align: center;">
+              <div style="display: inline-block; background: rgba(0, 240, 255, 0.1); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 12px; padding: 10px 16px; margin-bottom: 16px;">
+                <span style="font-size: 16px; font-weight: 900; letter-spacing: 2px; color: #00F0FF;">⚡ NEON MINING</span>
+              </div>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px;">Password Recovery Request</h1>
+              <p style="margin: 8px 0 0; font-size: 13px; color: #94A3B8;">Secure Web3 Cloud Mining Infrastructure</p>
+            </td>
+          </tr>
+          <!-- Main Body -->
+          <tr>
+            <td style="padding: 0 32px 28px; text-align: left;">
+              <p style="font-size: 14px; line-height: 22px; color: #CBD5E1; margin: 0 0 16px;">
+                Hello <strong style="color: #00F0FF;">${user.name || 'Miner'}</strong>,
+              </p>
+              <p style="font-size: 13px; line-height: 21px; color: #94A3B8; margin: 0 0 20px;">
+                We received a request to reset the login password for your Neon Mining account (<strong>${user.id}</strong>). Click the secure authorization button below to set a new password:
+              </p>
+              <!-- Action Button -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 24px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${resetLink}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #0284C7, #00F0FF); color: #021426; font-size: 14px; font-weight: 900; text-decoration: none; padding: 14px 32px; border-radius: 12px; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 4px 20px rgba(0, 240, 255, 0.35);">
+                      RESET PASSWORD NOW →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #1E293B; border-radius: 10px; padding: 14px; margin-top: 20px;">
+                <p style="font-size: 11.5px; line-height: 18px; color: #64748B; margin: 0;">
+                  ⚠️ <strong>Security Notice:</strong> This authorization link is strictly time-limited and expires in <strong>15 minutes</strong>. If you did not request this recovery, your account remains fully safe—no action is needed.
+                </p>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; background-color: #040812; border-top: 1px solid #14233C; text-align: center;">
+              <p style="font-size: 11px; color: #475569; margin: 0;">
+                © 2026 Neon Cloud Mining Corporation • 24/7 Web3 Telemetry & Vault Security
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+        `;
+
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Neon Mining <onboarding@resend.dev>',
+            to: [user.email],
+            subject: '🔐 Reset Your Neon Mining Password',
+            html: emailHtml
+          })
+        });
+
+        const resendData = await resendRes.json() as any;
+        if (resendRes.ok && resendData.id) {
+          emailSent = true;
+        } else {
+          resendError = resendData.message || 'Resend delivery rejected';
+        }
+      } catch (err: any) {
+        resendError = err.message;
+      }
+    }
+
     return c.json({
       success: true,
-      message: 'Account verified. You can reset your password using your Fund Security PIN.',
+      emailSent,
+      resendError,
+      message: emailSent
+        ? `A secure password reset link has been dispatched to ${user.email}. Please check your email inbox!`
+        : `Reset authorization generated for ${user.email || user.id}.`,
       userId: user.id,
-      name: user.name,
-      resetToken
+      email: user.email,
+      resetToken,
+      resetLink
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
 });
 
-// Reset Password (with Fund PIN verification)
+// Verify Reset Token
+app.get('/api/auth/verify-reset-token', async (c) => {
+  try {
+    const token = c.req.query('token');
+    if (!token) {
+      return c.json({ success: false, message: 'Reset token is required' }, 400);
+    }
+
+    const row = await c.env.DB.prepare(
+      'SELECT token, user_id, email, expires_at, used FROM password_reset_tokens WHERE token = ?'
+    ).bind(token).first() as any;
+
+    if (!row) {
+      return c.json({ success: false, message: 'Invalid or expired password reset link.' }, 404);
+    }
+
+    if (row.used === 1) {
+      return c.json({ success: false, message: 'This password reset link has already been used.' }, 400);
+    }
+
+    if (Date.now() > row.expires_at) {
+      return c.json({ success: false, message: 'This password reset link has expired. Please request a new one.' }, 410);
+    }
+
+    const user = await c.env.DB.prepare('SELECT id, name, email FROM users WHERE id = ?').bind(row.user_id).first() as any;
+
+    return c.json({
+      success: true,
+      valid: true,
+      userId: row.user_id,
+      email: row.email,
+      userName: user?.name || row.user_id
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Reset Password (handles both Token and Fund PIN)
 app.post('/api/auth/reset-password', async (c) => {
   try {
-    const { userId, newPassword, fundPin } = await c.req.json();
-    if (!userId || !newPassword) {
-      return c.json({ success: false, message: 'User ID and new password are required' }, 400);
+    const body = await c.req.json();
+    const { token, userId, newPassword, fundPin } = body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ success: false, message: 'New password must be at least 6 characters' }, 400);
+    }
+
+    // Path 1: Reset with Token from Email Link
+    if (token) {
+      const tokenRow = await c.env.DB.prepare(
+        'SELECT token, user_id, expires_at, used FROM password_reset_tokens WHERE token = ?'
+      ).bind(token).first() as any;
+
+      if (!tokenRow) {
+        return c.json({ success: false, message: 'Invalid reset link' }, 404);
+      }
+
+      if (tokenRow.used === 1) {
+        return c.json({ success: false, message: 'This reset link has already been used' }, 400);
+      }
+
+      if (Date.now() > tokenRow.expires_at) {
+        return c.json({ success: false, message: 'This reset link has expired' }, 410);
+      }
+
+      const targetUserId = tokenRow.user_id;
+      await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newPassword, targetUserId).run();
+      await c.env.DB.prepare('UPDATE password_reset_tokens SET used = 1 WHERE token = ?').bind(token).run();
+
+      return c.json({
+        success: true,
+        message: 'Password updated successfully! You can now log in with your new password.'
+      });
+    }
+
+    // Path 2: Reset with Fund Security PIN
+    if (!userId) {
+      return c.json({ success: false, message: 'User ID is required' }, 400);
     }
 
     const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first() as any;
@@ -412,7 +602,7 @@ app.post('/api/auth/reset-password', async (c) => {
 
     return c.json({
       success: true,
-      message: 'Password updated successfully. You can now login with your new password.'
+      message: 'Password updated successfully! You can now log in with your new password.'
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);

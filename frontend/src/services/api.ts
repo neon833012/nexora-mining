@@ -129,7 +129,16 @@ class NeonApiService {
     }
   }
 
-  async resetPassword(params: { userId: string; newPassword: string; fundPin?: string }) {
+  async verifyResetToken(token: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/auth/verify-reset-token?token=${encodeURIComponent(token)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async resetPassword(params: { userId?: string; token?: string; newPassword: string; fundPin?: string }) {
     try {
       const res = await fetch(`${this.baseUrl}/api/auth/reset-password`, {
         method: 'POST',
