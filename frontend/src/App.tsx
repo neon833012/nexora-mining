@@ -990,6 +990,20 @@ export const App: React.FC = () => {
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
+
+          // FUND PIN SYNC: If DB says pin is already set, but localStorage is empty
+          // (e.g. new browser/device), set a placeholder so the Create Pin modal
+          // does NOT pop up on Withdraw button. The actual pin verification happens server-side.
+          if (res.user.fundPinSet === true && (!userFundPassword || userFundPassword.trim().length === 0)) {
+            const savedPin = localStorage.getItem('neon_fund_password') || '';
+            if (!savedPin) {
+              // Mark as set with placeholder so withdraw modal opens directly
+              setUserFundPassword('PIN_SET_ON_SERVER');
+              try {
+                localStorage.setItem('neon_fund_password', 'PIN_SET_ON_SERVER');
+              } catch (e) {}
+            }
+          }
         } else if (res && !res.success && res.message?.toLowerCase().includes('not found')) {
           // Stale / invalid session (user deleted or not in D1)
           performLogout();

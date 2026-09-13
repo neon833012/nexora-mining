@@ -276,7 +276,8 @@ app.get('/api/auth/me', async (c) => {
         email: userRecord.email,
         referralCode: userRecord.referral_code,
         uplineCode: userRecord.upline_code,
-        role: userRecord.role
+        role: userRecord.role,
+        fundPinSet: userRecord.fund_pin_set === 1
       },
       wallet: walletRecord || {},
       sessionToken: userRecord.session_token
