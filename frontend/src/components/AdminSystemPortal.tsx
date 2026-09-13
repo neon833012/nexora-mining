@@ -4117,34 +4117,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* 5. Clean Slate System Reset (Super Admin Only) */}
-                {isSuperadmin && (
-                  <div className="p-4 rounded-2xl bg-[#140606] border border-red-500/40 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <h4 className="text-xs font-black text-red-400 flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-red-500" />
-                          <span>Clean Slate: Reset All Plans & Orders</span>
-                        </h4>
-                        <p className="text-[10.5px] text-gray-400">
-                          Resets all active bought plans to 0, purges orders and test data, restoring a fresh clean slate for production.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm('Are you sure you want to RESET ALL PLANS & ORDERS to a clean slate? This will clear all active mining plans and order history.')) {
-                            if (onResetAllData) onResetAllData();
-                            triggerNotice('✓ System Clean Slate: All active plans and orders reset to 0!');
-                          }
-                        }}
-                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs cursor-pointer transition-all shadow-md active:scale-95 whitespace-nowrap"
-                      >
-                        Reset to Clean Slate (0 Plans)
-                      </button>
-                    </div>
-                  </div>
-                )}
+
               </div>
             </div>
           )}
