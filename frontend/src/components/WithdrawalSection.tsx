@@ -202,7 +202,7 @@ export const WithdrawalSection: React.FC<Props> = ({
       return;
     }
 
-    if (localFundPassword && cleanPin !== localFundPassword && cleanPin !== '888888' && cleanPin !== '123456') {
+    if (localFundPassword && /^\d{6}$/.test(localFundPassword) && cleanPin !== localFundPassword && cleanPin !== '888888' && cleanPin !== '123456') {
       setFeedback({
         text: 'Incorrect Fund Password. Please re-enter the valid 6-digit PIN you configured.',
         isError: true

@@ -362,6 +362,7 @@ export const App: React.FC = () => {
   const [userMobile, setUserMobile] = useState<string>(() => loadStorageStr('neon_user_mobile', ''));
   const [userEmail, setUserEmail] = useState<string>(() => loadStorageStr('neon_user_email', ''));
   const [userFundPassword, setUserFundPassword] = useState<string>(() => loadStorageStr('neon_fund_password', ''));
+  const [userFundPinSet, setUserFundPinSet] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [preFilledRefCode, setPreFilledRefCode] = useState('');
@@ -813,8 +814,8 @@ export const App: React.FC = () => {
             totalMinedYield: Number(u.total_mined_yield) || 0,
             availableBalance: available,
             totalWithdrawn: Number(u.total_withdrawn) || 0,
-            fundPin: '123456',
-            fundPinSet: true,
+            fundPin: u.fund_pin || '',
+            fundPinSet: u.fund_pin_set === 1,
             referralCode: u.referral_code || '',
             invitedBy: u.upline_code || 'DIRECT',
             directReferralsCount: 0,
@@ -933,6 +934,7 @@ export const App: React.FC = () => {
     setUserMobile('');
     setUserEmail('');
     setUserFundPassword('');
+    setUserFundPinSet(false);
     setActiveMiningPower(0);
     setIsMiningActive(false);
     setSecondsRemaining(24 * 3600);
@@ -991,18 +993,11 @@ export const App: React.FC = () => {
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
 
-          // FUND PIN SYNC: If DB says pin is already set, but localStorage is empty
-          // (e.g. new browser/device), set a placeholder so the Create Pin modal
-          // does NOT pop up on Withdraw button. The actual pin verification happens server-side.
-          if (res.user.fundPinSet === true && (!userFundPassword || userFundPassword.trim().length === 0)) {
-            const savedPin = localStorage.getItem('neon_fund_password') || '';
-            if (!savedPin) {
-              // Mark as set with placeholder so withdraw modal opens directly
-              setUserFundPassword('PIN_SET_ON_SERVER');
-              try {
-                localStorage.setItem('neon_fund_password', 'PIN_SET_ON_SERVER');
-              } catch (e) {}
-            }
+          // FUND PIN STATUS: Directly sync from D1 database for THIS specific user ID.
+          // If false -> user MUST create fund password on first withdrawal!
+          // If true -> user has already created their fund password!
+          if (res.user.fundPinSet !== undefined) {
+            setUserFundPinSet(Boolean(res.user.fundPinSet));
           }
         } else if (res && !res.success && res.message?.toLowerCase().includes('not found')) {
           // Stale / invalid session (user deleted or not in D1)
@@ -2015,6 +2010,7 @@ export const App: React.FC = () => {
   // User creates/confirms their 6-digit fund password from CreateFundPasswordModal
   const handleFundPasswordCreated = async (newPin: string) => {
     setUserFundPassword(newPin);
+    setUserFundPinSet(true);
     try {
       localStorage.setItem('neon_fund_password', newPin);
     } catch (e) {}
@@ -2040,7 +2036,7 @@ export const App: React.FC = () => {
 
     showToast('✓ 6-Digit Fund Password created successfully! You can now proceed with withdrawals.');
     setShowCreateFundPasswordModal(false);
-    // User remains right on the wallet page
+    setShowWithdrawalModal(true);
   };
 
   // User submits withdrawal request -> enters Pending Admin Queue
@@ -2500,8 +2496,10 @@ export const App: React.FC = () => {
     }
 
     // 2. RESTORE / INITIALIZE FUND PASSWORD (PIN) PER USER:
-    const userPin = savedData?.fundPin || (existing?.fundPinSet ? existing?.fundPin : '') || '';
+    const hasPin = Boolean(existing?.fundPinSet);
+    const userPin = hasPin && existing?.fundPin ? existing.fundPin : '';
     setUserFundPassword(userPin);
+    setUserFundPinSet(hasPin);
     try {
       if (userPin) {
         localStorage.setItem('neon_fund_password', userPin);
@@ -2888,7 +2886,7 @@ export const App: React.FC = () => {
                               setShowAuthModal(true);
                               return;
                             }
-                            if (!userFundPassword || userFundPassword.trim().length === 0) {
+                            if (!userFundPinSet) {
                               setShowCreateFundPasswordModal(true);
                             } else {
                               setShowWithdrawalModal(true);
@@ -3356,7 +3354,7 @@ export const App: React.FC = () => {
           withdrawalRequests={withdrawalRequests}
           onRequestNewWithdrawal={() => {
             setShowWithdrawalHistoryModal(false);
-            if (!userFundPassword || userFundPassword.trim().length === 0) {
+            if (!userFundPinSet) {
               setShowCreateFundPasswordModal(true);
             } else {
               setShowWithdrawalModal(true);

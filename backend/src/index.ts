@@ -98,18 +98,17 @@ app.post('/api/auth/register', async (c) => {
 
     const sessionToken = `sess_${Date.now()}_${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
 
-    // Insert user and initialize wallet atomically
+    // Insert user and initialize wallet atomically (fund_pin_set defaults to 0 so every new ID MUST create their Fund Password)
     await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO users (id, name, mobile, email, password_hash, fund_pin, fund_pin_set, upline_code, referral_code, session_token) 
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)`
       ).bind(
         userId,
         officialName,
         cleanMobile || `+00 ${userId.replace('NEON', '9')}`,
         cleanEmail,
         password,
-        fundPin,
         uplineUserId,
         referralCode,
         sessionToken
@@ -128,7 +127,8 @@ app.post('/api/auth/register', async (c) => {
       email: cleanEmail,
       referralCode,
       role: 'user',
-      uplineCode: uplineUserId
+      uplineCode: uplineUserId,
+      fundPinSet: false
     };
 
     const wallet = {
@@ -1485,7 +1485,7 @@ app.get('/api/admin/users', async (c) => {
   try {
     const search = c.req.query('search') || '';
     let query = `
-      SELECT u.id, u.name, u.mobile, u.email, u.role, u.status, u.referral_code, u.upline_code, u.created_at,
+      SELECT u.id, u.name, u.mobile, u.email, u.role, u.status, u.referral_code, u.upline_code, u.created_at, u.fund_pin, u.fund_pin_set,
              w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield
       FROM users u
       LEFT JOIN wallets w ON u.id = w.user_id
