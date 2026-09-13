@@ -52,7 +52,8 @@ class NeonApiService {
         min_withdrawal: '2.0',
         withdrawal_fee_percent: '5.0',
         p2p_fee_percent: '0.0',
-        vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
+        vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+        vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'
       };
     }
   }
@@ -513,11 +514,14 @@ class NeonApiService {
     }
   }
 
-  async updatePlatformSettings(settings: Record<string, any>) {
+  async updatePlatformSettings(settings: Record<string, any>, adminRole: string = 'master') {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Role': adminRole
+        },
         body: JSON.stringify(settings)
       });
       return await res.json();

@@ -235,4 +235,6 @@ export interface PlatformSettings {
   popupImageUrl: string;
   popupLinkUrl: string;
   vaultWalletAddress?: string;
+  minDepositAmount?: number;
+  p2pFeePercent?: number;
 }

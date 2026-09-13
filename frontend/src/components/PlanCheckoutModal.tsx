@@ -155,7 +155,8 @@ export const PlanCheckoutModal: React.FC<Props> = ({
     setBlockConfirmations(0);
 
     try {
-      const result = await verifyBscTransaction(cleanHash, payableCost, DEPOSIT_ADDRESS);
+      const activeVault = (vaultWalletAddress || DEPOSIT_ADDRESS).trim();
+      const result = await verifyBscTransaction(cleanHash, payableCost, activeVault);
 
       if (!result.verified) {
         setIsVerifying(false);

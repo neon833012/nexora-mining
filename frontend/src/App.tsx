@@ -818,15 +818,39 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Live Cloudflare D1 Backend Platform Settings Synchronizer
+  const fetchPlatformSettings = useCallback(async () => {
+    try {
+      const data = await nexoraApi.getSettings();
+      if (data && (data.vaultWalletAddress || data.vault_address)) {
+        const vaultAddr = (data.vaultWalletAddress || data.vault_address || '').trim();
+        if (vaultAddr && vaultAddr.startsWith('0x')) {
+          setPlatformSettings((prev) => ({
+            ...prev,
+            vaultWalletAddress: vaultAddr,
+            minDepositAmount: data.min_deposit ? parseFloat(data.min_deposit) : prev.minDepositAmount,
+            minWithdrawalAmount: data.min_withdrawal ? parseFloat(data.min_withdrawal) : prev.minWithdrawalAmount,
+            withdrawalFeePercent: data.withdrawal_fee_percent ? parseFloat(data.withdrawal_fee_percent) : prev.withdrawalFeePercent,
+            p2pFeePercent: data.p2p_fee_percent ? parseFloat(data.p2p_fee_percent) : prev.p2pFeePercent
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn('[App] Failed to sync platform settings from D1:', err);
+    }
+  }, []);
+
   // Live Cloudflare D1 Backend Data Synchronization
   useEffect(() => {
     // 1. Initial fetch & periodic background polling every 12 seconds
     fetchLiveAdminUsers();
+    fetchPlatformSettings();
     const syncInterval = setInterval(() => {
       fetchLiveAdminUsers();
+      fetchPlatformSettings();
     }, 12000);
     return () => clearInterval(syncInterval);
-  }, [fetchLiveAdminUsers]);
+  }, [fetchLiveAdminUsers, fetchPlatformSettings]);
 
   // 2. If user is logged in, verify session & sync real wallet from D1
   useEffect(() => {
@@ -2204,9 +2228,37 @@ export const App: React.FC = () => {
   };
 
   // Admin updates platform settings
-  const handleUpdatePlatformSettings = (settings: Partial<PlatformSettings>) => {
+  const handleUpdatePlatformSettings = async (settings: Partial<PlatformSettings>) => {
     setPlatformSettings((prev) => ({ ...prev, ...settings }));
-    showToast('✓ Platform rules and thresholds updated!');
+    try {
+      localStorage.setItem('neon_platform_settings', JSON.stringify({ ...platformSettings, ...settings }));
+    } catch (e) {}
+
+    // Persist live to Cloudflare D1 database so all users globally get updated rules & vault address
+    const payload: Record<string, any> = {};
+    if (settings.vaultWalletAddress) {
+      payload.vault_address = settings.vaultWalletAddress.trim();
+      payload.vaultWalletAddress = settings.vaultWalletAddress.trim();
+    }
+    if (settings.minDepositAmount !== undefined) payload.min_deposit = String(settings.minDepositAmount);
+    if (settings.minWithdrawalAmount !== undefined) payload.min_withdrawal = String(settings.minWithdrawalAmount);
+    if (settings.withdrawalFeePercent !== undefined) payload.withdrawal_fee_percent = String(settings.withdrawalFeePercent);
+    if (settings.p2pFeePercent !== undefined) payload.p2p_fee_percent = String(settings.p2pFeePercent);
+
+    if (Object.keys(payload).length > 0) {
+      try {
+        const res = await nexoraApi.updatePlatformSettings(payload, userRole || 'master');
+        if (res && res.success) {
+          showToast('✓ Platform rules & vault address updated live across all users!');
+        } else {
+          showToast(`✓ Local updated (${res?.message || 'Saved locally'})`);
+        }
+      } catch (err) {
+        showToast('✓ Updated locally');
+      }
+    } else {
+      showToast('✓ Platform rules and thresholds updated!');
+    }
   };
 
   // Superadmin adds new Sub-Admin
