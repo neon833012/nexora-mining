@@ -3247,16 +3247,17 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           className="flex-1 p-2 rounded-xl bg-[#040812] border border-[#14233C] font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
                         />
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             const clean = editVaultWalletAddress.trim();
                             if (!clean.startsWith('0x') || clean.length !== 42) {
                               triggerNotice('Error: Must be a valid 42-character BSC address starting with 0x');
                               return;
                             }
-                            onUpdatePlatformSettings({ vaultWalletAddress: clean });
-                            triggerNotice(`✓ Saved Custody Vault Address: ${clean.slice(0, 8)}...${clean.slice(-6)}`);
+                            await onUpdatePlatformSettings({ vaultWalletAddress: clean });
+                            setEditVaultWalletAddress(clean);
+                            triggerNotice(`✓ Saved Custody Vault Address to Database: ${clean.slice(0, 8)}...${clean.slice(-6)}`);
                           }}
-                          className="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black text-xs cursor-pointer hover:bg-cyan-400 shadow-md"
+                          className="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black text-xs cursor-pointer hover:bg-cyan-400 shadow-md transition-all active:scale-95"
                         >
                           Save Address
                         </button>

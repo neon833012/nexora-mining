@@ -822,17 +822,23 @@ export const App: React.FC = () => {
   const fetchPlatformSettings = useCallback(async () => {
     try {
       const data = await nexoraApi.getSettings();
-      if (data && (data.vaultWalletAddress || data.vault_address)) {
-        const vaultAddr = (data.vaultWalletAddress || data.vault_address || '').trim();
-        if (vaultAddr && vaultAddr.startsWith('0x')) {
-          setPlatformSettings((prev) => ({
-            ...prev,
-            vaultWalletAddress: vaultAddr,
-            minDepositAmount: data.min_deposit ? parseFloat(data.min_deposit) : prev.minDepositAmount,
-            minWithdrawalAmount: data.min_withdrawal ? parseFloat(data.min_withdrawal) : prev.minWithdrawalAmount,
-            withdrawalFeePercent: data.withdrawal_fee_percent ? parseFloat(data.withdrawal_fee_percent) : prev.withdrawalFeePercent,
-            p2pFeePercent: data.p2p_fee_percent ? parseFloat(data.p2p_fee_percent) : prev.p2pFeePercent
-          }));
+      if (data) {
+        const vaultAddr = (data.vault_address || data.vaultWalletAddress || '').trim();
+        if (vaultAddr && vaultAddr.startsWith('0x') && vaultAddr.length === 42) {
+          setPlatformSettings((prev) => {
+            const updated = {
+              ...prev,
+              vaultWalletAddress: vaultAddr,
+              minDepositAmount: data.min_deposit ? parseFloat(data.min_deposit) : prev.minDepositAmount,
+              minWithdrawalAmount: data.min_withdrawal ? parseFloat(data.min_withdrawal) : prev.minWithdrawalAmount,
+              withdrawalFeePercent: data.withdrawal_fee_percent ? parseFloat(data.withdrawal_fee_percent) : prev.withdrawalFeePercent,
+              p2pFeePercent: data.p2p_fee_percent ? parseFloat(data.p2p_fee_percent) : prev.p2pFeePercent
+            };
+            try {
+              localStorage.setItem('neon_platform_settings', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
         }
       }
     } catch (err) {
@@ -2229,16 +2235,20 @@ export const App: React.FC = () => {
 
   // Admin updates platform settings
   const handleUpdatePlatformSettings = async (settings: Partial<PlatformSettings>) => {
-    setPlatformSettings((prev) => ({ ...prev, ...settings }));
-    try {
-      localStorage.setItem('neon_platform_settings', JSON.stringify({ ...platformSettings, ...settings }));
-    } catch (e) {}
+    setPlatformSettings((prev) => {
+      const updated = { ...prev, ...settings };
+      try {
+        localStorage.setItem('neon_platform_settings', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
 
     // Persist live to Cloudflare D1 database so all users globally get updated rules & vault address
     const payload: Record<string, any> = {};
     if (settings.vaultWalletAddress) {
-      payload.vault_address = settings.vaultWalletAddress.trim();
-      payload.vaultWalletAddress = settings.vaultWalletAddress.trim();
+      const cleanVault = settings.vaultWalletAddress.trim();
+      payload.vault_address = cleanVault;
+      payload.vaultWalletAddress = cleanVault;
     }
     if (settings.minDepositAmount !== undefined) payload.min_deposit = String(settings.minDepositAmount);
     if (settings.minWithdrawalAmount !== undefined) payload.min_withdrawal = String(settings.minWithdrawalAmount);
@@ -2247,9 +2257,10 @@ export const App: React.FC = () => {
 
     if (Object.keys(payload).length > 0) {
       try {
-        const res = await nexoraApi.updatePlatformSettings(payload, userRole || 'master');
+        const res = await nexoraApi.updatePlatformSettings(payload, 'master');
         if (res && res.success) {
           showToast('✓ Platform rules & vault address updated live across all users!');
+          await fetchPlatformSettings();
         } else {
           showToast(`✓ Local updated (${res?.message || 'Saved locally'})`);
         }
