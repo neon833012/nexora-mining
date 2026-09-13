@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Globe, ShieldCheck } from 'lucide-react';
+import { Globe, ShieldCheck, Smartphone } from 'lucide-react';
 import { LanguageCode, UserRole } from '../types/mining';
 import { NavRoute } from './BottomNavBar';
 import { LANGUAGES_LIST, getTranslation } from '../data/miningPlans';
@@ -15,6 +15,7 @@ interface Props {
   onOpenAdminPortal?: () => void;
   onOpenDrawer?: () => void;
   onLoginClick: () => void;
+  onGetAppClick?: () => void;
   onNavigateHome: () => void;
 }
 
@@ -41,6 +42,7 @@ export const NeonTopAppBar: React.FC<Props> = ({
   onOpenAdminPortal,
   onOpenDrawer,
   onLoginClick,
+  onGetAppClick,
   onNavigateHome
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
@@ -142,15 +144,15 @@ export const NeonTopAppBar: React.FC<Props> = ({
             </div>
           )}
 
-          {/* User Session Pill */}
+          {/* Top Bar Action: "Get App" when logged in, "Sign In" when logged out */}
           {isLoggedIn ? (
             <button
-              onClick={onLoginClick}
-              title="Click to log out"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0C1526] hover:bg-red-500/10 border border-[#1F304B] hover:border-red-500/40 text-[11px] lg:text-[12px] font-bold text-[#00F0FF] hover:text-red-400 shadow-sm cursor-pointer transition-all"
+              onClick={onGetAppClick || onLoginClick}
+              title="Download Neon Mining Official App"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 hover:from-[#00F0FF]/25 hover:to-[#0284C7]/30 border border-[#00F0FF]/50 text-[11.5px] lg:text-[12px] font-black text-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.25)] hover:shadow-[0_0_18px_rgba(0,240,255,0.4)] cursor-pointer transition-all active:scale-95"
             >
-              <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-              <span className="truncate max-w-[110px]">{userName}</span>
+              <Smartphone className="w-3.5 h-3.5 text-[#00F0FF] shrink-0" />
+              <span>Get App</span>
             </button>
           ) : (
             <button

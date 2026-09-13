@@ -14,7 +14,8 @@ import {
   Gauge,
   Wallet,
   CheckCircle2,
-  Lock
+  Lock,
+  LogOut
 } from 'lucide-react';
 import { TeamTurnover } from '../types/mining';
 
@@ -63,6 +64,7 @@ interface Props {
   onToggleMining: () => void;
   onCompoundSingleDay: () => void;
   onNavigateToReferral?: () => void;
+  onLogout?: () => void;
 }
 
 export const DashboardPreviewSection: React.FC<Props> = ({
@@ -96,7 +98,8 @@ export const DashboardPreviewSection: React.FC<Props> = ({
   onUpgradePlanClick,
   onToggleMining,
   onCompoundSingleDay,
-  onNavigateToReferral
+  onNavigateToReferral,
+  onLogout
 }) => {
   // Random Data Center campus assigned per session / login (strictly the 4 home data centers)
   const [activeCampus, setActiveCampus] = useState(() => {
@@ -671,6 +674,20 @@ export const DashboardPreviewSection: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* Dedicated Sign Out / Logout Button at bottom of Dashboard */}
+      {onLogout && (
+        <div className="pt-4 pb-6 flex justify-center">
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full sm:w-auto min-w-[240px] flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-red-500/10 via-rose-600/15 to-red-500/10 hover:from-red-500/20 hover:to-rose-600/25 border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 font-bold text-[13px] tracking-wide shadow-[0_0_15px_rgba(239,68,68,0.15)] hover:shadow-[0_0_20px_rgba(239,68,68,0.3)] transition-all cursor-pointer active:scale-95"
+          >
+            <LogOut className="w-4 h-4 text-red-400" />
+            <span>Sign Out Account</span>
+          </button>
+        </div>
+      )}
     </section>
   );
 };

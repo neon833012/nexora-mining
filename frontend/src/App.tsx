@@ -189,6 +189,9 @@ export const App: React.FC = () => {
       showToast('🔒 Please Sign In or Create an Account to access your personal dashboard & wallet!');
       setIsSignUpMode(false);
       setShowAuthModal(true);
+      setActiveRoute('home');
+      window.history.replaceState({ route: 'home' }, '', '#home');
+      return;
     }
     setTimeout(() => {
       retriggerGoogleTranslate();
@@ -1797,9 +1800,6 @@ export const App: React.FC = () => {
         ? `⚡ Upgraded to ${plan.planNumber} ($${plan.amount})! Node is STOPPED (RED). Tap START MINING to begin 24h cycle.`
         : `⚡ Plan ${plan.planNumber} ($${plan.amount}) Activated! Node is STOPPED (RED). Tap START MINING below to run 24h cycle & earn yield.`
     );
-
-    setSelectedPlanForCheckout(null);
-    setIsUpgradeModal(false);
   };
 
   // Transfer referral income to main wallet
@@ -2710,6 +2710,10 @@ export const App: React.FC = () => {
     setReferralIncome(0);
     setReferralBalance(0);
     setYesterdaysIncome(0);
+    setTransactions([]);
+    setDepositRecords([]);
+    setWithdrawalRequests([]);
+    navigateTo('home', true);
     showToast('Successfully logged out. See you soon! 👋');
   };
 
@@ -2774,13 +2778,12 @@ export const App: React.FC = () => {
           userRole={userRole}
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
+          onGetAppClick={() => {
+            showToast('📲 Neon Mining Official Android App APK download starting soon!');
+          }}
           onLoginClick={() => {
-            if (isLoggedIn) {
-              handleLogout();
-            } else {
-              setIsSignUpMode(false);
-              setShowAuthModal(true);
-            }
+            setIsSignUpMode(false);
+            setShowAuthModal(true);
           }}
           onNavigateHome={() => navigateTo('home')}
         />
@@ -2911,6 +2914,7 @@ export const App: React.FC = () => {
                 onCompoundSingleDay={handleCompoundSingleDay}
                 onClaimInterestToWallet={handleClaimInterestToWallet}
                 onNavigateToReferral={() => navigateTo('referral')}
+                onLogout={handleLogout}
               />
             )}
           </div>
@@ -3390,9 +3394,13 @@ export const App: React.FC = () => {
           vaultWalletAddress={platformSettings?.vaultWalletAddress || '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'}
           userId={userName}
           fundPin={userFundPassword}
-          onDismiss={() => setSelectedPlanForCheckout(null)}
+          onDismiss={() => {
+            setSelectedPlanForCheckout(null);
+            setIsUpgradeModal(false);
+          }}
           onNavigateToDashboard={() => {
             setSelectedPlanForCheckout(null);
+            setIsUpgradeModal(false);
             navigateTo('dashboard');
           }}
           onConfirmSuccess={handleCheckoutSuccess}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   ArrowRight,
@@ -15,7 +15,8 @@ import {
   Cpu,
   RefreshCw,
   Zap,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 import { MiningPlan } from '../types/mining';
 import { verifyBscTransaction, OFFICIAL_VAULT_ADDRESS } from '../services/blockchain';
@@ -88,6 +89,15 @@ export const PlanCheckoutModal: React.FC<Props> = ({
     }
   }, [isOpen, plan, availableBalance, diffAmount, hasEnoughInternalBalance]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to top whenever step changes (ensures Step 4 is immediately visible on mobile)
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentStep]);
+
   if (!isOpen || !plan) return null;
 
   const handleCopy = (text: string, field: 'address' | 'amount' | 'tx') => {
@@ -114,7 +124,9 @@ export const PlanCheckoutModal: React.FC<Props> = ({
     // On-chain BEP-20 Verification Terminal
     const cleanHash = enteredTxHash.trim().toLowerCase();
     if (!cleanHash.startsWith('0x') || cleanHash.length !== 66) {
-      setVerificationError('Transaction Hash (TxID) is REQUIRED. Please transfer USDT to the wallet address and paste the 66-character hash from your wallet receipt (starts with 0x).');
+      setVerificationError(
+        `Wrong Key / Invalid Transaction Hash! A valid BSC transaction key must be exactly 66 characters starting with "0x" (You entered ${cleanHash.length}/66 characters). Please check your Binance or Trust Wallet transfer receipt.`
+      );
       return;
     }
 
@@ -214,8 +226,8 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-[460px] max-h-[92vh] overflow-y-auto rounded-2xl bg-[#081220] border border-[#1C3558] shadow-[0_15px_50px_rgba(0,0,0,0.8)] flex flex-col animate-scaleUp">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+      <div ref={scrollRef} className="relative w-full max-w-[460px] max-h-[92vh] overflow-y-auto rounded-2xl bg-[#081220] border border-[#1C3558] shadow-[0_15px_50px_rgba(0,0,0,0.8)] flex flex-col animate-scaleUp">
         {/* Header with Step Indicator */}
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#091526] to-[#0A1B30] border-b border-[#14263D] flex items-center justify-between">
           <div>
@@ -608,12 +620,40 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                       }}
                       placeholder="Paste 66-character TxHash (0x...) from your transfer receipt"
                       className={`w-full rounded-xl bg-[#040A14] border px-3 py-2 text-[11.5px] font-mono text-[#CBD5E1] focus:outline-none transition-colors ${
-                        verificationError ? 'border-rose-500/60 focus:border-rose-400' : 'border-[#14263E] focus:border-[#00F0FF]'
+                        verificationError ? 'border-rose-500/80 focus:border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.25)]' : 'border-[#14263E] focus:border-[#00F0FF]'
                       }`}
                     />
-                    <p className="text-[10px] text-[#64748B] mt-1">
-                      Transfer USDT (BEP-20) to the address above, then paste your wallet transaction receipt hash here to activate your node.
-                    </p>
+
+                    {/* Live Character Length & Format Indicator */}
+                    <div className="flex items-center justify-between text-[10px] mt-1.5">
+                      <p className="text-[#64748B]">
+                        Transfer USDT (BEP-20) to the address above, then paste the 66-char hash.
+                      </p>
+                      {enteredTxHash.trim().length > 0 && (
+                        <span
+                          className={`font-mono font-bold shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] ${
+                            enteredTxHash.trim().startsWith('0x') && enteredTxHash.trim().length === 66
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}
+                        >
+                          {enteredTxHash.trim().length}/66 chars {enteredTxHash.trim().startsWith('0x') && enteredTxHash.trim().length === 66 ? '✓' : '⚠️'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Prominent Wrong Key / Verification Error Alert Box */}
+                    {verificationError && (
+                      <div className="mt-2.5 p-3 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-300 text-[11.5px] flex items-start gap-2.5 animate-fadeIn shadow-[0_0_15px_rgba(244,63,94,0.15)]">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 leading-relaxed">
+                          <strong className="text-rose-200 block font-bold mb-0.5">
+                            ⚠️ Wrong Key / Verification Error:
+                          </strong>
+                          <span>{verificationError}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
