@@ -515,6 +515,35 @@ export const AdminSystemPortal: React.FC<Props> = ({
     );
   }, [adminUsers, withdrawalRequests]);
 
+  const [withdrawalFilter, setWithdrawalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [withdrawalSearchQuery, setWithdrawalSearchQuery] = useState('');
+
+  const sortedWithdrawalRequests = useMemo(() => {
+    return [...safeWithdrawalRequests].sort((a, b) => {
+      const timeA = a.timestampMs || (a.timestamp ? new Date(a.timestamp).getTime() : 0);
+      const timeB = b.timestampMs || (b.timestamp ? new Date(b.timestamp).getTime() : 0);
+      return timeB - timeA;
+    });
+  }, [safeWithdrawalRequests]);
+
+  const displayedWithdrawalRequests = useMemo(() => {
+    let list = sortedWithdrawalRequests;
+    if (withdrawalFilter !== 'all') {
+      list = list.filter((r) => r.status === withdrawalFilter);
+    }
+    if (withdrawalSearchQuery.trim()) {
+      const q = withdrawalSearchQuery.toLowerCase();
+      list = list.filter((r) =>
+        (r.id && r.id.toLowerCase().includes(q)) ||
+        (r.userId && r.userId.toLowerCase().includes(q)) ||
+        (r.userName && r.userName.toLowerCase().includes(q)) ||
+        (r.walletAddress && r.walletAddress.toLowerCase().includes(q)) ||
+        (r.txHash && r.txHash.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [sortedWithdrawalRequests, withdrawalFilter, withdrawalSearchQuery]);
+
   const approvedWithdrawals = useMemo(() => {
     return safeWithdrawalRequests.filter((r) => r.status === 'approved');
   }, [safeWithdrawalRequests]);
@@ -2784,9 +2813,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <ArrowUpRight className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-xs sm:text-sm font-black text-white">Withdrawal Settlement Desk</h3>
+                    <h3 className="text-xs sm:text-sm font-black text-white">Withdrawal Settlement & Cashout Desk</h3>
                     <p className="text-[10.5px] text-[#64748B]">
-                      Audit user cashout requests, enforce min ${safeSettings.minWithdrawalAmount.toFixed(2)} threshold, and approve on-chain
+                      Audit user cashout requests, enforce min ${safeSettings.minWithdrawalAmount.toFixed(2)} threshold, and track all settlement records
                     </p>
                   </div>
                 </div>
@@ -2804,43 +2833,174 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5">
                   <Lock className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <strong>Sub-Admin Read-Only Audit:</strong> You have full visibility to monitor miner payout queues, but approval & cashout settlement is strictly restricted to Super Admin.
+                    <strong>Sub-Admin Read-Only Audit:</strong> You have full visibility to monitor miner payout queues and settlement history, but approval & cashout release is strictly restricted to Super Admin.
                   </span>
                 </div>
               )}
 
-              {pendingWithdrawals.length === 0 ? (
+              {/* Status Filter & Search Header */}
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-2xl bg-[#070E1B] border border-[#14233C]">
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawalFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      withdrawalFilter === 'all'
+                        ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>All Requests</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      withdrawalFilter === 'all' ? 'bg-black/30 text-black' : 'bg-[#14233C] text-gray-300'
+                    }`}>
+                      {safeWithdrawalRequests.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawalFilter('pending')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      withdrawalFilter === 'pending'
+                        ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Pending Action</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      withdrawalFilter === 'pending' ? 'bg-black/30 text-black' : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {pendingWithdrawals.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawalFilter('approved')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      withdrawalFilter === 'approved'
+                        ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>Settled / Approved</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      withdrawalFilter === 'approved' ? 'bg-black/30 text-black' : 'bg-emerald-500/20 text-emerald-300'
+                    }`}>
+                      {approvedWithdrawals.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawalFilter('rejected')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      withdrawalFilter === 'rejected'
+                        ? 'bg-red-500 text-white shadow-lg shadow-red-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>Rejected & Refunded</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      withdrawalFilter === 'rejected' ? 'bg-black/30 text-white' : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {rejectedWithdrawals.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full md:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="text"
+                    value={withdrawalSearchQuery}
+                    onChange={(e) => setWithdrawalSearchQuery(e.target.value)}
+                    placeholder="Search ID, user, wallet..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#050D18] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                  {withdrawalSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawalSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Requests List (Latest Always On Top) */}
+              {displayedWithdrawalRequests.length === 0 ? (
                 <div className="py-12 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 p-6">
                   <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400" />
-                  <h4 className="text-white font-bold text-sm">All Clear! No Pending Withdrawals</h4>
+                  <h4 className="text-white font-bold text-sm">
+                    {withdrawalFilter === 'pending'
+                      ? 'All Clear! No Pending Withdrawals'
+                      : 'No Withdrawal Records Found'}
+                  </h4>
                   <p className="text-gray-400 text-xs max-w-md mx-auto">
-                    There are no payout requests awaiting audit. New withdrawal requests submitted by miners will appear here immediately.
+                    {withdrawalFilter === 'pending'
+                      ? 'There are no payout requests awaiting audit. New withdrawal requests submitted by miners will appear here at the very top immediately.'
+                      : 'No withdrawal entries match the selected status filter or search query.'}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {pendingWithdrawals.map((req) => (
+                  {displayedWithdrawalRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-3"
+                      className={`p-4 rounded-2xl bg-[#070E1B] border transition-all space-y-3 ${
+                        req.status === 'pending'
+                          ? 'border-amber-500/40 shadow-md shadow-amber-500/5'
+                          : req.status === 'approved'
+                          ? 'border-emerald-500/25'
+                          : 'border-red-500/25'
+                      }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#101E33] pb-3">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-black text-white">{req.userName}</span>
                             <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
                               {req.userId}
                             </span>
+                            <span className="text-[10px] font-mono text-gray-400">
+                              {req.timestamp || 'Recent'}
+                            </span>
+
+                            {/* Status Badge */}
+                            {req.status === 'pending' && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10.5px] font-bold border border-amber-500/40">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                <span>🟡 Pending Action</span>
+                              </span>
+                            )}
+                            {req.status === 'approved' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10.5px] font-bold border border-emerald-500/40">
+                                <span>✓ Approved & Settled</span>
+                              </span>
+                            )}
+                            {req.status === 'rejected' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-500/15 text-red-400 text-[10.5px] font-bold border border-red-500/40">
+                                <span>✕ Rejected & Refunded</span>
+                              </span>
+                            )}
                           </div>
-                          {!isSubadmin && (
+
+                          <div className="flex items-center gap-2 flex-wrap mt-1.5">
                             <button
                               type="button"
                               onClick={() => handleCopyWallet(req.walletAddress, req.id)}
-                              className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#050D18] hover:bg-cyan-500/15 border border-[#14233C] hover:border-cyan-500/40 text-xs font-mono transition-all cursor-pointer group text-left"
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#050D18] hover:bg-cyan-500/15 border border-[#14233C] hover:border-cyan-500/40 text-xs font-mono transition-all cursor-pointer group text-left"
                               title="Click to copy recipient wallet address for payment"
                             >
                               <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider shrink-0">BEP20:</span>
-                              <span className="text-gray-300 group-hover:text-cyan-300 truncate max-w-[220px] sm:max-w-[340px]">
+                              <span className="text-gray-300 group-hover:text-cyan-300 truncate max-w-[180px] sm:max-w-[280px]">
                                 {req.walletAddress}
                               </span>
                               {copiedWalletId === req.id ? (
@@ -2855,8 +3015,25 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                 </span>
                               )}
                             </button>
+
+                            {req.txHash && (
+                              <span className="flex items-center gap-1 text-[10.5px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                <span className="text-[9.5px] text-gray-400">TX:</span>
+                                <span className="truncate max-w-[140px]">{req.txHash.slice(0, 10)}...{req.txHash.slice(-6)}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Rejection Note if rejected */}
+                          {req.status === 'rejected' && (
+                            <div className="mt-1.5 text-[11px] text-red-300 bg-red-950/30 border border-red-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                              <span className="font-bold text-red-400">Reason:</span>
+                              <span>{req.rejectionReason || 'Administrative Review & Compliance Hold'}</span>
+                              <span className="text-emerald-400 ml-auto text-[10px] font-bold">✓ Refunded to miner wallet</span>
+                            </div>
                           )}
                         </div>
+
                         <div className="sm:text-right">
                           <span className="text-lg font-black text-white font-mono block">
                             ${req.amount.toFixed(2)} USDT
@@ -2867,36 +3044,58 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end gap-2">
-                        {isSubadmin ? (
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-semibold">
-                            <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span>Approval Restricted (Super Admin Only)</span>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => {
-                                setPayoutModalReq(req);
-                                const autoHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-                                setPayoutTxHash(autoHash);
-                              }}
-                              className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs cursor-pointer transition-all"
-                            >
-                              ✓ Approve & Dispatch
-                            </button>
-                            <button
-                              onClick={() => {
-                                setRejectModalReq(req);
-                                setRejectReasonText('Administrative review / Security compliance hold');
-                              }}
-                              className="px-4 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 font-bold text-xs cursor-pointer transition-all"
-                            >
-                              ✕ Reject & Refund
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      {/* Action Bar */}
+                      {req.status === 'pending' && (
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          {isSubadmin ? (
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-semibold">
+                              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>Approval Restricted (Super Admin Only)</span>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setPayoutModalReq(req);
+                                  const autoHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                                  setPayoutTxHash(autoHash);
+                                }}
+                                className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs cursor-pointer transition-all shadow-md shadow-emerald-500/20"
+                              >
+                                ✓ Approve & Dispatch
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRejectModalReq(req);
+                                  setRejectReasonText('Administrative review / Security compliance hold');
+                                }}
+                                className="px-4 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 font-bold text-xs cursor-pointer transition-all"
+                              >
+                                ✕ Reject & Refund
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {req.status === 'approved' && (
+                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                          <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Blockchain payout dispatched & balance ledger debited</span>
+                          </span>
+                          <span className="font-mono text-[10.5px] text-gray-400">Order ID: {req.id}</span>
+                        </div>
+                      )}
+
+                      {req.status === 'rejected' && (
+                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                          <span className="text-red-400 font-semibold flex items-center gap-1">
+                            <span>⚠ Request declined. User fund restored without penalty.</span>
+                          </span>
+                          <span className="font-mono text-[10.5px] text-gray-400">Order ID: {req.id}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
