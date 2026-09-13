@@ -11,7 +11,8 @@ import {
   Sparkles,
   Gift,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertTriangle
 } from 'lucide-react';
 import { WithdrawalRequest } from '../types/mining';
 
@@ -52,6 +53,8 @@ export const WithdrawalSection: React.FC<Props> = ({
   const [querySent, setQuerySent] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [localFundPassword, setLocalFundPassword] = useState<string>(userFundPassword || '');
+  const [isPinError, setIsPinError] = useState(false);
+  const [pinErrorMessage, setPinErrorMessage] = useState('');
 
   useEffect(() => {
     setLocalFundPassword(userFundPassword || '');
@@ -61,6 +64,8 @@ export const WithdrawalSection: React.FC<Props> = ({
 
   const handlePinDigitChange = (val: string, idx: number) => {
     setFeedback(null);
+    setIsPinError(false);
+    setPinErrorMessage('');
     const numericChar = val.replace(/\D/g, '').slice(-1);
     const next = [...pinDigits];
     next[idx] = numericChar;
@@ -72,6 +77,8 @@ export const WithdrawalSection: React.FC<Props> = ({
   };
 
   const handlePinKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    setIsPinError(false);
+    setPinErrorMessage('');
     if (e.key === 'Backspace') {
       if (pinDigits[idx]) {
         const next = [...pinDigits];
@@ -94,6 +101,8 @@ export const WithdrawalSection: React.FC<Props> = ({
 
   const handlePinPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    setIsPinError(false);
+    setPinErrorMessage('');
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
     const chars = pasted.split('');
@@ -195,6 +204,8 @@ export const WithdrawalSection: React.FC<Props> = ({
     const cleanPin = pinDigits.join('').trim() || fundPin.trim();
 
     if (!cleanPin || cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
+      setIsPinError(true);
+      setPinErrorMessage('Please enter all 6 numeric digits of your Fund Password (PIN).');
       setFeedback({
         text: 'Please enter all 6 numeric digits of your Fund Password (PIN).',
         isError: true
@@ -203,12 +214,17 @@ export const WithdrawalSection: React.FC<Props> = ({
     }
 
     if (localFundPassword && /^\d{6}$/.test(localFundPassword) && cleanPin !== localFundPassword && cleanPin !== '888888' && cleanPin !== '123456') {
+      setIsPinError(true);
+      setPinErrorMessage('Wrong Fund Password! Incorrect 6-digit PIN entered.');
       setFeedback({
         text: 'Incorrect Fund Password. Please re-enter the valid 6-digit PIN you configured.',
         isError: true
       });
       return;
     }
+
+    setIsPinError(false);
+    setPinErrorMessage('');
 
     // Success -> Submit to Queue
     onWithdrawSubmit(amount, walletAddress.trim(), cleanPin);
@@ -416,13 +432,23 @@ export const WithdrawalSection: React.FC<Props> = ({
                   onKeyDown={(e) => handlePinKeyDown(e, idx)}
                   onPaste={handlePinPaste}
                   className={`w-11 h-12 sm:w-12 sm:h-12 rounded-xl bg-[#040A14] border text-center text-xl font-mono font-black transition-all outline-none ${
-                    digit
+                    isPinError
+                      ? 'border-red-500 text-red-400 bg-red-950/20 shadow-[0_0_12px_rgba(239,68,68,0.4)] animate-shake'
+                      : digit
                       ? 'border-[#00F0FF] text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.25)]'
                       : 'border-[#1B2A40] text-white focus:border-[#00F0FF]'
                   }`}
                 />
               ))}
             </div>
+
+            {/* Inline Red Wrong PIN Error Message */}
+            {isPinError && (
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-950/40 border border-red-500/50 text-red-400 text-[11.5px] font-bold animate-fadeIn">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{pinErrorMessage || 'Wrong Fund Password! Galat PIN enter kiya hai.'}</span>
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-[10.5px] text-[#64748B] pt-0.5">
               <span>🔒 6-digit numeric security PIN required to authorize withdrawal</span>

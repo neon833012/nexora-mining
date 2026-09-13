@@ -130,7 +130,10 @@ export const LegalPolicyModal: React.FC<Props> = ({
                   3. Deposits & BEP-20 Custody
                 </h4>
                 <p>
-                  All platform deposits are conducted exclusively in Tether USD (USDT) on the BNB Smart Chain (BEP-20) network. Minimum deposit threshold is 2.00 USDT. Deposits are verified on-chain via public RPC nodes and credited with flat 0% deposit fees. Users must transfer only BEP-20 USDT to the designated official Custody Vault Address.
+                  All platform deposits are conducted exclusively in Tether USD (USDT) on the BNB Smart Chain (BEP-20) network. Minimum deposit threshold is 10.00 USDT. Deposits are verified on-chain via public RPC nodes and credited with flat 0% deposit fees. Users must transfer only BEP-20 USDT to the designated official Custody Vault Address.
+                </p>
+                <p className="mt-2 text-cyan-300 bg-cyan-950/40 p-2.5 rounded-xl border border-cyan-500/30">
+                  ⏱️ <strong>3-Minute Hash Submission Rule:</strong> After completing the on-chain transfer, members must submit their 66-character transaction hash within three (3) minutes. Any transaction hash submitted after the 3-minute window will require manual compliance verification and will be subject to up to a 24-hour administrative approval hold.
                 </p>
               </section>
 
@@ -172,7 +175,7 @@ export const LegalPolicyModal: React.FC<Props> = ({
                   1. Information We Collect
                 </h4>
                 <p>
-                  We collect strictly the minimum information required for account authorization and cryptographic fund routing: registered Mobile Number, optional Email Address, public blockchain wallet addresses submitted for withdrawals, and on-chain deposit transaction hashes.
+                  We collect strictly the minimum information required for account authorization and cryptographic fund routing: registered Mobile Number, Email Address, public blockchain wallet addresses submitted for withdrawals, and on-chain deposit transaction hashes.
                 </p>
               </section>
 
@@ -243,40 +246,23 @@ export const LegalPolicyModal: React.FC<Props> = ({
           {/* TAB 4: REFERRAL & AFFILIATE POLICY */}
           {activeTab === 'referral' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-purple-950/25 border border-purple-500/40 text-purple-200">
-                <strong className="text-white block text-sm font-bold mb-1">
-                  10% Direct Referral Commission Model
-                </strong>
-                Our affiliate system is transparent, fair, and single-level direct. Whenever a new user signs up using your unique referral link or code and activates a mining node, you receive an instant 10% direct commission!
-              </div>
-
               <section className="space-y-2">
                 <h4 className="text-sm font-black text-white flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-purple-400" />
-                  1. Instant Double-Credit Settlement
+                  1. Instant Credit Settlement
                 </h4>
                 <p>
-                  The 10% commission is credited simultaneously to your <strong>Referral Income Ledger</strong> (for transparent accounting) and your <strong>Withdrawable Balance</strong> (for immediate cashout or internal P2P transfers).
+                  Referral commissions are credited to your <strong>Referral Income Ledger</strong> (for transparent accounting) and your <strong>Withdrawable Balance</strong> (for immediate cashout or internal P2P transfers).
                 </p>
               </section>
 
               <section className="space-y-2">
                 <h4 className="text-sm font-black text-white flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-purple-400" />
-                  2. No Minimum Active Plan Required to Refer
+                  2. Minimum Active Plan Required to Earn Referral Commissions
                 </h4>
                 <p>
-                  You can share your referral code immediately upon registration. However, maintaining an active mining contract unlocks team turnover boosts and higher compounding performance.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h4 className="text-sm font-black text-white flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-purple-400" />
-                  3. Anti-Circular Sybil Policy
-                </h4>
-                <p>
-                  Self-referrals (creating alternate accounts under your own link to collect commission on your own deposit) are strictly monitored by AI telemetry and will result in referral forfeiture.
+                  To qualify for and receive referral commissions, members must maintain an active mining plan. Holding an active computing contract is mandatory to earn commissions and unlock multi-tier team turnover benefits.
                 </p>
               </section>
             </div>
@@ -312,7 +298,7 @@ export const LegalPolicyModal: React.FC<Props> = ({
                   2. Automatic Tier Upgrade Mechanism
                 </h4>
                 <p>
-                  When continuous daily compounding or manual re-investment causes your Active Mining Power to reach the threshold of the next tier plan (e.g. crossing $50, $100, $250, $500, etc.), the system <strong>automatically upgrades your plan tier in the database</strong>. Your node begins hashing at the higher daily percentage rate automatically!
+                  When continuous daily compounding or manual re-investment causes your Active Mining Power to reach the threshold of the next tier plan (e.g. crossing $20, $60, $120, $250, $500, $1,500, $3,000, etc.), the system <strong>automatically upgrades your plan tier in the database</strong>. Your node begins hashing at the higher daily percentage rate automatically!
                 </p>
               </section>
 

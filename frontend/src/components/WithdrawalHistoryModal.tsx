@@ -99,14 +99,14 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
             <span className="text-[14px] font-mono font-black text-[#10B981] block mt-0.5">
               ${totalWithdrawn.toFixed(2)}
             </span>
-            <span className="text-[9.5px] text-[#94A3B8]">{approvedCount} Cashout{approvedCount !== 1 ? 's' : ''}</span>
+            <span className="text-[9.5px] text-[#94A3B8]">Completed Cashouts</span>
           </div>
           <div className="p-2.5 rounded-xl bg-[#081525] border border-[#162C47]">
             <span className="text-[10px] uppercase font-bold text-[#64748B] block">Pending Audit</span>
             <span className="text-[14px] font-mono font-black text-[#FBBF24] block mt-0.5">
               ${pendingAmount.toFixed(2)}
             </span>
-            <span className="text-[9.5px] text-[#94A3B8]">{pendingCount} Request{pendingCount !== 1 ? 's' : ''}</span>
+            <span className="text-[9.5px] text-[#94A3B8]">Audit Queue</span>
           </div>
           <div className="p-2.5 rounded-xl bg-[#081525] border border-[#162C47]">
             <span className="text-[10px] uppercase font-bold text-[#64748B] block">Network Fee</span>
@@ -128,7 +128,7 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
                 : 'bg-[#0C192C] text-[#94A3B8] hover:text-white'
             }`}
           >
-            All ({withdrawalRequests.length})
+            All
           </button>
           <button
             type="button"
@@ -140,7 +140,7 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
             }`}
           >
             <Clock className="w-3 h-3" />
-            <span>Pending ({pendingCount})</span>
+            <span>Pending</span>
           </button>
           <button
             type="button"
@@ -152,7 +152,7 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
             }`}
           >
             <CheckCircle2 className="w-3 h-3" />
-            <span>Settled ({approvedCount})</span>
+            <span>Settled</span>
           </button>
           {rejectedCount > 0 && (
             <button
@@ -165,7 +165,7 @@ export const WithdrawalHistoryModal: React.FC<Props> = ({
               }`}
             >
               <XCircle className="w-3 h-3" />
-              <span>Rejected ({rejectedCount})</span>
+              <span>Rejected</span>
             </button>
           )}
         </div>

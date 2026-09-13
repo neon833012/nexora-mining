@@ -83,7 +83,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
 
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (numAmount < 2) return;
+    if (numAmount < 10) return;
     setVerificationError(null);
     setOrderCreatedAt(Date.now());
     setStep('AWAITING_PAYMENT');
@@ -275,7 +275,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
                 <label className="font-bold text-[#CBD5E1] uppercase tracking-wider">
                   2. Enter Custom Deposit Amount
                 </label>
-                <span className="text-[#00F0FF] font-mono text-[10.5px] font-bold">Min: 2.00 USDT</span>
+                <span className="text-[#00F0FF] font-mono text-[10.5px] font-bold">Min: 10.00 USDT</span>
               </div>
 
               <div className="relative rounded-xl bg-[#040912] border border-[#1E3452] focus-within:border-[#00F0FF] transition-colors shadow-inner">
@@ -289,7 +289,7 @@ export const DepositDemoDialog: React.FC<Props> = ({
                     }
                   }}
                   required
-                  placeholder="Enter custom USDT amount (Min 2)"
+                  placeholder="Enter custom USDT amount (Min 10)"
                   className="w-full bg-transparent px-3.5 py-3.5 text-[18px] font-mono font-black text-white focus:outline-none placeholder:text-gray-600"
                 />
                 <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[12px] font-bold text-[#00F0FF] font-mono">
@@ -316,14 +316,14 @@ export const DepositDemoDialog: React.FC<Props> = ({
             {/* Submit */}
             <button
               type="submit"
-              disabled={numAmount < 2}
+              disabled={numAmount < 10}
               className={`w-full py-3.5 px-4 rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 shadow-lg ${
-                numAmount < 2
+                numAmount < 10
                   ? 'bg-[#122034] text-[#64748B] border border-[#1B2F4A] cursor-not-allowed'
                   : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/40 border border-emerald-400/30'
               }`}
             >
-              <span>{numAmount < 2 ? 'Enter Amount (Min 2.00 USDT)' : `Generate Payment Invoice (${numAmount.toFixed(2)} USDT)`}</span>
+              <span>{numAmount < 10 ? 'Enter Amount (Min 10.00 USDT)' : `Generate Payment Invoice (${numAmount.toFixed(2)} USDT)`}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>

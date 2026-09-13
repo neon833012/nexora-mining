@@ -879,6 +879,37 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Live Cloudflare D1 Backend Admin Withdrawals Synchronizer
+  const fetchLiveAdminWithdrawals = useCallback(async () => {
+    try {
+      const res = await nexoraApi.getAdminWithdrawals();
+      if (res && res.success && Array.isArray(res.withdrawals)) {
+        const mappedWithdrawals: WithdrawalRequest[] = res.withdrawals.map((w: any) => ({
+          id: w.id,
+          userId: w.user_id,
+          userName: w.user_name || w.user_id,
+          userMobile: w.user_mobile || '',
+          amount: Number(w.amount) || 0,
+          fee: Number(w.fee) || 0,
+          netAmount: Number(w.net_amount) || 0,
+          walletAddress: w.wallet_address || '',
+          status: (w.status as any) || 'pending',
+          timestamp: w.created_at || 'Just now',
+          timestampMs: w.created_at ? new Date(w.created_at).getTime() : Date.now(),
+          type: w.wallet_address?.startsWith('P2P') ? 'p2p_transfer' : 'blockchain',
+          txHash: w.tx_hash || '',
+          rejectionReason: w.rejection_reason
+        }));
+        setWithdrawalRequests(mappedWithdrawals);
+        try {
+          localStorage.setItem('neon_withdrawal_requests', JSON.stringify(mappedWithdrawals));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('[App] Failed to sync admin withdrawals from D1:', err);
+    }
+  }, []);
+
   // Live Cloudflare D1 Backend Platform Settings Synchronizer
   const fetchPlatformSettings = useCallback(async () => {
     try {
@@ -911,13 +942,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     // 1. Initial fetch & periodic background polling every 12 seconds
     fetchLiveAdminUsers();
+    fetchLiveAdminWithdrawals();
     fetchPlatformSettings();
     const syncInterval = setInterval(() => {
       fetchLiveAdminUsers();
+      fetchLiveAdminWithdrawals();
       fetchPlatformSettings();
     }, 12000);
     return () => clearInterval(syncInterval);
-  }, [fetchLiveAdminUsers, fetchPlatformSettings]);
+  }, [fetchLiveAdminUsers, fetchLiveAdminWithdrawals, fetchPlatformSettings]);
 
   // Helper to perform full clean session logout
   const performLogout = useCallback((reasonMessage?: string) => {
@@ -988,7 +1021,7 @@ export const App: React.FC = () => {
           setReferralBalance(ref);
           setReferralIncome(ref);
           if (mined > 0) setTotalRewards(mined);
-          setTotalBalance(+(dep + withdr + ref).toFixed(2));
+          setTotalBalance(+(dep + withdr).toFixed(2));
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
@@ -1011,7 +1044,7 @@ export const App: React.FC = () => {
     // Fast polling: check every 3.5 seconds so if someone else signs in, this session gets kicked out immediately!
     const sessionInterval = setInterval(verifyAndSyncSession, 3500);
 
-      // 3. Fetch real wallet history (transactions, withdrawals)
+      // 3. Fetch real wallet history (transactions, withdrawals, deposits)
       nexoraApi.getWalletHistory(userName).then((res) => {
         if (res && res.success) {
           if (Array.isArray(res.transactions)) {
@@ -1042,6 +1075,48 @@ export const App: React.FC = () => {
               rejectionReason: w.rejection_reason
             }));
             setWithdrawalRequests(mappedWd);
+          }
+          // Sync deposit history from D1 deposit orders and incoming P2P transfers
+          if (Array.isArray(res.deposits) && res.deposits.length > 0) {
+            const mappedDeps: DepositRecord[] = res.deposits.map((d: any) => ({
+              id: d.order_id || `dep_${d.id || Date.now()}`,
+              amount: Number(d.amount) || 0,
+              timestamp: d.created_at || d.confirmed_at || 'Recently',
+              timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
+              status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
+              type: d.network === 'P2P Transfer' ? 'p2p_received' : 'bep20_deposit',
+              token: d.token || 'USDT',
+              network: d.network || 'BNB Smart Chain (BEP-20)',
+              txHash: d.tx_hash,
+              senderId: d.network === 'P2P Transfer' ? d.vault_address : undefined
+            }));
+            setDepositRecords(mappedDeps);
+          } else if (Array.isArray(res.transactions)) {
+            const incomingTxs = res.transactions.filter(
+              (t: any) => Number(t.amount) > 0 && (
+                t.type?.toLowerCase().includes('deposit') || 
+                t.type?.toLowerCase().includes('p2p transfer received')
+              )
+            );
+            if (incomingTxs.length > 0) {
+              const mappedDeps: DepositRecord[] = incomingTxs.map((t: any) => {
+                const isP2P = t.type?.toLowerCase().includes('p2p');
+                const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
+                return {
+                  id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
+                  amount: Number(t.amount) || 0,
+                  timestamp: t.created_at || 'Recently',
+                  timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
+                  status: 'completed',
+                  type: isP2P ? 'p2p_received' : 'bep20_deposit',
+                  token: 'USDT',
+                  network: isP2P ? 'P2P Transfer' : 'BNB Smart Chain (BEP-20)',
+                  txHash: t.tx_hash || t.id,
+                  senderId: senderMatch ? senderMatch[1] : undefined
+                };
+              });
+              setDepositRecords(mappedDeps);
+            }
           }
         }
       }).catch(() => {});
@@ -1118,13 +1193,15 @@ export const App: React.FC = () => {
       return () => clearInterval(sessionInterval);
   }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
-  // Automatically trigger promotional plan popup modal 3 seconds after opening
+  // Automatically trigger promotional plan popup modal 3 seconds after opening (only if user has no active plan)
   useEffect(() => {
     const promoTimer = setTimeout(() => {
-      setShowPromoPopup(true);
+      if (activeMiningPower <= 0) {
+        setShowPromoPopup(true);
+      }
     }, 3000);
     return () => clearTimeout(promoTimer);
-  }, []);
+  }, [activeMiningPower]);
 
   // Check URL query parameters (?ref=CODE, ?admin=portal) on mount
   useEffect(() => {
@@ -2221,7 +2298,7 @@ export const App: React.FC = () => {
           if (w.deposit_balance !== undefined) setDepositBalance(Number(w.deposit_balance) || 0);
           if (w.withdrawable_balance !== undefined) setAvailableWithdrawal(Number(w.withdrawable_balance) || 0);
           if (w.referral_balance !== undefined) setReferralBalance(Number(w.referral_balance) || 0);
-          setTotalBalance(+(Number(w.deposit_balance || 0) + Number(w.withdrawable_balance || 0) + Number(w.referral_balance || 0)).toFixed(2));
+          setTotalBalance(+(Number(w.deposit_balance || 0) + Number(w.withdrawable_balance || 0)).toFixed(2));
         }
 
         // 3. Log in SENDER's Withdrawal History modal with exact P2P Hash
@@ -2923,11 +3000,6 @@ export const App: React.FC = () => {
                         >
                           <ArrowUp className="w-3.5 h-3.5 text-[#00F0FF] shrink-0" />
                           <span className="truncate">Withdrawal History</span>
-                          {withdrawalRequests.length > 0 && (
-                            <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-[#00F0FF]/15 border border-[#00F0FF]/30 text-[#00F0FF] text-[9px] font-mono font-bold shrink-0">
-                              {withdrawalRequests.length}
-                            </span>
-                          )}
                         </button>
                         <button
                           type="button"
@@ -3548,7 +3620,7 @@ export const App: React.FC = () => {
 
         {/* Auth Modal with Mobile + Country Flag + Random Username + Google Auth */}
         <AuthModalDialog
-          isOpen={showAuthModal}
+          isOpen={showAuthModal && !isLoggedIn}
           isSignUp={isSignUpMode}
           initialReferralCode={preFilledRefCode}
           onDismiss={() => setShowAuthModal(false)}
@@ -3558,7 +3630,7 @@ export const App: React.FC = () => {
 
         {/* 3-Second Welcome Promotional Mining Plans Showcase Popup Modal */}
         <PromotionalPlanPopupModal
-          isOpen={showPromoPopup && (platformSettings?.popupEnabled !== false)}
+          isOpen={showPromoPopup && (platformSettings?.popupEnabled !== false) && activeMiningPower <= 0}
           onDismiss={() => setShowPromoPopup(false)}
           onSelectPlan={(plan) => {
             setShowPromoPopup(false);

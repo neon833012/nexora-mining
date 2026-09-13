@@ -457,8 +457,8 @@ app.post('/api/deposit/create-order', async (c) => {
   try {
     const { userId, amount, token = 'USDT', network = 'BEP-20' } = await c.req.json();
 
-    if (!userId || !amount || Number(amount) <= 0) {
-      return c.json({ success: false, message: 'Valid userId and amount are required' }, 400);
+    if (!userId || !amount || Number(amount) < 10.0) {
+      return c.json({ success: false, message: 'Minimum deposit amount is 10.00 USDT' }, 400);
     }
 
     const orderId = `DEP-BSC-${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
@@ -557,8 +557,8 @@ app.post('/api/tx/check-claimable', async (c) => {
 app.post('/api/tx/claim-deposit', async (c) => {
   try {
     const { userId, txHash, amount, network = 'BEP-20' } = await c.req.json();
-    if (!userId || !txHash || !amount || Number(amount) <= 0) {
-      return c.json({ success: false, message: 'Valid userId, txHash, and amount are required' }, 400);
+    if (!userId || !txHash || !amount || Number(amount) < 10.0) {
+      return c.json({ success: false, message: 'Minimum deposit amount is 10.00 USDT' }, 400);
     }
 
     const cleanTx = String(txHash).trim().toLowerCase();
@@ -1317,26 +1317,18 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
         'UPDATE wallets SET deposit_balance = MAX(0, deposit_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
       ).bind(transferAmt, sender.id);
     } else {
-      // Withdrawable balance deduction (checks sum of withdrawable_balance + referral_balance)
-      const totalAvailable = Number(((senderWallet.withdrawable_balance || 0) + (senderWallet.referral_balance || 0)).toFixed(2));
-      if (totalAvailable < transferAmt) {
+      // Withdrawable balance deduction
+      const availableWithdrawable = Number(senderWallet.withdrawable_balance || 0);
+      if (availableWithdrawable < transferAmt) {
         return c.json({
           success: false,
-          message: `Insufficient withdrawable balance ($${totalAvailable.toFixed(2)} USDT). Required: $${transferAmt.toFixed(2)} USDT.`
+          message: `Insufficient withdrawable balance ($${availableWithdrawable.toFixed(2)} USDT). Required: $${transferAmt.toFixed(2)} USDT.`
         }, 400);
       }
 
-      if ((senderWallet.withdrawable_balance || 0) >= transferAmt) {
-        senderDeductQuery = c.env.DB.prepare(
-          'UPDATE wallets SET withdrawable_balance = MAX(0, withdrawable_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-        ).bind(transferAmt, sender.id);
-      } else {
-        const fromWithdrawable = senderWallet.withdrawable_balance || 0;
-        const fromReferral = Number((transferAmt - fromWithdrawable).toFixed(2));
-        senderDeductQuery = c.env.DB.prepare(
-          'UPDATE wallets SET withdrawable_balance = 0, referral_balance = MAX(0, referral_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-        ).bind(fromReferral, sender.id);
-      }
+      senderDeductQuery = c.env.DB.prepare(
+        'UPDATE wallets SET withdrawable_balance = MAX(0, withdrawable_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+      ).bind(transferAmt, sender.id);
     }
 
     // 4. Ensure Recipient Wallet exists
@@ -1372,6 +1364,11 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
       c.env.DB.prepare(
         'INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) VALUES (?, ?, ?, ?, "Settled", ?)'
       ).bind(txIdRecipient, recipient.id, `P2P Transfer Received from @${sender.id} (0% Fee)`, transferAmt, p2pHash),
+      // Recipient deposit order record (makes it appear in Recipient's Deposit History)
+      c.env.DB.prepare(
+        `INSERT INTO deposit_orders (order_id, user_id, amount, token, network, vault_address, tx_hash, block_confirmations, status, confirmed_at)
+         VALUES (?, ?, ?, 'USDT', 'P2P Transfer', ?, ?, 1, 'confirmed', CURRENT_TIMESTAMP)`
+      ).bind(`DEP-P2P-${Date.now().toString().slice(-6)}`, recipient.id, transferAmt, `@${sender.id}`, p2pHash),
       // Sender withdrawal history entry
       c.env.DB.prepare(
         'INSERT INTO withdrawal_requests (id, user_id, amount, fee, net_amount, wallet_address, tx_hash, status) VALUES (?, ?, ?, 0, ?, ?, ?, "approved")'
@@ -1424,14 +1421,14 @@ app.post('/api/wallet/withdraw-request', async (c) => {
       return c.json({ success: false, message: 'Incorrect 6-digit Fund PIN' }, 403);
     }
 
-    // Check Withdrawable Balance (withdrawable_balance + referral_balance)
+    // Check Withdrawable Balance
     const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(user.id).first() as any;
-    const totalAvailable = Number(((wallet?.withdrawable_balance || 0) + (wallet?.referral_balance || 0)).toFixed(2));
+    const availableWithdrawable = Number(wallet?.withdrawable_balance || 0);
 
-    if (!wallet || totalAvailable < withdrawAmount) {
+    if (!wallet || availableWithdrawable < withdrawAmount) {
       return c.json({
         success: false,
-        message: `Insufficient withdrawable balance ($${totalAvailable.toFixed(2)} USDT).`
+        message: `Insufficient withdrawable balance ($${availableWithdrawable.toFixed(2)} USDT).`
       }, 400);
     }
 
@@ -1440,28 +1437,14 @@ app.post('/api/wallet/withdraw-request', async (c) => {
     const reqId = `wd_${Date.now().toString().slice(-6)}`;
     const txId = `WD-${Date.now().toString().slice(-6)}`;
 
-    // Determine deduction query
-    let deductQuery: any;
-    if ((wallet.withdrawable_balance || 0) >= withdrawAmount) {
-      deductQuery = c.env.DB.prepare(
-        `UPDATE wallets 
-         SET withdrawable_balance = withdrawable_balance - ?, 
-             total_withdrawn = total_withdrawn + ?, 
-             updated_at = CURRENT_TIMESTAMP 
-         WHERE user_id = ?`
-      ).bind(withdrawAmount, withdrawAmount, user.id);
-    } else {
-      const fromWithdrawable = wallet.withdrawable_balance || 0;
-      const fromReferral = Number((withdrawAmount - fromWithdrawable).toFixed(2));
-      deductQuery = c.env.DB.prepare(
-        `UPDATE wallets 
-         SET withdrawable_balance = 0, 
-             referral_balance = MAX(0, referral_balance - ?), 
-             total_withdrawn = total_withdrawn + ?, 
-             updated_at = CURRENT_TIMESTAMP 
-         WHERE user_id = ?`
-      ).bind(fromReferral, withdrawAmount, user.id);
-    }
+    // Deduct directly from withdrawable balance
+    const deductQuery = c.env.DB.prepare(
+      `UPDATE wallets 
+       SET withdrawable_balance = MAX(0, withdrawable_balance - ?), 
+           total_withdrawn = total_withdrawn + ?, 
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE user_id = ?`
+    ).bind(withdrawAmount, withdrawAmount, user.id);
 
     // Execute atomic batch
     await c.env.DB.batch([
@@ -1790,7 +1773,7 @@ app.get('/api/settings', async (c) => {
   try {
     const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
     const settingsMap: Record<string, string> = {
-      min_deposit: '2.0',
+      min_deposit: '10.0',
       min_withdrawal: '2.0',
       withdrawal_fee_percent: '5.0',
       p2p_fee_percent: '0.0',
@@ -1811,7 +1794,7 @@ app.get('/api/settings', async (c) => {
     return c.json({
       success: true,
       settings: {
-        min_deposit: '2.0',
+        min_deposit: '10.0',
         min_withdrawal: '2.0',
         withdrawal_fee_percent: '5.0',
         vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',

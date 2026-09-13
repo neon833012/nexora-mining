@@ -20,6 +20,7 @@ export const INITIAL_ADMIN_TELEMETRY: AdminTelemetry = {
 };
 
 export const INITIAL_PLATFORM_SETTINGS: PlatformSettings = {
+  minDepositAmount: 10.0,
   minWithdrawalAmount: 2.0,
   withdrawalFeePercent: 5.0,
   minersGrowthRatePerMin: 10,

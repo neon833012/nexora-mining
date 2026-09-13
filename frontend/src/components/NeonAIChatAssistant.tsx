@@ -70,9 +70,20 @@ const PRESET_PROMPTS = [
 
 export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket, currentUser }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [sessionId] = useState<string>(() => {
-    return localStorage.getItem('neon_active_chat_session_id') || `session_${Date.now()}`;
+  const userIdentifier = currentUser?.id || 'guest';
+  const [sessionId, setSessionId] = useState<string>(() => {
+    return localStorage.getItem(`neon_chat_session_${userIdentifier}`) || `session_${userIdentifier}`;
   });
+
+  useEffect(() => {
+    const key = `neon_chat_session_${userIdentifier}`;
+    let sId = localStorage.getItem(key);
+    if (!sId) {
+      sId = `session_${userIdentifier}`;
+      localStorage.setItem(key, sId);
+    }
+    setSessionId(sId);
+  }, [userIdentifier]);
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -164,7 +175,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
 
   // Sync with localStorage on load and when storage events fire
   useEffect(() => {
-    localStorage.setItem('neon_active_chat_session_id', sessionId);
+    localStorage.setItem(`neon_chat_session_${userIdentifier}`, sessionId);
 
     const loadSession = () => {
       const all = getStoredSessions();
@@ -174,6 +185,11 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         setIsWaitingHuman(current.status === 'waiting_admin');
         setHasHumanJoined(current.status === 'active_admin');
         setAssignedAdmin(current.assignedAdminName);
+      } else {
+        setMessages(INITIAL_MESSAGES);
+        setIsWaitingHuman(false);
+        setHasHumanJoined(false);
+        setAssignedAdmin(undefined);
       }
     };
 
@@ -187,7 +203,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('neon_chat_sync', handleSync);
     };
-  }, [sessionId]);
+  }, [sessionId, userIdentifier]);
 
   useEffect(() => {
     if (isOpen) {
@@ -357,7 +373,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       ) {
         aiResponse =
           "💳 **Official BEP-20 Deposit Rules:**\n\n" +
-          "• **Minimum Deposit**: **2.00 USDT**\n" +
+          "• **Minimum Deposit**: **10.00 USDT**\n" +
           "• **Accepted Token**: Tether USD (**USDT**) on Binance Smart Chain (**BEP-20**)\n" +
           "• **Deposit Fee**: **0% (Free)** — 100% of deposited funds are credited to your Deposit Balance\n" +
           "• **Verification**: Automatic on-chain BSC RPC verification within 15–60 seconds\n" +
@@ -497,7 +513,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           "• **7 Mining Plans** ($20 to $3,000 USD, 365-day contracts)\n" +
           "• **24H Proof-of-Activity Cycles** (Red stopped vs Green active)\n" +
           "• **Withdrawals**: $2.00 min cashout, 5% fee, BEP-20 network\n" +
-          "• **Deposits**: $2.00 min on BSC, instant automated credit\n" +
+          "• **Deposits**: $10.00 min on BSC, instant automated credit\n" +
           "• **0% P2P Transfers** & **Daily Compounding Auto-Upgrades**\n\n" +
           "How can I help you today? Or tap **'👤 Talk to Human Support'** below for live specialist assistance!";
       }
