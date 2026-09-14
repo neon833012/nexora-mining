@@ -4,13 +4,13 @@
   "description": "Enterprise Web3 Cloud Mining Platform",
   "icons": [
     {
-      "src": "/neon_hex_clean.png",
+      "src": "/neon_app_icon_192.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/neon_logo_hex.png",
+      "src": "/neon_app_icon.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"

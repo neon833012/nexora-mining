@@ -3167,11 +3167,15 @@ export const App: React.FC = () => {
     </div>
   );
 
+  const handleSplashComplete = useCallback(() => {
+    setShowAppSplash(false);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#030712] flex flex-col items-center justify-start text-[#F8FAFC]">
       {/* High-Tech Dedicated Cyberpunk Mining Splash Screen */}
       {showAppSplash && (
-        <NeonAppSplashScreen onComplete={() => setShowAppSplash(false)} />
+        <NeonAppSplashScreen onComplete={handleSplashComplete} />
       )}
 
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}

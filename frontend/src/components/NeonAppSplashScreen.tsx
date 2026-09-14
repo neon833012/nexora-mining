@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Activity } from 'lucide-react';
 
 interface Props {
@@ -6,42 +6,54 @@ interface Props {
 }
 
 export const NeonAppSplashScreen: React.FC<Props> = ({ onComplete }) => {
-  const [progress, setProgress] = useState(14);
+  const [progress, setProgress] = useState(12);
   const [statusText, setStatusText] = useState('Initializing ASIC Core Engines...');
   const [isFadingOut, setIsFadingOut] = useState(false);
 
+  // Store onComplete in a ref so changes in parent re-renders NEVER restart or cancel the splash
+  const onCompleteRef = useRef(onComplete);
   useEffect(() => {
-    const t1 = setTimeout(() => {
-      setProgress(42);
-      setStatusText('Syncing BSC Genesis Node #34912...');
-    }, 450);
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
-    const t2 = setTimeout(() => {
-      setProgress(78);
-      setStatusText('Locking Fleet Hashrate: 17.00 TH/s...');
-    }, 950);
+  useEffect(() => {
+    // Strictly monotonic progression: percentage only moves forward (Math.max)
+    const steps = [
+      { delay: 180, pct: 24, text: 'Initializing ASIC Core Engines...' },
+      { delay: 380, pct: 38, text: 'Syncing BSC Genesis Node #34912...' },
+      { delay: 620, pct: 52, text: 'Calibrating Fleet Node Parameters...' },
+      { delay: 900, pct: 68, text: 'Locking Fleet Hashrate: 17.00 TH/s...' },
+      { delay: 1200, pct: 82, text: 'Verifying BEP-20 Proof-of-Activity...' },
+      { delay: 1500, pct: 94, text: 'Synchronizing Protocol Consensus...' },
+      { delay: 1800, pct: 100, text: 'Security Handshake Confirmed. Welcome Miner.' }
+    ];
 
-    const t3 = setTimeout(() => {
-      setProgress(100);
-      setStatusText('Security Handshake Confirmed. Welcome Miner.');
-    }, 1500);
+    const timeouts: NodeJS.Timeout[] = [];
 
-    const t4 = setTimeout(() => {
+    steps.forEach(({ delay, pct, text }) => {
+      const t = setTimeout(() => {
+        setProgress((prev) => Math.max(prev, pct));
+        setStatusText(text);
+      }, delay);
+      timeouts.push(t);
+    });
+
+    const fadeTimeout = setTimeout(() => {
       setIsFadingOut(true);
-    }, 1950);
+    }, 2200);
+    timeouts.push(fadeTimeout);
 
-    const t5 = setTimeout(() => {
-      onComplete();
-    }, 2350);
+    const completeTimeout = setTimeout(() => {
+      if (onCompleteRef.current) {
+        onCompleteRef.current();
+      }
+    }, 2600);
+    timeouts.push(completeTimeout);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
-      clearTimeout(t5);
+      timeouts.forEach(clearTimeout);
     };
-  }, [onComplete]);
+  }, []);
 
   return (
     <div
