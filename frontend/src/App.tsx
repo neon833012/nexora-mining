@@ -2136,6 +2136,15 @@ export const App: React.FC = () => {
     };
     setTransactions((prev) => [newTx, ...prev]);
 
+    if (userName) {
+      nexoraApi.claimYieldToWallet({
+        userId: userName,
+        yieldAmount: yieldToSend
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(console.error);
+    }
+
     showToast(`💰 Sent +$${yieldToSend.toFixed(2)} USDT to Wallet! Now available in Wallet for immediate withdrawal.`);
   };
 

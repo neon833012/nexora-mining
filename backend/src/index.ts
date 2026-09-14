@@ -1367,6 +1367,35 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
   }
 });
 
+// Send Unlocked 24H Yield to Withdrawable Balance
+app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
+  try {
+    const { userId, yieldAmount } = await c.req.json();
+    const numYield = Number(yieldAmount);
+    if (!userId || !numYield || numYield <= 0) {
+      return c.json({ success: false, message: 'Invalid userId or yieldAmount' }, 400);
+    }
+    const txId = `YLD-${Date.now().toString().slice(-6)}`;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE wallets 
+         SET withdrawable_balance = withdrawable_balance + ?, 
+             total_mined_yield = total_mined_yield + ?,
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE user_id = ?`
+      ).bind(numYield, numYield, userId),
+      c.env.DB.prepare(
+        `INSERT INTO transactions (id, user_id, type, amount, status) 
+         VALUES (?, ?, 'Daily Plan Interest Sent to Withdrawable Balance', ?, 'Settled')`
+      ).bind(txId, userId, numYield)
+    ]);
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
+    return c.json({ success: true, message: `Transferred +$${numYield.toFixed(2)} USDT to Withdrawable Balance`, updatedWallet });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 // ============================================================================
 // 4.5. 24-Hour Proof-of-Activity Mining Cycle Engine
 // ============================================================================
