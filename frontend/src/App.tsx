@@ -1079,6 +1079,10 @@ export const App: React.FC = () => {
     });
 
     setIsLoggedIn(false);
+    setShowAuthModal(false);
+    setIsSignUpMode(false);
+    setIncomingResetToken(null);
+    setIncomingResetEmail(null);
     setUserName('');
     setUserMobile('');
     setUserEmail('');
@@ -2958,6 +2962,10 @@ export const App: React.FC = () => {
 
     // 3. Reset in-memory view to guest mode
     setIsLoggedIn(false);
+    setShowAuthModal(false);
+    setIsSignUpMode(false);
+    setIncomingResetToken(null);
+    setIncomingResetEmail(null);
     setUserName('');
     setUserMobile('');
     setUserEmail('');

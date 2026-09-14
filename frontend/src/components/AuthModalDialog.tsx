@@ -92,6 +92,16 @@ export const AuthModalDialog: React.FC<Props> = ({
     }
   }, [incomingResetToken, incomingResetEmail]);
 
+  // Reset success state and errors whenever modal closes or switches to Sign In mode
+  useEffect(() => {
+    if (!isOpen || !isSignUp) {
+      setSignupSuccess(false);
+      setSuccessData(null);
+      setApiError('');
+      setIsLoading(false);
+    }
+  }, [isOpen, isSignUp]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -312,8 +322,24 @@ export const AuthModalDialog: React.FC<Props> = ({
     }
   };
 
-  // ─── SIGNUP SUCCESS SCREEN ─────────────────────────────────────────────────
-  if (signupSuccess && successData) {
+  const handleDismissSuccessScreen = () => {
+    if (successData) {
+      onAuthSuccess(
+        successData.userId,
+        successData.mobile,
+        undefined,
+        successData.email,
+        successData.referral || undefined,
+        successData.ownReferralCode || undefined
+      );
+    }
+    setSignupSuccess(false);
+    setSuccessData(null);
+    onDismiss();
+  };
+
+  // ─── SIGNUP SUCCESS SCREEN (Strictly only when isSignUp is true and signup just succeeded) ───
+  if (isSignUp && signupSuccess && successData) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
         <div className="relative w-full max-w-[370px] rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,240,255,0.15)] animate-scaleUp">
@@ -324,19 +350,7 @@ export const AuthModalDialog: React.FC<Props> = ({
           <div className="bg-gradient-to-b from-[#071320] via-[#060E1C] to-[#040A14] border border-[#0D2540] border-t-0 p-6 relative">
             <button
               type="button"
-              onClick={() => {
-                if (successData) {
-                  onAuthSuccess(
-                    successData.userId,
-                    successData.mobile,
-                    undefined,
-                    successData.email,
-                    successData.referral || undefined,
-                    successData.ownReferralCode || undefined
-                  );
-                }
-                onDismiss();
-              }}
+              onClick={handleDismissSuccessScreen}
               className="absolute top-3.5 right-3.5 w-7 h-7 rounded-lg flex items-center justify-center text-[#64748B] hover:text-white hover:bg-[#142338] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -444,19 +458,7 @@ export const AuthModalDialog: React.FC<Props> = ({
 
             {/* Go to Dashboard button */}
             <button
-              onClick={() => {
-                if (successData) {
-                  onAuthSuccess(
-                    successData.userId,
-                    successData.mobile,
-                    undefined,
-                    successData.email,
-                    successData.referral || undefined,
-                    successData.ownReferralCode || undefined
-                  );
-                }
-                onDismiss();
-              }}
+              onClick={handleDismissSuccessScreen}
               className="mt-4 w-full h-[46px] rounded-xl bg-gradient-to-r from-[#00F0FF] via-[#0284C7] to-[#10B981] text-[#021024] font-extrabold text-[14px] tracking-wide flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.35)] hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
               <Zap className="w-4 h-4" />
@@ -811,6 +813,8 @@ export const AuthModalDialog: React.FC<Props> = ({
                 type="button"
                 onClick={() => {
                   setApiError('');
+                  setSignupSuccess(false);
+                  setSuccessData(null);
                   onSwitchAuthMode();
                 }}
                 className="text-[#00F0FF] font-bold hover:underline cursor-pointer ml-1"
