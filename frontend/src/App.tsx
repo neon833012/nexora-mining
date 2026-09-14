@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { NeonTopAppBar } from './components/NeonTopAppBar';
+import { NeonAppSplashScreen } from './components/NeonAppSplashScreen';
 import { BlockchainLiveTicker } from './components/BlockchainLiveTicker';
 import { FuturisticHeroSection } from './components/FuturisticHeroSection';
 import { LiveStatsGrid } from './components/LiveStatsGrid';
@@ -180,6 +181,29 @@ export const normalizeToPlanTier = (amt: number): number => {
 };
 
 export const App: React.FC = () => {
+  // Standalone App / APK detection
+  const isStandaloneApp = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFromUrl = urlParams.get('source') === 'app' || urlParams.get('twa') === '1' || urlParams.get('mode') === 'app';
+    const isStandaloneMatch = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    const isStoredApp = localStorage.getItem('neon_is_app') === 'true';
+    if (isFromUrl || isStandaloneMatch || isStoredApp) {
+      try { localStorage.setItem('neon_is_app', 'true'); } catch {}
+      return true;
+    }
+    return false;
+  }, []);
+
+  const [showAppSplash, setShowAppSplash] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFromUrl = urlParams.get('source') === 'app' || urlParams.get('twa') === '1' || urlParams.get('mode') === 'app';
+    const isStandaloneMatch = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    const isStoredApp = localStorage.getItem('neon_is_app') === 'true';
+    return isFromUrl || isStandaloneMatch || isStoredApp;
+  });
+
   // Navigation & Multi-Page View
   const [activeRoute, setActiveRoute] = useState<NavRoute>('home');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -2964,6 +2988,11 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#030712] flex flex-col items-center justify-start text-[#F8FAFC]">
+      {/* High-Tech Dedicated Cyberpunk Mining Splash Screen */}
+      {showAppSplash && (
+        <NeonAppSplashScreen onComplete={() => setShowAppSplash(false)} />
+      )}
+
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}
       <main className="w-full max-w-7xl mx-auto bg-[#030712] min-h-screen relative flex flex-col transition-all duration-300">
         {/* Top App Bar with Desktop Navigation & 25-Language Switcher */}
@@ -2982,7 +3011,7 @@ export const App: React.FC = () => {
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
-            window.location.href = '/Neon_Mining_v1.apk';
+            window.location.href = 'https://github.com/neon833012/nexora-mining/releases/download/v1.0.0/Neon_Mining_v1.apk';
             showToast('📲 Downloading Neon Mining Official Android APK (2.6 MB)...');
           }}
           onLoginClick={() => {
@@ -2990,6 +3019,7 @@ export const App: React.FC = () => {
             setShowAuthModal(true);
           }}
           onNavigateHome={() => navigateTo('home')}
+          isStandaloneApp={isStandaloneApp}
         />
 
         {/* Rolling Blockchain Live Ticker */}
@@ -3595,6 +3625,7 @@ export const App: React.FC = () => {
             applyLanguageChange(lang);
             showToast(`Language switched to: ${lang.toUpperCase()}`);
           }}
+          isStandaloneApp={isStandaloneApp}
         />
 
         {/* Multi-Step Realistic Plan Checkout Wizard Modal */}

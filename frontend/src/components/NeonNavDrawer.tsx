@@ -31,6 +31,7 @@ interface Props {
   onOpenAdminPortal?: () => void;
   currentLang?: LanguageCode;
   onSelectLang?: (lang: LanguageCode) => void;
+  isStandaloneApp?: boolean;
 }
 
 const NAV_ITEMS: { route: NavRoute; key: string; name: string; icon: React.ElementType }[] = [
@@ -54,7 +55,8 @@ export const NeonNavDrawer: React.FC<Props> = ({
   onAuthClick,
   onOpenAdminPortal,
   currentLang = 'en',
-  onSelectLang
+  onSelectLang,
+  isStandaloneApp
 }) => {
   const [showDrawerLangMenu, setShowDrawerLangMenu] = useState(false);
   if (!isOpen) return null;
@@ -179,21 +181,23 @@ export const NeonNavDrawer: React.FC<Props> = ({
             })}
           </nav>
 
-          {/* Download Official Android App (APK) */}
-          <div className="pt-3">
-            <a
-              href="/Neon_Mining_v1.apk"
-              download="Neon_Mining_v1.apk"
-              onClick={onClose}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 border border-[#00F0FF]/40 text-[#00F0FF] hover:border-[#00F0FF] font-bold text-[13px] shadow-[0_0_12px_rgba(0,240,255,0.2)] transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-2.5">
-                <Smartphone className="w-4 h-4 text-[#00F0FF] shrink-0" />
-                <span>Download Official App (APK)</span>
-              </div>
-              <Download className="w-4 h-4 text-[#00F0FF] shrink-0" />
-            </a>
-          </div>
+          {/* Download Official Android App (APK) - Hidden inside standalone app */}
+          {!isStandaloneApp && (
+            <div className="pt-3">
+              <a
+                href="https://github.com/neon833012/nexora-mining/releases/download/v1.0.0/Neon_Mining_v1.apk"
+                download="Neon_Mining_v1.apk"
+                onClick={onClose}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 border border-[#00F0FF]/40 text-[#00F0FF] hover:border-[#00F0FF] font-bold text-[13px] shadow-[0_0_12px_rgba(0,240,255,0.2)] transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="w-4 h-4 text-[#00F0FF] shrink-0" />
+                  <span>Download Official App (APK)</span>
+                </div>
+                <Download className="w-4 h-4 text-[#00F0FF] shrink-0" />
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Bottom Actions */}

@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.neon.cryptomining",
+        "sha256_cert_fingerprints": ["DD:19:CE:10:9D:AE:75:0B:8D:7A:C3:60:02:9C:B7:70:4B:18:F7:B2:58:89:5B:F1:0B:66:CC:77:35:18:93:4A"]
+      }
+    }]

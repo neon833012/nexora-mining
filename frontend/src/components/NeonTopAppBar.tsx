@@ -17,6 +17,7 @@ interface Props {
   onLoginClick: () => void;
   onGetAppClick?: () => void;
   onNavigateHome: () => void;
+  isStandaloneApp?: boolean;
 }
 
 const DESKTOP_NAV_ITEMS: { route: NavRoute; key: string; label: string }[] = [
@@ -43,7 +44,8 @@ export const NeonTopAppBar: React.FC<Props> = ({
   onOpenDrawer,
   onLoginClick,
   onGetAppClick,
-  onNavigateHome
+  onNavigateHome,
+  isStandaloneApp
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
@@ -91,8 +93,8 @@ export const NeonTopAppBar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Center: "Get App" button on Mobile - ONLY on Home Screen */}
-        {activeRoute === 'home' && (
+        {/* Center: "Get App" button on Mobile - ONLY on Home Screen (Hidden when inside App) */}
+        {activeRoute === 'home' && !isStandaloneApp && (
           <div className="lg:hidden flex items-center justify-center shrink-0">
             <button
               onClick={onGetAppClick}
@@ -129,8 +131,8 @@ export const NeonTopAppBar: React.FC<Props> = ({
             );
           })}
 
-          {/* Desktop "Get App" Button - ONLY on Home Screen */}
-          {activeRoute === 'home' && (
+          {/* Desktop "Get App" Button - ONLY on Home Screen (Hidden when inside App) */}
+          {activeRoute === 'home' && !isStandaloneApp && (
             <button
               onClick={onGetAppClick}
               className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/25 to-[#00F0FF]/15 hover:from-[#00F0FF]/30 hover:to-[#0284C7]/40 border border-[#00F0FF]/50 text-[11px] xl:text-[12px] font-black text-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.25)] hover:border-[#00F0FF] transition-all cursor-pointer active:scale-95 ml-1.5 whitespace-nowrap shrink-0"
