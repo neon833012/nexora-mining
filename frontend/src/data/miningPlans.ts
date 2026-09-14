@@ -1,4 +1,5 @@
 import { MiningPlan, FaqItem, TransactionRecord, CountryCode, LanguageCode, WithdrawalRequest } from '../types/mining';
+import { translatePhrase } from '../utils/universalTranslator';
 
 export const MINING_PLANS: MiningPlan[] = [
   {
@@ -1179,6 +1180,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
 export const getTranslation = (key: string, lang: LanguageCode, fallback?: string): string => {
   if (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) {
     return TRANSLATIONS[lang][key];
+  }
+  const u = translatePhrase(key, lang);
+  if (u && u !== key) {
+    return u;
   }
   if (TRANSLATIONS['en'] && TRANSLATIONS['en'][key]) {
     return TRANSLATIONS['en'][key];

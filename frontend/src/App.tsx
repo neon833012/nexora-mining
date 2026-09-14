@@ -54,6 +54,7 @@ import {
 const DEFAULT_INITIAL_REFERRED_USERS: ReferredUserItem[] = [];
 import { MINING_PLANS, INITIAL_TRANSACTIONS, INITIAL_WITHDRAWAL_REQUESTS, getTranslation, getPlanForAmount } from './data/miningPlans';
 import { getSavedLanguage, applyLanguageChange, retriggerGoogleTranslate } from './utils/languageManager';
+import { startUniversalTranslator } from './utils/universalTranslator';
 import {
   INITIAL_ADMIN_USERS,
   INITIAL_ADMIN_ORDERS,
@@ -412,6 +413,10 @@ export const App: React.FC = () => {
 
   // Multi-Language State (25 Languages - Persistent & Synchronized)
   const [currentLang, setCurrentLang] = useState<LanguageCode>(getSavedLanguage);
+
+  useEffect(() => {
+    startUniversalTranslator(currentLang);
+  }, [currentLang, activeRoute]);
 
   // Role Management State
   const [userRole, setUserRole] = useState<UserRole>('user');

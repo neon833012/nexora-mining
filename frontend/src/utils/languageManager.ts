@@ -1,4 +1,5 @@
 import { LanguageCode } from '../types/mining';
+import { startUniversalTranslator } from './universalTranslator';
 
 export const GT_LANGUAGE_MAP: Record<LanguageCode, string> = {
   en: 'en',
@@ -87,6 +88,7 @@ export const setGoogleTranslateCookie = (gtTarget: string) => {
 export const retriggerGoogleTranslate = () => {
   try {
     const lang = getSavedLanguage();
+    startUniversalTranslator(lang);
     if (!lang || lang === 'en') return;
     const gtTarget = GT_LANGUAGE_MAP[lang] || lang;
 
@@ -113,6 +115,10 @@ export const applyLanguageChange = (langCode: LanguageCode, onComplete?: () => v
     // ignore
   }
 
+  // 1. Immediately apply universal in-memory DOM translation across the full app (zero reload, instant)
+  startUniversalTranslator(langCode);
+
+  // 2. Set cookies & trigger Google Translate if available (secondary web layer)
   const gtTarget = GT_LANGUAGE_MAP[langCode] || langCode;
   setGoogleTranslateCookie(gtTarget);
 
@@ -123,9 +129,7 @@ export const applyLanguageChange = (langCode: LanguageCode, onComplete?: () => v
     combo.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Trigger smooth reload to guarantee 100% full-page deep translation across all DOM nodes
-  setTimeout(() => {
-    if (onComplete) onComplete();
-    window.location.reload();
-  }, 120);
+  if (onComplete) {
+    onComplete();
+  }
 };
