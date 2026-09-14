@@ -3011,8 +3011,13 @@ export const App: React.FC = () => {
           onOpenAdminPortal={() => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
-            window.location.href = 'https://github.com/neon833012/nexora-mining/releases/download/v1.0.0/Neon_Mining_v1.apk';
-            showToast('📲 Downloading Neon Mining Official Android APK (2.6 MB)...');
+            const link = document.createElement('a');
+            link.href = 'https://github.com/neon833012/nexora-mining/releases/download/v1.0.0/Neon_Mining.apk';
+            link.download = 'Neon Mining.apk';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('📲 Downloading Neon Mining Official APK (2.6 MB)...');
           }}
           onLoginClick={() => {
             setIsSignUpMode(false);
