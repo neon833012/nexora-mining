@@ -434,7 +434,11 @@ export const App: React.FC = () => {
       u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
     ).map((u) => {
       const ud = loadUserSavedData(u.id) || loadUserSavedData(u.name);
-      const isMining = Boolean(ud?.isMiningActive && ud?.miningStartTime && (Date.now() - ud.miningStartTime < 24 * 3600 * 1000));
+      const isMining = Boolean(
+        u.isMiningActive ||
+        (ud?.isMiningActive && ud?.miningStartTime && (Date.now() - ud.miningStartTime < 24 * 3600 * 1000)) ||
+        (u.stakedAmount && u.stakedAmount > 0 && u.status === 'active')
+      );
       return {
         ...u,
         isMiningActive: isMining
@@ -931,6 +935,11 @@ export const App: React.FC = () => {
           const depBal = Number(u.deposit_balance) || 0;
           const withBal = Number(u.withdrawable_balance) || 0;
           const available = depBal > 0 ? depBal : withBal;
+          const isMining = Boolean(
+            u.is_mining_active === 1 ||
+            u.isMiningActive === true ||
+            (staked > 0 && (u.status === 'active' || !u.status))
+          );
           return {
             id: u.id,
             name: u.name || u.id,
@@ -939,7 +948,7 @@ export const App: React.FC = () => {
             country: 'IN',
             registeredAt: u.created_at || 'Recently',
             status: (u.status as any) || 'active',
-            currentPlanName: staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)',
+            currentPlanName: u.active_contract_plan || (staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)'),
             stakedAmount: staked,
             totalMinedYield: Number(u.total_mined_yield) || 0,
             availableBalance: available,
@@ -951,7 +960,8 @@ export const App: React.FC = () => {
             directReferralsCount: 0,
             referralEarnings: Number(u.referral_balance) || 0,
             lastLogin: 'Active',
-            walletAddress: '0x' + u.id
+            walletAddress: '0x' + u.id,
+            isMiningActive: isMining
           };
         });
         if (mappedUsers.length === 0) {

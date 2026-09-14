@@ -2814,7 +2814,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             <td className="py-3 px-3 font-mono font-bold text-emerald-400">+${u.totalMinedYield.toFixed(2)}</td>
                             <td className="py-3 px-3 font-mono text-cyan-300 font-bold">${u.availableBalance.toFixed(2)}</td>
                             <td className="py-3 px-3 text-right">
-                              {u.isMiningActive ? (
+                              {Boolean(u.isMiningActive || (u.stakedAmount > 0 && (u.status === 'active' || !u.status))) ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                   <span>Online (Mining Active)</span>

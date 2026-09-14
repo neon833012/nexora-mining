@@ -1776,9 +1776,12 @@ app.get('/api/admin/users', async (c) => {
     const search = c.req.query('search') || '';
     let query = `
       SELECT u.id, u.name, u.mobile, u.email, u.role, u.status, u.referral_code, u.upline_code, u.created_at, u.fund_pin, u.fund_pin_set,
-             w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield
+             w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield,
+             mc.plan_name as active_contract_plan,
+             CASE WHEN (mc.status = 'active' OR w.active_mining_power > 0) AND (u.status = 'active' OR u.status IS NULL) THEN 1 ELSE 0 END as is_mining_active
       FROM users u
       LEFT JOIN wallets w ON u.id = w.user_id
+      LEFT JOIN mining_contracts mc ON u.id = mc.user_id AND mc.status = 'active'
       WHERE (u.role = 'user' OR u.role IS NULL OR u.role = '')
     `;
     let params: any[] = [];
