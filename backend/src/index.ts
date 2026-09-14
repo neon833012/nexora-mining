@@ -2102,10 +2102,8 @@ app.get('/api/settings', async (c) => {
     for (const row of results as any[]) {
       settingsMap[row.key] = row.value;
       if (row.key === 'vault_address') {
-        settingsMap.vaultWalletAddress = row.value;
-      }
-      if (row.key === 'vaultWalletAddress') {
         settingsMap.vault_address = row.value;
+        settingsMap.vaultWalletAddress = row.value;
       }
       if (row.key === 'popup_image_url') {
         settingsMap.popupImageUrl = row.value;
@@ -2125,6 +2123,9 @@ app.get('/api/settings', async (c) => {
       if (row.key === 'popupEnabled') {
         settingsMap.popup_enabled = row.value;
       }
+    }
+    if (settingsMap.vault_address) {
+      settingsMap.vaultWalletAddress = settingsMap.vault_address;
     }
     return c.json({ success: true, settings: settingsMap });
   } catch (err: any) {
@@ -2152,6 +2153,12 @@ app.get('/api/admin/settings', async (c) => {
   try {
     const { results } = await c.env.DB.prepare('SELECT key, value FROM platform_settings').all();
     const settingsMap: Record<string, string> = {
+      min_deposit: '10.0',
+      min_withdrawal: '2.0',
+      withdrawal_fee_percent: '5.0',
+      p2p_fee_percent: '0.0',
+      vault_address: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
+      vaultWalletAddress: '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d',
       popup_enabled: 'true',
       popupEnabled: 'true',
       popup_image_url: '',
@@ -2161,6 +2168,10 @@ app.get('/api/admin/settings', async (c) => {
     };
     for (const row of results as any[]) {
       settingsMap[row.key] = row.value;
+      if (row.key === 'vault_address') {
+        settingsMap.vault_address = row.value;
+        settingsMap.vaultWalletAddress = row.value;
+      }
       if (row.key === 'popup_image_url') {
         settingsMap.popupImageUrl = row.value;
       }
@@ -2179,6 +2190,9 @@ app.get('/api/admin/settings', async (c) => {
       if (row.key === 'popupEnabled') {
         settingsMap.popup_enabled = row.value;
       }
+    }
+    if (settingsMap.vault_address) {
+      settingsMap.vaultWalletAddress = settingsMap.vault_address;
     }
     return c.json({ success: true, settings: settingsMap });
   } catch (err: any) {
@@ -2202,6 +2216,14 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
     if (cleanVault && cleanVault.startsWith('0x') && cleanVault.length === 42) {
       body.vault_address = cleanVault;
       body.vaultWalletAddress = cleanVault;
+      await c.env.DB.prepare(
+        `INSERT INTO platform_settings (key, value, updated_at) VALUES ('vault_address', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+      ).bind(cleanVault).run();
+      await c.env.DB.prepare(
+        `INSERT INTO platform_settings (key, value, updated_at) VALUES ('vaultWalletAddress', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+      ).bind(cleanVault).run();
     }
 
     if (body.key && body.value !== undefined) {
@@ -2212,7 +2234,7 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
     } else {
       const statements: any[] = [];
       for (const [key, value] of Object.entries(body)) {
-        if (key === 'adminRole' || key === 'role' || key === 'popupImageUrl' || key === 'popupLinkUrl' || key === 'popupEnabled' || key === 'vaultWalletAddress') continue;
+        if (key === 'adminRole' || key === 'role' || key === 'popupImageUrl' || key === 'popupLinkUrl' || key === 'popupEnabled' || key === 'vaultWalletAddress' || key === 'vault_address') continue;
         statements.push(
           c.env.DB.prepare(
             `INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
