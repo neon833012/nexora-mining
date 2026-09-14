@@ -117,9 +117,13 @@ class NeonApiService {
       const res = await fetch(url, {
         headers: sessionToken ? { 'X-Session-Token': sessionToken } : {}
       });
-      return await res.json();
+      const data = await res.json();
+      if (res.status === 404 || data?.message === 'User not found' || data?.error === 'User not found') {
+        data.userNotFound = true;
+      }
+      return data;
     } catch (err: any) {
-      return { success: false, message: err.message };
+      return { success: false, networkError: true, message: err.message };
     }
   }
 

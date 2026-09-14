@@ -325,6 +325,14 @@ export const App: React.FC = () => {
     }, 100);
 
     const handlePopState = (event: PopStateEvent) => {
+      try {
+        const now = String(Date.now());
+        localStorage.setItem('neon_last_active_time', now);
+        if (localStorage.getItem('neon_admin_auth') === 'true') {
+          localStorage.setItem('neon_admin_last_active', now);
+        }
+      } catch {}
+
       const currentHash = window.location.hash.replace('#', '');
       if (currentHash === 'admin') {
         if (isStandaloneApp) {
@@ -336,6 +344,7 @@ export const App: React.FC = () => {
         setShowAdminPortal(true);
         return;
       }
+      setShowAdminPortal(false);
       const poppedRoute = event.state?.route as NavRoute;
       if (poppedRoute && validRoutes.includes(poppedRoute)) {
         setActiveRoute(poppedRoute);
@@ -353,6 +362,14 @@ export const App: React.FC = () => {
     };
 
     const handleHashChange = () => {
+      try {
+        const now = String(Date.now());
+        localStorage.setItem('neon_last_active_time', now);
+        if (localStorage.getItem('neon_admin_auth') === 'true') {
+          localStorage.setItem('neon_admin_last_active', now);
+        }
+      } catch {}
+
       const currentHash = window.location.hash.replace('#', '');
       if (currentHash === 'admin') {
         if (isStandaloneApp) {
@@ -364,6 +381,7 @@ export const App: React.FC = () => {
         setShowAdminPortal(true);
         return;
       }
+      setShowAdminPortal(false);
       if (validRoutes.includes(currentHash as NavRoute)) {
         setActiveRoute(currentHash as NavRoute);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1107,6 +1125,123 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Helper to perform full clean admin session logout
+  const performAdminLogout = useCallback((reasonMessage?: string) => {
+    try {
+      localStorage.removeItem('neon_admin_auth');
+      localStorage.removeItem('neon_admin_role');
+      localStorage.removeItem('neon_admin_name');
+      localStorage.removeItem('neon_admin_last_active');
+      sessionStorage.removeItem('neon_admin_auth');
+      sessionStorage.removeItem('neon_admin_role');
+      sessionStorage.removeItem('neon_admin_name');
+    } catch {}
+    setShowAdminPortal(false);
+    if (reasonMessage) {
+      showToast(reasonMessage);
+    }
+  }, []);
+
+  // 15-Minute Auto-Logout Engine for User & Admin (Active on-screen vs Background / Idle)
+  useEffect(() => {
+    const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (900,000 ms)
+
+    // Ensure neon_last_active_time is initialized
+    try {
+      if (!localStorage.getItem('neon_last_active_time')) {
+        localStorage.setItem('neon_last_active_time', String(Date.now()));
+      }
+    } catch {}
+
+    const checkAndEnforceInactivity = () => {
+      try {
+        const now = Date.now();
+        const storedLastActive = Number(localStorage.getItem('neon_last_active_time')) || now;
+        const elapsed = now - storedLastActive;
+
+        const isUserActive = localStorage.getItem('neon_is_logged_in') === 'true' || isLoggedIn;
+        const isAdminActive = localStorage.getItem('neon_admin_auth') === 'true' || sessionStorage.getItem('neon_admin_auth') === 'true';
+
+        if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+          let loggedOut = false;
+          if (isUserActive) {
+            performLogout('⚠️ Inactivity Timeout: 15 minute inactive / background rehne ke karan aapka account logout kar diya gaya.');
+            loggedOut = true;
+          }
+          if (isAdminActive) {
+            performAdminLogout('⚠️ Admin Timeout: 15 minute inactive / background rehne ke karan admin portal logout ho gaya.');
+            loggedOut = true;
+          }
+          if (loggedOut) {
+            try {
+              localStorage.setItem('neon_last_active_time', String(now));
+            } catch {}
+          }
+        }
+      } catch {}
+    };
+
+    // Check immediately on mount (e.g. if user/admin opened Chrome/app after > 15 minutes)
+    checkAndEnforceInactivity();
+
+    // Throttled activity recorder while active on screen
+    let lastRecord = 0;
+    const recordUserActivity = () => {
+      const now = Date.now();
+      if (now - lastRecord > 4000) {
+        lastRecord = now;
+        try {
+          localStorage.setItem('neon_last_active_time', String(now));
+          if (localStorage.getItem('neon_admin_auth') === 'true') {
+            localStorage.setItem('neon_admin_last_active', String(now));
+          }
+        } catch {}
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // App backgrounded, tab switched, or phone locked: record exact exit timestamp
+        const now = Date.now();
+        try {
+          localStorage.setItem('neon_last_active_time', String(now));
+          if (localStorage.getItem('neon_admin_auth') === 'true') {
+            localStorage.setItem('neon_admin_last_active', String(now));
+          }
+        } catch {}
+      } else if (document.visibilityState === 'visible') {
+        // Returned to screen: check if >= 15 minutes elapsed
+        checkAndEnforceInactivity();
+        recordUserActivity();
+      }
+    };
+
+    const handleFocus = () => {
+      checkAndEnforceInactivity();
+      recordUserActivity();
+    };
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
+    activityEvents.forEach((evt) => {
+      window.addEventListener(evt, recordUserActivity, { passive: true });
+    });
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    // Periodic check every 10 seconds (handles both idle on-screen and returning tab)
+    const inactivityInterval = setInterval(checkAndEnforceInactivity, 10000);
+
+    return () => {
+      activityEvents.forEach((evt) => {
+        window.removeEventListener(evt, recordUserActivity);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(inactivityInterval);
+    };
+  }, [isLoggedIn, performLogout, performAdminLogout]);
+
   // 2. If user is logged in, verify session & sync real wallet from D1 (Single Active Session Enforcement)
   useEffect(() => {
     if (!isLoggedIn || !userName) return;
@@ -1154,7 +1289,7 @@ export const App: React.FC = () => {
           if (res.user.fundPinSet !== undefined) {
             setUserFundPinSet(Boolean(res.user.fundPinSet));
           }
-        } else if (res && !res.success) {
+        } else if (res && !res.networkError && (res.userNotFound || res.message === 'User not found' || (res.error && String(res.error).toLowerCase().includes('not found')))) {
           // Stale / invalid session (user deleted, wiped from D1, or not found)
           performLogout();
         }
@@ -2797,6 +2932,9 @@ export const App: React.FC = () => {
 
     setIsLoggedIn(true);
     setShowAuthModal(false);
+    try {
+      localStorage.setItem('neon_last_active_time', String(Date.now()));
+    } catch {}
 
     // Refresh real D1 admin users immediately
     fetchLiveAdminUsers();

@@ -144,17 +144,22 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Secure Admin Authentication Gate State
+  // Secure Admin Authentication Gate State (15-Minute Expiration Window)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem('neon_admin_auth') === 'true';
+      const auth = localStorage.getItem('neon_admin_auth') === 'true' || sessionStorage.getItem('neon_admin_auth') === 'true';
+      const lastActive = Number(localStorage.getItem('neon_admin_last_active')) || 0;
+      if (auth && (Date.now() - lastActive < 15 * 60 * 1000)) {
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
   });
   const [authenticatedRole, setAuthenticatedRole] = useState<'superadmin' | 'subadmin'>(() => {
     try {
-      const stored = sessionStorage.getItem('neon_admin_role');
+      const stored = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
       if (stored === 'subadmin') return 'subadmin';
       if (stored === 'superadmin') return 'superadmin';
     } catch {}
@@ -162,7 +167,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
   });
   const [authenticatedName, setAuthenticatedName] = useState<string>(() => {
     try {
-      return sessionStorage.getItem('neon_admin_name') || 'Master Super Admin';
+      return localStorage.getItem('neon_admin_name') || sessionStorage.getItem('neon_admin_name') || 'Master Super Admin';
     } catch {
       return 'Master Super Admin';
     }
@@ -205,6 +210,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
     if (isSuperAdminMatch) {
       try {
+        const now = String(Date.now());
+        localStorage.setItem('neon_admin_auth', 'true');
+        localStorage.setItem('neon_admin_role', 'superadmin');
+        localStorage.setItem('neon_admin_name', 'Master Super Admin');
+        localStorage.setItem('neon_admin_last_active', now);
+        localStorage.setItem('neon_last_active_time', now);
         sessionStorage.setItem('neon_admin_auth', 'true');
         sessionStorage.setItem('neon_admin_role', 'superadmin');
         sessionStorage.setItem('neon_admin_name', 'Master Super Admin');
@@ -236,6 +247,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
     if (isDelegatedSubMatch) {
       const staffName = matchedDelegated?.name || 'Staff Sub-Admin';
       try {
+        const now = String(Date.now());
+        localStorage.setItem('neon_admin_auth', 'true');
+        localStorage.setItem('neon_admin_role', 'subadmin');
+        localStorage.setItem('neon_admin_name', staffName);
+        localStorage.setItem('neon_admin_last_active', now);
+        localStorage.setItem('neon_last_active_time', now);
         sessionStorage.setItem('neon_admin_auth', 'true');
         sessionStorage.setItem('neon_admin_role', 'subadmin');
         sessionStorage.setItem('neon_admin_name', staffName);
@@ -257,6 +274,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
         const role = (apiRes.user.role === 'superadmin' || cleanId === 'neon83301@gmail.com') ? 'superadmin' : 'subadmin';
         const name = apiRes.user.name || (role === 'superadmin' ? 'Master Super Admin' : 'Staff Sub-Admin');
         try {
+          const now = String(Date.now());
+          localStorage.setItem('neon_admin_auth', 'true');
+          localStorage.setItem('neon_admin_role', role);
+          localStorage.setItem('neon_admin_name', name);
+          localStorage.setItem('neon_admin_last_active', now);
+          localStorage.setItem('neon_last_active_time', now);
           sessionStorage.setItem('neon_admin_auth', 'true');
           sessionStorage.setItem('neon_admin_role', role);
           sessionStorage.setItem('neon_admin_name', name);
@@ -312,6 +335,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
   const handleAdminSignOut = () => {
     try {
+      localStorage.removeItem('neon_admin_auth');
+      localStorage.removeItem('neon_admin_role');
+      localStorage.removeItem('neon_admin_name');
+      localStorage.removeItem('neon_admin_last_active');
       sessionStorage.removeItem('neon_admin_auth');
       sessionStorage.removeItem('neon_admin_role');
       sessionStorage.removeItem('neon_admin_name');
@@ -2189,23 +2216,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     >
                       <RefreshCw className={`w-3 h-3 ${isRefreshingMiners ? 'animate-spin' : ''}`} />
                       <span>{isRefreshingMiners ? 'Syncing...' : 'Sync Database'}</span>
-                    </button>
-                  )}
-
-                  {isSuperadmin && onClearAllUsers && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm('⚠️ ATTENTION: Are you sure you want to permanently DELETE ALL registered users from the database? This will completely wipe all accounts, contracts, and wallets to a clean 0.')) {
-                          onClearAllUsers();
-                          triggerNotice('✓ All user accounts permanently purged.');
-                        }
-                      }}
-                      className="py-1.5 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-300 hover:text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-                      title="Delete all users and reset directory to 0"
-                    >
-                      <Trash2 className="w-3 h-3 text-red-400" />
-                      <span>Purge All Users</span>
                     </button>
                   )}
                 </div>
