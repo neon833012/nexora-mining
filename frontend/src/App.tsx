@@ -309,7 +309,7 @@ export const App: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const hash = window.location.hash.replace('#', '') as NavRoute;
     const adminParam = urlParams.get('admin');
-    const isAdminRequested = (hash as any) === 'admin' || adminParam === 'portal' || adminParam === 'true' || adminParam === '1';
+    const isAdminRequested = !isStandaloneApp && ((hash as any) === 'admin' || adminParam === 'portal' || adminParam === 'true' || adminParam === '1');
 
     if (isAdminRequested) {
       setUserRole('superadmin');
@@ -327,6 +327,11 @@ export const App: React.FC = () => {
     const handlePopState = (event: PopStateEvent) => {
       const currentHash = window.location.hash.replace('#', '');
       if (currentHash === 'admin') {
+        if (isStandaloneApp) {
+          setActiveRoute('home');
+          window.history.replaceState({ route: 'home' }, '', '#home');
+          return;
+        }
         setUserRole('superadmin');
         setShowAdminPortal(true);
         return;
@@ -350,6 +355,11 @@ export const App: React.FC = () => {
     const handleHashChange = () => {
       const currentHash = window.location.hash.replace('#', '');
       if (currentHash === 'admin') {
+        if (isStandaloneApp) {
+          setActiveRoute('home');
+          window.history.replaceState({ route: 'home' }, '', '#home');
+          return;
+        }
         setUserRole('superadmin');
         setShowAdminPortal(true);
         return;
@@ -364,8 +374,8 @@ export const App: React.FC = () => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Secret Admin Hotkey: Ctrl+Shift+A (or Cmd+Shift+A) toggles the Admin Portal
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+      // Secret Admin Hotkey: Ctrl+Shift+A (or Cmd+Shift+A) toggles the Admin Portal (Disabled in Standalone App)
+      if (!isStandaloneApp && (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
         setUserRole('superadmin');
         setShowAdminPortal((prev) => !prev);
@@ -1356,12 +1366,28 @@ export const App: React.FC = () => {
         setShowAuthModal(true);
       }
       const adminParam = searchParams.get('admin');
-      if (adminParam === 'portal' || adminParam === 'true' || adminParam === '1') {
+      if (!isStandaloneApp && (adminParam === 'portal' || adminParam === 'true' || adminParam === '1')) {
         setUserRole('superadmin');
         setShowAdminPortal(true);
       }
     }
-  }, []);
+  }, [isStandaloneApp]);
+
+  // Strict ZERO-ADMIN policy in Standalone Android APK (Admin only allowed in standard Web Browser)
+  useEffect(() => {
+    if (isStandaloneApp) {
+      if (showAdminPortal) {
+        setShowAdminPortal(false);
+      }
+      if (userRole === 'superadmin' || userRole === 'subadmin') {
+        setUserRole('user');
+      }
+      if (typeof window !== 'undefined' && window.location.hash === '#admin') {
+        window.history.replaceState({ route: 'home' }, '', '#home');
+        setActiveRoute('home');
+      }
+    }
+  }, [isStandaloneApp, showAdminPortal, userRole]);
 
   // Helper: Complete 24-Hour Mining Cycle & Distribute Yield
   const complete24HourMiningCycle = (stakedAmount: number) => {
@@ -3008,7 +3034,7 @@ export const App: React.FC = () => {
             showToast(`Language switched to: ${lang.toUpperCase()}`);
           }}
           userRole={userRole}
-          onOpenAdminPortal={() => setShowAdminPortal(true)}
+          onOpenAdminPortal={isStandaloneApp ? undefined : () => setShowAdminPortal(true)}
           onOpenDrawer={() => setIsDrawerOpen(true)}
           onGetAppClick={() => {
             const link = document.createElement('a');
@@ -3084,7 +3110,7 @@ export const App: React.FC = () => {
                   else if (sec === 'About Neon') navigateTo('about');
                   else navigateTo('home');
                 }} 
-                onOpenAdminPortal={() => {
+                onOpenAdminPortal={isStandaloneApp ? undefined : () => {
                   setUserRole('superadmin');
                   setShowAdminPortal(true);
                 }} 
@@ -3619,7 +3645,7 @@ export const App: React.FC = () => {
               setShowAuthModal(true);
             }
           }}
-          onOpenAdminPortal={() => {
+          onOpenAdminPortal={isStandaloneApp ? undefined : () => {
             setIsDrawerOpen(false);
             setUserRole('superadmin');
             setShowAdminPortal(true);
@@ -3770,8 +3796,8 @@ export const App: React.FC = () => {
           onDismiss={() => setShowLegalModal(false)}
         />
 
-        {/* Enterprise Full-System Admin Portal */}
-        {showAdminPortal && (
+        {/* Enterprise Full-System Admin Portal - COMPLETELY DISABLED IN STANDALONE APP (Browser Only) */}
+        {!isStandaloneApp && showAdminPortal && (
           <AdminSystemPortal
             isOpen={showAdminPortal}
             currentRole={userRole}
