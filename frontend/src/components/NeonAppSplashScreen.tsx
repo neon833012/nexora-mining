@@ -20,7 +20,7 @@ export const NeonAppSplashScreen: React.FC<Props> = ({ onComplete }) => {
     // Strictly monotonic progression: percentage only moves forward (Math.max)
     const steps = [
       { delay: 180, pct: 24, text: 'Initializing ASIC Core Engines...' },
-      { delay: 380, pct: 38, text: 'Syncing BSC Genesis Node #34912...' },
+      { delay: 380, pct: 38, text: 'Syncing BSC Network Node #34912...' },
       { delay: 620, pct: 52, text: 'Calibrating Fleet Node Parameters...' },
       { delay: 900, pct: 68, text: 'Locking Fleet Hashrate: 17.00 TH/s...' },
       { delay: 1200, pct: 82, text: 'Verifying BEP-20 Proof-of-Activity...' },

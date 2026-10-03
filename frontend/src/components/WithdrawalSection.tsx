@@ -16,6 +16,7 @@ import {
   Clock
 } from 'lucide-react';
 import { WithdrawalRequest } from '../types/mining';
+import { parseUtcMs } from '../utils/dateUtils';
 
 interface Props {
   availableBalance: number;
@@ -153,23 +154,26 @@ export const WithdrawalSection: React.FC<Props> = ({
   const miningYield = miningEarnings !== undefined ? miningEarnings : 0;
   const referralBonus = referralEarnings !== undefined ? referralEarnings : 0;
 
-  // Check 24-hour rate limit & pending queue strictly against real crypto withdrawals (NEVER P2P transfers)
+  // Check pending queue strictly against real crypto withdrawals (NEVER P2P transfers)
   const cryptoWithdrawals = withdrawalRequests.filter(
     (r) => r.type === 'withdrawal' || (!r.walletAddress?.toLowerCase().includes('p2p') && r.type !== 'p2p_transfer')
   );
   const pendingCryptoWithdrawal = cryptoWithdrawals.find((r) => r.status === 'pending');
   const hasPendingWithdrawal = Boolean(pendingCryptoWithdrawal);
 
-  const latestCryptoRequest = cryptoWithdrawals[0];
-  const lastWithdrawalTime = latestCryptoRequest ? latestCryptoRequest.timestampMs : 0;
-  const timeSinceLastWithdrawal = Date.now() - lastWithdrawalTime;
-  const is24hLocked = lastWithdrawalTime > 0 && timeSinceLastWithdrawal < 24 * 3600 * 1000;
-  const msRemaining = Math.max(0, 24 * 3600 * 1000 - timeSinceLastWithdrawal);
+  // 24-Hour Withdrawal Cooldown Enforcement (Synchronized via Database Records)
+  // Only 1 withdrawal per 24 hours allowed across all devices.
+  const latestCryptoWd = cryptoWithdrawals[0];
+  const lastWithdrawalTime = latestCryptoWd?.timestampMs && latestCryptoWd.timestampMs > 1000000000000
+    ? latestCryptoWd.timestampMs
+    : parseUtcMs(latestCryptoWd?.timestamp);
+  const timeSinceLastWithdrawal = lastWithdrawalTime > 0 ? Math.max(0, Date.now() - lastWithdrawalTime) : 0;
+  const is24hCooldown = lastWithdrawalTime > 0 && timeSinceLastWithdrawal < 24 * 3600 * 1000;
+  const cooldownRemainingMs = is24hCooldown ? Math.max(0, 24 * 3600 * 1000 - timeSinceLastWithdrawal) : 0;
+  const cooldownHoursLeft = is24hCooldown ? Math.floor(cooldownRemainingMs / (3600 * 1000)) : 0;
+  const cooldownMinsLeft = is24hCooldown ? Math.ceil((cooldownRemainingMs % (3600 * 1000)) / (60 * 1000)) : 0;
 
-  const hoursRemaining = Math.floor(msRemaining / (3600 * 1000));
-  const minutesRemaining = Math.floor((msRemaining % (3600 * 1000)) / (60 * 1000));
-
-  const isWithdrawalLocked = hasPendingWithdrawal || is24hLocked;
+  const isWithdrawalLocked = hasPendingWithdrawal || is24hCooldown;
 
   const amount = parseFloat(amountText) || 0;
   const isInsufficient = amount > effectiveBalance;
@@ -188,14 +192,16 @@ export const WithdrawalSection: React.FC<Props> = ({
       return;
     }
 
-    // 2. Rate Limit: 24h / single
-    if (is24hLocked) {
+    // 2. 24-Hour Cooldown Lock (Database-backed / Cross-Device)
+    if (is24hCooldown) {
       setFeedback({
-        text: `Policy Limit: Only 1 withdrawal per 24 hours allowed. Next request unlocks in ${hoursRemaining}h ${minutesRemaining}m.`,
+        text: `24-Hour Cooldown Active: Platform policy permits 1 withdrawal per 24 hours. Your next cashout unlocks in ${cooldownHoursLeft}h ${cooldownMinsLeft}m.`,
         isError: true
       });
       return;
     }
+
+
 
     // 2. Minimum 2.00 USDT check
     if (amount < 2.0) {
@@ -288,7 +294,7 @@ export const WithdrawalSection: React.FC<Props> = ({
             Withdraw USDT (BEP-20)
           </h2>
           <p className="mt-0.5 text-[11.5px] text-[#94A3B8]">
-            Min 2.00 USDT · Single request per 24H · Automatic verification & BEP-20 dispatch
+            Min 2.00 USDT · Direct on-chain verification & BEP-20 dispatch
           </p>
         </div>
 
@@ -352,6 +358,24 @@ export const WithdrawalSection: React.FC<Props> = ({
           </div>
         )}
 
+        {/* 24-Hour Cooldown Lock Banner */}
+        {!hasPendingWithdrawal && is24hCooldown && (
+          <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/40 text-cyan-300 text-[12px] flex items-start gap-2.5 shadow-[0_0_15px_rgba(0,240,255,0.1)] animate-fadeIn">
+            <Clock className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div className="flex-1 leading-relaxed">
+              <strong className="text-cyan-200 block font-bold mb-0.5">
+                ⏱️ 24-Hour Withdrawal Cooldown Active
+              </strong>
+              <span>
+                Platform security policy permits <strong>1 withdrawal per 24 hours</strong>. Your next cashout unlocks in <strong>{cooldownHoursLeft}h {cooldownMinsLeft}m</strong>.
+              </span>
+              <span className="block mt-1 text-emerald-400 font-semibold">
+                ⚡ Note: P2P Member Transfers are UNLIMITED and can be performed at any time with 0% fee without waiting.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Withdrawal Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
           {/* Amount Field */}
@@ -388,7 +412,7 @@ export const WithdrawalSection: React.FC<Props> = ({
               />
               <button
                 type="button"
-                disabled={is24hLocked || effectiveBalance <= 0}
+                disabled={isWithdrawalLocked || effectiveBalance <= 0}
                 onClick={() => setAmountText(effectiveBalance.toFixed(2))}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md bg-[#132238] text-[10.5px] font-bold text-[#00F0FF] hover:bg-[#1C3252] cursor-pointer"
               >
@@ -411,7 +435,7 @@ export const WithdrawalSection: React.FC<Props> = ({
             </label>
             <input
               type="text"
-              disabled={is24hLocked}
+              disabled={isWithdrawalLocked}
               value={walletAddress}
               onChange={(e) => {
                 setWalletAddress(e.target.value);
@@ -562,8 +586,8 @@ export const WithdrawalSection: React.FC<Props> = ({
             <span>
               {hasPendingWithdrawal
                 ? 'Withdrawal Locked (Active Request in Queue)'
-                : is24hLocked
-                ? `24H Limit (${hoursRemaining}h ${minutesRemaining}m Left)`
+                : is24hCooldown
+                ? `Withdrawal Locked (${cooldownHoursLeft}h ${cooldownMinsLeft}m Cooldown)`
                 : effectiveBalance < 2
                 ? 'Balance Below Min $2.00 Limit'
                 : isInsufficient

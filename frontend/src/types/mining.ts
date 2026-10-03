@@ -112,15 +112,22 @@ export interface DepositRecord {
 
 export interface SupportTicket {
   id: string;
-  type: 'forgot_fund_password' | 'emergency_ai' | 'general' | 'deposit';
+  type?: 'forgot_fund_password' | 'emergency_ai' | 'general' | 'deposit';
   userId: string;
   userName: string;
-  mobile: string;
+  mobile?: string;
+  email?: string;
   subject: string;
-  details: string;
-  status: 'pending' | 'resolved';
-  timestamp: string;
-  priority: 'normal' | 'emergency';
+  details?: string;
+  queryText?: string;
+  status: 'pending' | 'replied' | 'resolved';
+  timestamp?: string;
+  createdAt?: string;
+  priority?: 'normal' | 'emergency';
+  adminReply?: string;
+  adminName?: string;
+  repliedAt?: string;
+  userRead?: boolean;
 }
 
 export interface SubAdminUser {
@@ -182,6 +189,7 @@ export interface AdminUserRecord {
   stakedAmount: number;
   totalMinedYield: number;
   availableBalance: number;
+  depositBalance?: number;
   totalWithdrawn: number;
   fundPin: string;
   fundPinSet: boolean;
@@ -189,6 +197,8 @@ export interface AdminUserRecord {
   invitedBy: string;
   directReferralsCount: number;
   referralEarnings?: number;
+  dailyYieldUsdt?: number;
+  dailyRatePercent?: number;
   lastLogin: string;
   walletAddress?: string;
   isMiningActive?: boolean;
@@ -242,3 +252,15 @@ export interface PlatformSettings {
   minDepositAmount?: number;
   p2pFeePercent?: number;
 }
+
+export type BroadcastAudience = 'all' | 'active_miners' | 'no_plan';
+
+export interface AdminBroadcastMessage {
+  id: string;
+  title: string;
+  content: string;
+  targetAudience: BroadcastAudience;
+  senderAdmin: string;
+  createdAt: string;
+}
+

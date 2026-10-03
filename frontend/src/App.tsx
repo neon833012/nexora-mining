@@ -30,10 +30,12 @@ import { DepositHistoryModal } from './components/DepositHistoryModal';
 import { LegalPolicyModal, LegalPolicyKey } from './components/LegalPolicyModal';
 import { ToastNotification } from './components/ToastNotification';
 import { NeonAIChatAssistant } from './components/NeonAIChatAssistant';
+import { SupportInboxModal } from './components/SupportInboxModal';
 import { AdminSystemPortal } from './components/AdminSystemPortal';
 import { BottomNavBar, NavRoute } from './components/BottomNavBar';
 import { Smartphone, Download } from 'lucide-react';
 import { nexoraApi } from './services/api';
+import { formatUsaDateTime, parseUtcMs } from './utils/dateUtils';
 import {
   MiningPlan,
   TransactionRecord,
@@ -42,6 +44,7 @@ import {
   WithdrawalRequest,
   DepositRecord,
   SupportTicket,
+  AdminBroadcastMessage,
   SubAdminUser,
   TeamTurnover,
   AdminUserRecord,
@@ -52,6 +55,16 @@ import {
 } from './types/mining';
 
 const DEFAULT_INITIAL_REFERRED_USERS: ReferredUserItem[] = [];
+
+export const getDeviceGuestId = (): string => {
+  if (typeof window === 'undefined') return 'guest_dev';
+  let gId = localStorage.getItem('neon_device_guest_id');
+  if (!gId || gId === 'guest') {
+    gId = 'guest_' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem('neon_device_guest_id', gId);
+  }
+  return gId;
+};
 import { MINING_PLANS, INITIAL_TRANSACTIONS, INITIAL_WITHDRAWAL_REQUESTS, getTranslation, getPlanForAmount } from './data/miningPlans';
 import { getSavedLanguage, applyLanguageChange, retriggerGoogleTranslate } from './utils/languageManager';
 import { startUniversalTranslator } from './utils/universalTranslator';
@@ -154,6 +167,7 @@ export interface UserPersistentData {
   unclaimedYield?: number;
   transactions?: TransactionRecord[];
   depositRecords?: DepositRecord[];
+  totalWithdrawn?: number;
   fundPin?: string;
 }
 
@@ -179,6 +193,15 @@ export const normalizeToPlanTier = (amt: number): number => {
     if (amt >= tier - 0.50 && amt <= tier + 0.10) return tier;
   }
   return +(amt).toFixed(2);
+};
+
+export const getStoredAdminRole = (): UserRole => {
+  try {
+    const stored = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
+    if (stored === 'subadmin') return 'subadmin';
+    if (stored === 'superadmin') return 'superadmin';
+  } catch {}
+  return 'superadmin';
 };
 
 export const App: React.FC = () => {
@@ -251,69 +274,23 @@ export const App: React.FC = () => {
       localStorage.removeItem('neon_deleted_user_ids');
     } catch {}
 
-    // Purge any legacy demo / seeded records from neon_deposit_records
-    try {
-      const rawDeposits = localStorage.getItem('neon_deposit_records');
-      if (rawDeposits) {
-        const parsed = JSON.parse(rawDeposits);
-        if (Array.isArray(parsed)) {
-          const cleaned = parsed.filter(
-            (r: any) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
-          );
-          if (cleaned.length !== parsed.length) {
-            localStorage.setItem('neon_deposit_records', JSON.stringify(cleaned));
-            setDepositRecords(cleaned);
-          }
-        }
-      }
-    } catch {}
-
-    try {
-      // Purge test accounts and admin/subadmin staff from neon_admin_users
-      const rawAdminUsers = localStorage.getItem('neon_admin_users');
-      if (rawAdminUsers) {
-        const parsedUsers = JSON.parse(rawAdminUsers);
-        if (Array.isArray(parsedUsers)) {
-          const cleanUsers = parsedUsers.filter((u: any) => 
-            !isTestAccount(u.id, u.name, u.email) &&
-            u.role !== 'superadmin' && u.role !== 'subadmin' && u.role !== 'admin' &&
-            u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
-          );
-          if (cleanUsers.length !== parsedUsers.length) {
-            localStorage.setItem('neon_admin_users', JSON.stringify(cleanUsers));
-            setAdminUsers(cleanUsers);
-          }
-        }
-      }
-
-      // Purge orphan orders from neon_admin_orders
-      const rawAdminOrders = localStorage.getItem('neon_admin_orders');
-      if (rawAdminOrders) {
-        const parsedOrders = JSON.parse(rawAdminOrders);
-        if (Array.isArray(parsedOrders)) {
-          const rawAdminUsers = localStorage.getItem('neon_admin_users');
-          const parsedUsers = rawAdminUsers ? JSON.parse(rawAdminUsers) : [];
-          const userIds = new Set((parsedUsers || []).map((u: any) => (u.id || u.name || '').toLowerCase()));
-          const cleanOrders = (userIds.size === 0)
-            ? []
-            : parsedOrders.filter((o: any) => {
-                if (isTestAccount(o.userId, o.userName, o.userEmail)) return false;
-                const uid = (o.userId || o.userName || '').toLowerCase();
-                return userIds.has(uid);
-              });
-          localStorage.setItem('neon_admin_orders', JSON.stringify(cleanOrders));
-          setAdminOrders(cleanOrders);
-        }
-      }
-    } catch {}
-
     const urlParams = new URLSearchParams(window.location.search);
     const hash = window.location.hash.replace('#', '') as NavRoute;
     const adminParam = urlParams.get('admin');
-    const isAdminRequested = !isStandaloneApp && ((hash as any) === 'admin' || adminParam === 'portal' || adminParam === 'true' || adminParam === '1');
+    const hasAdminAuth = !isStandaloneApp && (
+      localStorage.getItem('neon_admin_auth') === 'true' ||
+      sessionStorage.getItem('neon_admin_auth') === 'true'
+    );
+    const isAdminRequested = !isStandaloneApp && (
+      (hash as any) === 'admin' ||
+      adminParam === 'portal' ||
+      adminParam === 'true' ||
+      adminParam === '1' ||
+      (hasAdminAuth && ((hash as string) === 'admin' || !hash || hash === 'home'))
+    );
 
     if (isAdminRequested) {
-      setUserRole('superadmin');
+      setUserRole(getStoredAdminRole());
       setShowAdminPortal(true);
       window.history.replaceState({ route: 'admin' }, '', '#admin');
     } else {
@@ -335,13 +312,17 @@ export const App: React.FC = () => {
       } catch {}
 
       const currentHash = window.location.hash.replace('#', '');
-      if (currentHash === 'admin') {
+      const hasCurrentAdminAuth = !isStandaloneApp && (
+        localStorage.getItem('neon_admin_auth') === 'true' ||
+        sessionStorage.getItem('neon_admin_auth') === 'true'
+      );
+      if (currentHash === 'admin' || (hasCurrentAdminAuth && (event.state?.route === 'admin' || currentHash === 'admin'))) {
         if (isStandaloneApp) {
           setActiveRoute('home');
           window.history.replaceState({ route: 'home' }, '', '#home');
           return;
         }
-        setUserRole('superadmin');
+        setUserRole(getStoredAdminRole());
         setShowAdminPortal(true);
         return;
       }
@@ -378,7 +359,7 @@ export const App: React.FC = () => {
           window.history.replaceState({ route: 'home' }, '', '#home');
           return;
         }
-        setUserRole('superadmin');
+        setUserRole(getStoredAdminRole());
         setShowAdminPortal(true);
         return;
       }
@@ -396,7 +377,7 @@ export const App: React.FC = () => {
       // Secret Admin Hotkey: Ctrl+Shift+A (or Cmd+Shift+A) toggles the Admin Portal (Disabled in Standalone App)
       if (!isStandaloneApp && (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
-        setUserRole('superadmin');
+        setUserRole(getStoredAdminRole());
         setShowAdminPortal((prev) => !prev);
       }
     };
@@ -419,46 +400,39 @@ export const App: React.FC = () => {
   }, [currentLang, activeRoute]);
 
   // Role Management State
-  const [userRole, setUserRole] = useState<UserRole>('user');
+  const [userRole, setUserRole] = useState<UserRole>(() => {
+    try {
+      const stored = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
+      if (stored === 'subadmin') return 'subadmin';
+      if (stored === 'superadmin') return 'superadmin';
+    } catch {}
+    return 'user';
+  });
   const [showAdminPortal, setShowAdminPortal] = useState(false);
 
   // Sub-Admins List - Clean initial empty state for fresh production
-  const [subAdmins, setSubAdmins] = useState<SubAdminUser[]>(() => loadStorage('neon_sub_admins', []));
-
-  // Enterprise Admin System State (Users, Orders, Telemetry, Rules) - Persisted in LocalStorage
-  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>(() => {
-    const loaded = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
-    return (loaded || []).filter((u) => 
-      !isTestAccount(u.id, u.name, u.email) &&
-      u.role !== 'superadmin' && u.role !== 'subadmin' && u.role !== 'admin' &&
-      u.id !== 'NEON_SUPERADMIN' && u.email !== 'neon83301@gmail.com'
-    ).map((u) => {
-      const ud = loadUserSavedData(u.id) || loadUserSavedData(u.name);
-      const isMining = Boolean(
-        u.isMiningActive ||
-        (ud?.isMiningActive && ud?.miningStartTime && (Date.now() - ud.miningStartTime < 24 * 3600 * 1000)) ||
-        (u.stakedAmount && u.stakedAmount > 0 && u.status === 'active')
-      );
-      return {
-        ...u,
-        isMiningActive: isMining
-      };
+  const [subAdmins, setSubAdmins] = useState<SubAdminUser[]>(() => {
+    const raw = loadStorage<SubAdminUser[]>('neon_sub_admins', []);
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    const clean = raw.filter((s) => {
+      const k = (s.id || s.email || s.username || '').toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
     });
-  });
-  const [adminOrders, setAdminOrders] = useState<AdminOrderRecord[]>(() => {
-    const loadedUsers = loadStorage<AdminUserRecord[]>('neon_admin_users', []);
-    if (!loadedUsers || loadedUsers.length === 0) {
+    if (clean.length !== raw.length) {
       try {
-        localStorage.setItem('neon_admin_orders', '[]');
+        localStorage.setItem('neon_sub_admins', JSON.stringify(clean));
       } catch (e) {}
-      return [];
     }
-    const loaded = loadStorage<AdminOrderRecord[]>('neon_admin_orders', []);
-    return (loaded || []).filter(
-      (o) => !isTestAccount(o.userId, o.userName, o.userEmail) && loadedUsers.some((u) => u.id === o.userId || u.name === o.userName)
-    );
+    return clean;
   });
-  const [adminTelemetry, setAdminTelemetry] = useState<AdminTelemetry>(() => loadStorage('neon_admin_telemetry', INITIAL_ADMIN_TELEMETRY));
+
+  // Enterprise Admin System State (Users, Orders, Telemetry, Rules) - Pure D1 Live Database Driven
+  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+  const [adminOrders, setAdminOrders] = useState<AdminOrderRecord[]>([]);
+  const [adminTelemetry, setAdminTelemetry] = useState<AdminTelemetry>(INITIAL_ADMIN_TELEMETRY);
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(() => loadStorage('neon_platform_settings', INITIAL_PLATFORM_SETTINGS));
 
   // Auth & Session State - Persisted in LocalStorage
@@ -494,45 +468,44 @@ export const App: React.FC = () => {
   // 3-Second Promotional Plans Showcase Popup Modal State
   const [showPromoPopup, setShowPromoPopup] = useState(false);
 
-  // Active Users Counter - Increases by exactly 40 per hour (1 every 90 seconds = 90,000 ms) + real users (adminUsers.length)
-  const [simulatedUsersCount, setSimulatedUsersCount] = useState<number>(() => {
-    let saved = loadStorageNum('neon_simulated_users', 19480);
-    if (saved > 30000) saved = 19480;
-    const lastTime = loadStorageNum('neon_simulated_users_time', Date.now());
-    const elapsedSecs = Math.max(0, Math.floor((Date.now() - lastTime) / 1000));
-    // 40 users per hour = (40 / 3600) per second = 1 user every 90 seconds
-    const addedSince = Math.floor(elapsedSecs * (40 / 3600));
-    return saved + addedSince;
-  });
+  // Globally Synchronized Active Users & Miners Counter
+  // Base: 20437 users starting on 2026-09-17 13:00:00 UTC (1789650000000 ms)
+  // Increases by exactly 40 per hour across all devices globally (1 user every 90 seconds)
+  const [currentTimestamp, setCurrentTimestamp] = useState<number>(() => Date.now());
 
-  // Ticking effect: exactly 40 per hour = 1 user every 90,000 ms (90 seconds)
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSimulatedUsersCount((prev) => {
-        const next = prev + 1;
-        try {
-          localStorage.setItem('neon_simulated_users', String(next));
-          localStorage.setItem('neon_simulated_users_time', String(Date.now()));
-        } catch (e) {}
-        return next;
-      });
-    }, 90000); // 3,600,000 ms / 40 = 90,000 ms (40 users/hour)
-
-    return () => clearInterval(interval);
+    // Tick every 3 seconds to re-calculate synchronized counts
+    const timer = setInterval(() => {
+      setCurrentTimestamp(Date.now());
+    }, 3000);
+    return () => clearInterval(timer);
   }, []);
 
-  // Total Active Users = Simulated baseline (40/min) + Real registered users
-  const activeUsersCount = simulatedUsersCount + adminUsers.length;
+  const BASE_SYNCHRONIZED_USERS = 20437;
+  const BASE_SYNCHRONIZED_EPOCH = 1789650000000; // 2026-09-17 13:00:00 UTC
 
-  // Active Miners = 75% to 85% of activeUsersCount (baseline ~80%) + real users who have an active staked plan
-  const realActiveMinersCount = useMemo(
-    () => (adminUsers || []).filter((u) => u.status === 'active' || (u.stakedAmount && u.stakedAmount > 0)).length,
-    [adminUsers]
-  );
-  const activeMinersCount = useMemo(
-    () => Math.floor(activeUsersCount * 0.798) + realActiveMinersCount,
-    [activeUsersCount, realActiveMinersCount]
-  );
+  // Total Active Users = 20437 + (elapsedSeconds * 40 / 3600) + real registered users
+  const activeUsersCount = useMemo(() => {
+    const elapsedSecs = Math.max(0, Math.floor((currentTimestamp - BASE_SYNCHRONIZED_EPOCH) / 1000));
+    const addedGrowth = Math.floor(elapsedSecs * (40 / 3600)); // Exactly 40 users per 3600s
+    return BASE_SYNCHRONIZED_USERS + addedGrowth + (adminUsers ? adminUsers.length : 0);
+  }, [currentTimestamp, adminUsers]);
+
+  // Active Miners: Universally synchronized across all devices, fluctuating smoothly between 80% and 90% of total active users
+  const activeMinersCount = useMemo(() => {
+    const minMiners = Math.floor(activeUsersCount * 0.80);
+    const maxMiners = Math.floor(activeUsersCount * 0.90);
+    const midMiners = (minMiners + maxMiners) / 2;
+    const amplitude = (maxMiners - minMiners) / 2;
+
+    const step = Math.floor(currentTimestamp / 3000);
+    const primaryWave = Math.sin(step * 0.08);
+    const microWave = Math.cos(step * 0.35) * 0.15;
+    const waveFactor = Math.max(-1, Math.min(1, primaryWave * 0.85 + microWave));
+
+    const calculated = Math.floor(midMiners + waveFactor * amplitude);
+    return Math.min(maxMiners, Math.max(minMiners, calculated));
+  }, [currentTimestamp, activeUsersCount]);
 
   // Dynamic Mining Plans State - Persisted in LocalStorage
   const [miningPlans, setMiningPlans] = useState<MiningPlan[]>(() => loadStorage('neon_mining_plans', MINING_PLANS));
@@ -545,80 +518,42 @@ export const App: React.FC = () => {
     showToast('✓ Mining plans configuration updated across platform!');
   };
 
-  // Financial Dashboard State - Persisted in LocalStorage (User-scoped)
-  const [totalBalance, setTotalBalance] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.totalBalance !== undefined) return ud.totalBalance;
-    return loadStorageNum('neon_total_balance', 0.0);
-  });
-  const [depositBalance, setDepositBalance] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.depositBalance !== undefined) return ud.depositBalance;
-    return loadStorageNum('neon_deposit_balance', 0.0);
-  });
+  // Financial Dashboard State - Authenticated Live Database Driven (Initializes clean, instantly hydrated by D1)
+  const [totalBalance, setTotalBalance] = useState<number>(0.0);
+  const [depositBalance, setDepositBalance] = useState<number>(0.0);
   const [activeMiningPower, setActiveMiningPower] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.activeMiningPower !== undefined && ud.activeMiningPower > 0) return ud.activeMiningPower;
-    return loadStorageNum('neon_mining_power', 0.0);
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.activeMiningPower ?? loadStorageNum('neon_mining_power', 0.0);
+    } catch {
+      return 0.0;
+    }
   });
-  const [totalRewards, setTotalRewards] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.totalRewards !== undefined) return ud.totalRewards;
-    return loadStorageNum('neon_total_rewards', 0.0);
-  });
-  const [referralIncome, setReferralIncome] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.referralIncome !== undefined) return ud.referralIncome;
-    return loadStorageNum('neon_referral_income', 0.0);
-  });
-  const [referralBalance, setReferralBalance] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.referralBalance !== undefined) return ud.referralBalance;
-    return loadStorageNum('neon_referral_balance', 0.0);
-  });
-  const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.yesterdaysIncome !== undefined) return ud.yesterdaysIncome;
-    return loadStorageNum('neon_yesterdays_income', 0.0);
-  });
-  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    if (ud?.availableWithdrawal !== undefined) return ud.availableWithdrawal;
-    return loadStorageNum('neon_available_withdrawal', 0.0);
-  });
+  const [totalRewards, setTotalRewards] = useState<number>(0.0);
+  const [referralIncome, setReferralIncome] = useState<number>(0.0);
+  const [referralBalance, setReferralBalance] = useState<number>(0.0);
+  const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(0.0);
+  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(0.0);
+  const [serverTotalWithdrawn, setServerTotalWithdrawn] = useState<number>(0.0);
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
-  const [transactions, setTransactions] = useState<TransactionRecord[]>(() => {
-    const saved = loadStorage<TransactionRecord[]>('neon_transactions', []);
-    return saved && saved.length > 0 ? saved : [];
-  });
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'mining' | 'deposit' | 'referral' | 'withdraw'>('all');
-  const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>(() => loadStorage('neon_referred_users', []));
+  const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>([]);
 
   // Team Turnover Volume Milestones ($1,000 -> 1.5%, $2,500 -> 2%) - Clean 0
-  const [teamTurnover, setTeamTurnover] = useState<TeamTurnover>(() => {
-    const u = loadStorageStr('neon_user_name', '');
-    const ud = loadUserSavedData(u);
-    const power = (ud?.activeMiningPower && ud.activeMiningPower > 0) ? ud.activeMiningPower : loadStorageNum('neon_mining_power', 0.0);
-    return {
-      personalStaked: power,
-      downlineL1: 0.0,
-      downlineL2: 0.0,
-      downlineL3: 0.0,
-      totalVolume: power,
-      boostedRate: power >= 2500 ? 2.5 : power >= 1000 ? 1.5 : 1.0
-    };
-  });
+  const [teamTurnover, setTeamTurnover] = useState<TeamTurnover>(() => ({
+    personalStaked: 0.0,
+    downlineL1: 0.0,
+    downlineL2: 0.0,
+    downlineL3: 0.0,
+    totalVolume: 0.0,
+    boostedRate: 1.0
+  }));
 
-  // Dynamic calculation of daily reward based on turnover boost rate
-  const todaysReward = +(activeMiningPower * (teamTurnover.boostedRate / 100)).toFixed(2);
+  // Dynamic calculation of daily reward based on active plan rate (e.g. 1.0% for $20, 1.1% for $50)
+  const activePlanRate = getPlanForAmount(activeMiningPower, miningPlans)?.dailyRatePercent || 1.0;
+  const todaysReward = +(activeMiningPower * (activePlanRate / 100)).toFixed(2);
 
   // 24-Hour Proof-of-Activity Mining Engine
   // By default, mining starts STOPPED (RED) with 0s remaining.
@@ -661,40 +596,14 @@ export const App: React.FC = () => {
     return `${datePart}, ${timePart}`;
   };
 
-  // Withdrawal Requests Queue & P2P Outgoing Ledger (Personal User History)
-  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(() => {
-    try {
-      const saved = loadStorage<WithdrawalRequest[]>('neon_withdrawal_requests', []);
-      return saved || [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Withdrawal Requests Queue & P2P Outgoing Ledger (Personal User History - Hydrated from D1)
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
 
-  // Dedicated Admin System Withdrawals Queue (All Users Across Entire Platform)
-  const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRequest[]>(() => {
-    try {
-      const saved = loadStorage<WithdrawalRequest[]>('neon_admin_withdrawals', []);
-      return saved || [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Dedicated Admin System Withdrawals Queue (All Users Across Entire Platform - Hydrated from D1)
+  const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRequest[]>([]);
 
-  // Deposit & Inflow Ledger (BEP-20 Blockchain Deposits + Incoming P2P Transfers) - Persisted in LocalStorage
-  const [depositRecords, setDepositRecords] = useState<DepositRecord[]>(() => {
-    try {
-      const saved = loadStorage<DepositRecord[]>('neon_deposit_records', []);
-      if (Array.isArray(saved)) {
-        return saved.filter(
-          (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('dep_demo_') && !r.id?.startsWith('demo_')
-        );
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Deposit & Inflow Ledger (BEP-20 Blockchain Deposits + Incoming P2P Transfers - Hydrated from D1)
+  const [depositRecords, setDepositRecords] = useState<DepositRecord[]>([]);
 
   useEffect(() => {
     try {
@@ -838,26 +747,142 @@ export const App: React.FC = () => {
   ]);
 
   // Total Settled Cashouts / Outflows (Approved external withdrawals + Outbound P2P transfers, strictly excluding rejected)
-  const totalWithdrawn = +(
+  const settledFromRequests = +(
     withdrawalRequests
       .filter((r) => r.status !== 'rejected' && (r.status === 'approved' || r.type === 'p2p_transfer'))
       .reduce((sum, r) => sum + Number(r.amount || 0), 0)
   ).toFixed(2);
+  const totalWithdrawn = Math.max(serverTotalWithdrawn, settledFromRequests);
 
   // Total Cumulative Income (Total Mined + Total Referral Earned)
   const totalCumulativeIncome = +(totalRewards + referralIncome).toFixed(2);
 
   // Active Plan Name calculation (Tiered Threshold System: 20-49.99 = Neon Lite, 50-149.99 = Cryptera, etc.)
-  const activePlanObj = getPlanForAmount(activeMiningPower, miningPlans);
+  const activePlanObj = getPlanForAmount(activeMiningPower, miningPlans) || getPlanForAmount(activeMiningPower, MINING_PLANS);
   const activePlanDisplayName = (isLoggedIn && activeMiningPower > 0)
-    ? (activePlanObj ? (activePlanObj.planName || activePlanObj.planNumber) : `Node $${activeMiningPower}`)
+    ? (activePlanObj ? (activePlanObj.planName || activePlanObj.planNumber) : `Active Rig ($${activeMiningPower})`)
     : '';
   const activePlanName = activeMiningPower > 0
-    ? (activePlanObj ? `${activePlanObj.planName || activePlanObj.planNumber} ($${activePlanObj.amount} Tier)` : `Mining Node ($${activeMiningPower} USD)`)
+    ? (activePlanObj ? `${activePlanObj.planName || activePlanObj.planNumber} ($${activePlanObj.amount} Tier)` : `Active Mining Plan ($${activeMiningPower} USD)`)
     : 'No Active Plan';
 
-  // Support Tickets Queue
-  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  // Support Tickets Queue & Inbox State (Strictly scoped per user / device guest ID)
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => {
+    try {
+      localStorage.removeItem('neon_user_tickets'); // Purge legacy shared key
+      const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+      const raw = localStorage.getItem(`neon_tickets_${ownerId}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Re-sync local tickets whenever user logs in or switches account
+  useEffect(() => {
+    const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+    const raw = localStorage.getItem(`neon_tickets_${ownerId}`);
+    setSupportTickets(raw ? JSON.parse(raw) : []);
+  }, [isLoggedIn, userName]);
+
+  const [showSupportInboxModal, setShowSupportInboxModal] = useState(false);
+  const [inboxInitialTab, setInboxInitialTab] = useState<'new' | 'inbox' | 'broadcasts'>('new');
+
+  const hasUnreadTicketReply = useMemo(() => {
+    return supportTickets.some(
+      (t) => (t.status === 'replied' || !!t.adminReply) && t.userRead === false
+    );
+  }, [supportTickets]);
+
+  // Global Broadcast Announcements & Read Tracking
+  const [broadcastVersion, setBroadcastVersion] = useState(0);
+
+  useEffect(() => {
+    const fetchBroadcastsFromD1 = async () => {
+      try {
+        const res = await nexoraApi.getBroadcasts();
+        if (res && res.success && Array.isArray(res.broadcasts)) {
+          try {
+            localStorage.setItem('neon_broadcast_announcements', JSON.stringify(res.broadcasts));
+            setBroadcastVersion((v) => v + 1);
+          } catch {}
+        }
+      } catch (e) {}
+    };
+    fetchBroadcastsFromD1();
+    const interval = setInterval(fetchBroadcastsFromD1, 8000);
+
+    const handleBroadcastSync = () => {
+      setBroadcastVersion((v) => v + 1);
+    };
+    window.addEventListener('storage', handleBroadcastSync);
+    window.addEventListener('neon_broadcast_sync', handleBroadcastSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleBroadcastSync);
+      window.removeEventListener('neon_broadcast_sync', handleBroadcastSync);
+    };
+  }, []);
+
+  const hasUnreadBroadcast = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('neon_broadcast_announcements');
+      if (!raw) return false;
+      const all: AdminBroadcastMessage[] = JSON.parse(raw);
+      const readRaw = localStorage.getItem('neon_read_broadcasts');
+      const readIds: string[] = readRaw ? JSON.parse(readRaw) : [];
+      const userHasPlan = activeMiningPower > 0;
+
+      return all.some((b) => {
+        if (readIds.includes(b.id)) return false;
+        if (b.targetAudience === 'all') return true;
+        if (userHasPlan && b.targetAudience === 'active_miners') return true;
+        if (!userHasPlan && b.targetAudience === 'no_plan') return true;
+        return false;
+      });
+    } catch {
+      return false;
+    }
+  }, [activeMiningPower, broadcastVersion]);
+
+  const hasUnreadInboxNotification = hasUnreadTicketReply || hasUnreadBroadcast;
+
+  const handleOpenSupportInbox = (tab?: 'new' | 'inbox' | 'broadcasts') => {
+    let targetTab: 'new' | 'inbox' | 'broadcasts' = tab || 'inbox';
+    if (!tab) {
+      if (hasUnreadBroadcast && !hasUnreadTicketReply) {
+        targetTab = 'broadcasts';
+      } else {
+        targetTab = 'inbox';
+      }
+    }
+    setInboxInitialTab(targetTab);
+    setShowSupportInboxModal(true);
+  };
+
+  // Sync user tickets with Cloudflare D1 backend strictly scoped to active user
+  useEffect(() => {
+    const fetchLiveTickets = async () => {
+      try {
+        const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+        const res = await nexoraApi.getUserTickets({
+          userId: ownerId,
+          email: isLoggedIn && userEmail ? userEmail : undefined,
+          mobile: isLoggedIn && userMobile ? userMobile : undefined
+        });
+        if (res && res.success && Array.isArray(res.tickets)) {
+          setSupportTickets(res.tickets);
+          try {
+            localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(res.tickets));
+          } catch {}
+        }
+      } catch (e) {}
+    };
+
+    fetchLiveTickets();
+    const interval = setInterval(fetchLiveTickets, 5000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, userName, userEmail, userMobile]);
 
   // Checkout Modal State
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<MiningPlan | null>(null);
@@ -930,11 +955,32 @@ export const App: React.FC = () => {
       const res = await nexoraApi.getAdminUsers();
       if (res && res.success && Array.isArray(res.users)) {
         const activeDbUsers = res.users.filter((u: any) => !isTestAccount(u.id, u.name, u.email));
+        // Dynamically compute direct referrals count from upline connections
+        const getDirectRefsCount = (user: any) => {
+          if (user.direct_referrals_count !== undefined && user.direct_referrals_count !== null && Number(user.direct_referrals_count) > 0) {
+            return Number(user.direct_referrals_count);
+          }
+          const uId = (user.id || '').toUpperCase();
+          const uRef = (user.referral_code || '').toUpperCase();
+          const uRefSuffix = uRef.length >= 5 ? uRef.slice(-5) : uRef;
+
+          return activeDbUsers.filter((other: any) => {
+            if (other.id === user.id) return false;
+            const upline = (other.upline_code || '').toUpperCase();
+            if (!upline) return false;
+            return (
+              upline === uId ||
+              (uRef && upline === uRef) ||
+              (uRefSuffix && upline.endsWith(uRefSuffix))
+            );
+          }).length;
+        };
+
         const mappedUsers: AdminUserRecord[] = activeDbUsers.map((u: any) => {
           const staked = Number(u.active_mining_power) || 0;
           const depBal = Number(u.deposit_balance) || 0;
           const withBal = Number(u.withdrawable_balance) || 0;
-          const available = depBal > 0 ? depBal : withBal;
+          const available = withBal; // Strictly actual withdrawable balance
           const isMining = Boolean(
             u.is_mining_active === 1 ||
             u.isMiningActive === true ||
@@ -946,19 +992,22 @@ export const App: React.FC = () => {
             email: u.email || `${u.id.toLowerCase()}@nexora.io`,
             mobile: u.mobile || '',
             country: 'IN',
-            registeredAt: u.created_at || 'Recently',
+            registeredAt: formatUsaDateTime(u.created_at),
             status: (u.status as any) || 'active',
             currentPlanName: u.active_contract_plan || (staked > 0 ? `Active Plan ($${staked})` : 'No Plan Purchased (Inactive)'),
             stakedAmount: staked,
             totalMinedYield: Number(u.total_mined_yield) || 0,
             availableBalance: available,
+            depositBalance: depBal,
             totalWithdrawn: Number(u.total_withdrawn) || 0,
             fundPin: u.fund_pin || '',
             fundPinSet: u.fund_pin_set === 1,
             referralCode: u.referral_code || '',
             invitedBy: u.upline_code || 'DIRECT',
-            directReferralsCount: 0,
+            directReferralsCount: getDirectRefsCount(u),
             referralEarnings: Number(u.referral_balance) || 0,
+            dailyYieldUsdt: Number(u.daily_yield_usdt) || 0,
+            dailyRatePercent: Number(u.daily_rate_percent) || 0,
             lastLogin: 'Active',
             walletAddress: '0x' + u.id,
             isMiningActive: isMining
@@ -983,8 +1032,13 @@ export const App: React.FC = () => {
           setAdminUsers(mappedUsers);
           setAdminTelemetry((prev) => ({
             ...prev,
-            totalRegisteredUsers: mappedUsers.length
+            totalRegisteredUsers: mappedUsers.length,
+            totalStakedPower: mappedUsers.reduce((sum, u) => sum + u.stakedAmount, 0),
+            activeMinersCount: mappedUsers.filter((u) => u.stakedAmount > 0).length
           }));
+          try {
+            localStorage.setItem('neon_admin_users', JSON.stringify(mappedUsers));
+          } catch (e) {}
 
           // Live sync real orders from D1 deposits
           try {
@@ -992,21 +1046,24 @@ export const App: React.FC = () => {
             if (depRes && depRes.success && Array.isArray(depRes.deposits)) {
               const liveOrders: AdminOrderRecord[] = depRes.deposits
                 .filter((d: any) => mappedUsers.some((u) => u.id === d.user_id || u.name === d.user_name))
+                .filter((d: any) => d.network !== 'P2P Transfer' && !String(d.network).includes('P2P') && d.token !== 'P2P')
                 .map((d: any) => {
-                  const normalizedAmt = normalizeToPlanTier(Number(d.amount) || 0);
+                  const amt = Number(d.amount) || 0;
+                  const isP2P = d.network === 'P2P Transfer' || d.token === 'P2P';
+                  const isPlan = d.is_plan === 1 || String(d.order_id).startsWith('PLAN-');
                   return {
                     id: d.order_id,
                     orderNumber: d.order_id,
                     userId: d.user_id,
                     userName: d.user_name || d.user_id,
-                    planId: `plan_${normalizedAmt}`,
-                    planName: d.network === 'P2P Transfer' ? `P2P Inbound Transfer ($${normalizedAmt.toFixed(2)})` : `BEP-20 USDT Deposit ($${normalizedAmt.toFixed(2)})`,
-                    planAmount: normalizedAmt,
-                    amountPaid: normalizedAmt,
+                    planId: isPlan ? 'plan_bought' : (isP2P ? 'p2p_transfer' : 'direct_deposit'),
+                    planName: isPlan ? (d.plan_name || `Plan Bought ($${amt.toFixed(2)})`) : (isP2P ? `P2P Inbound Transfer ($${amt.toFixed(2)})` : `Direct BEP-20 Deposit ($${amt.toFixed(2)})`),
+                    planAmount: amt,
+                    amountPaid: amt,
                     txHash: d.tx_hash,
-                    paymentMethod: d.network === 'P2P Transfer' ? 'p2p' : 'bep20',
-                    status: d.status === 'confirmed' ? 'completed' : (d.status as any),
-                    createdAt: d.created_at || 'Recently'
+                    paymentMethod: isPlan ? 'crypto' : (isP2P ? 'p2p' : 'bep20'),
+                    status: d.status === 'confirmed' || d.status === 'Settled' ? 'completed' : (d.status as any),
+                    createdAt: formatUsaDateTime(d.created_at)
                   };
                 });
               setAdminOrders(liveOrders);
@@ -1016,6 +1073,32 @@ export const App: React.FC = () => {
             }
           } catch (err) {}
         }
+        // Also fetch real sub-admins from Cloudflare D1
+        nexoraApi.getSubAdmins().then((subRes) => {
+          if (subRes && subRes.success && Array.isArray(subRes.subadmins)) {
+            const mappedSubs: SubAdminUser[] = subRes.subadmins.map((s: any) => ({
+              id: s.id,
+              name: s.name || s.email?.split('@')[0] || 'Staff Sub-Admin',
+              email: s.email,
+              username: s.email?.split('@')[0]?.toLowerCase(),
+              password: s.password_hash || '••••••••',
+              canApproveWithdrawals: false,
+              canResetPasswords: false,
+              maxApprovalLimit: 0
+            }));
+            const seen = new Set<string>();
+            const uniqueSubs = mappedSubs.filter((s) => {
+              const k = (s.id || s.email || '').toLowerCase();
+              if (!k || seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+            setSubAdmins(uniqueSubs);
+            try {
+              localStorage.setItem('neon_sub_admins', JSON.stringify(uniqueSubs));
+            } catch (e) {}
+          }
+        }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to sync admin users from D1:', err);
@@ -1037,7 +1120,7 @@ export const App: React.FC = () => {
           netAmount: Number(w.net_amount) || 0,
           walletAddress: w.wallet_address || '',
           status: (w.status as any) || 'pending',
-          timestamp: w.created_at || 'Just now',
+          timestamp: formatUsaDateTime(w.created_at),
           timestampMs: w.created_at ? new Date(w.created_at).getTime() : Date.now(),
           type: w.wallet_address?.startsWith('P2P') ? 'p2p_transfer' : 'blockchain',
           txHash: w.tx_hash || '',
@@ -1105,7 +1188,7 @@ export const App: React.FC = () => {
       'neon_referral_income', 'neon_referral_balance', 'neon_yesterdays_income',
       'neon_available_withdrawal', 'neon_mining_active', 'neon_seconds_remaining',
       'neon_unclaimed_yield', 'neon_transactions', 'neon_withdrawal_requests',
-      'neon_referred_users'
+      'neon_referred_users', 'neon_total_withdrawn'
     ];
     keysToRemove.forEach((k) => {
       try { localStorage.removeItem(k); } catch {}
@@ -1128,6 +1211,7 @@ export const App: React.FC = () => {
     setAvailableWithdrawal(0);
     setTotalBalance(0);
     setTotalRewards(0);
+    setServerTotalWithdrawn(0);
     setReferralIncome(0);
     setReferralBalance(0);
     setYesterdaysIncome(0);
@@ -1170,24 +1254,21 @@ export const App: React.FC = () => {
 
     const checkAndEnforceInactivity = () => {
       try {
+        // Standalone Mobile App Rule: NEVER auto-logout!
+        if (isStandaloneApp) {
+          return;
+        }
+
         const now = Date.now();
         const storedLastActive = Number(localStorage.getItem('neon_last_active_time')) || now;
         const elapsed = now - storedLastActive;
 
         const isUserActive = localStorage.getItem('neon_is_logged_in') === 'true' || isLoggedIn;
-        const isAdminActive = localStorage.getItem('neon_admin_auth') === 'true' || sessionStorage.getItem('neon_admin_auth') === 'true';
 
+        // Auto-logout ONLY normal web users after 15 minutes of inactivity
         if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-          let loggedOut = false;
           if (isUserActive) {
-            performLogout('⚠️ Inactivity Timeout: 15 minute inactive / background rehne ke karan aapka account logout kar diya gaya.');
-            loggedOut = true;
-          }
-          if (isAdminActive) {
-            performAdminLogout('⚠️ Admin Timeout: 15 minute inactive / background rehne ke karan admin portal logout ho gaya.');
-            loggedOut = true;
-          }
-          if (loggedOut) {
+            performLogout('Signed out due to inactivity.');
             try {
               localStorage.setItem('neon_last_active_time', String(now));
             } catch {}
@@ -1269,7 +1350,7 @@ export const App: React.FC = () => {
         // CONCURRENT LOGIN DETECTION:
         // If another device logged in with the same user ID & password, kick this session out immediately!
         if (res && res.sessionInvalidated) {
-          performLogout('⚠️ Session Expired: Aapka account dusre device/browser par login ho chuka hai. Yahan se logout ho gaya.');
+          performLogout('Session expired. Logged in from another device.');
           return;
         }
 
@@ -1280,27 +1361,73 @@ export const App: React.FC = () => {
             } catch (e) {}
           }
           const w = res.wallet;
-          const dep = Number(w.deposit_balance) || 0;
-          const withdr = Number(w.withdrawable_balance) || 0;
-          const ref = Number(w.referral_balance) || 0;
-          const power = Number(w.active_mining_power) || 0;
-          const mined = Number(w.total_mined_yield) || 0;
+          const dep = Number(w.depositBalance ?? w.deposit_balance) || 0;
+          const withdr = Number(w.withdrawableBalance ?? w.withdrawable_balance) || 0;
+          const ref = Number(w.referralBalance ?? w.referral_balance) || 0;
+          const power = Number(w.activeMiningPower ?? w.active_mining_power) || 0;
+          const mined = Number(w.totalMinedYield ?? w.total_mined_yield) || 0;
 
           // Cloudflare D1 Database is the single source of truth
-          setActiveMiningPower(power);
+          if (power > 0) {
+            setActiveMiningPower(power);
+            try {
+              localStorage.setItem('neon_mining_power', String(power));
+            } catch (e) {}
+          } else if (w.activeMiningPower !== undefined || w.active_mining_power !== undefined) {
+            setActiveMiningPower(0);
+          }
           setDepositBalance(dep);
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
           setReferralIncome(ref);
           if (mined > 0) setTotalRewards(mined);
+          const settled = Number(w.totalWithdrawn ?? w.total_withdrawn) || 0;
+          setServerTotalWithdrawn(settled);
+          try {
+            localStorage.setItem('neon_total_withdrawn', String(settled));
+          } catch (e) {}
           setTotalBalance(+(dep + withdr).toFixed(2));
+
+          // Sync Unclaimed Mining Yield from Server (Cloudflare D1 is single source of truth)
+          const unc = Number(w.unclaimedYield ?? w.unclaimed_yield) || 0;
+          setUnclaimedYield(unc);
+          try {
+            localStorage.setItem('neon_unclaimed_yield', String(unc));
+          } catch (e) {}
+
           if (res.user.email) setUserEmail(res.user.email);
           if (res.user.mobile) setUserMobile(res.user.mobile);
           if (res.user.referralCode) setUserReferralCode(res.user.referralCode);
 
+          // Server-driven 24H cloud mining state sync across all phones
+          const serverStartedAt = Number(w.miningCycleStartedAt ?? w.mining_cycle_started_at) || 0;
+          const hasServerMiningField = w.miningCycleStartedAt !== undefined || w.mining_cycle_started_at !== undefined || w.isMiningActive !== undefined;
+          if (hasServerMiningField) {
+            const elapsed = serverStartedAt > 0 ? (Date.now() - serverStartedAt) : Infinity;
+            const CYCLE_MS = 24 * 3600 * 1000;
+            if (serverStartedAt > 0 && elapsed < CYCLE_MS) {
+              setIsMiningActive(true);
+              const rem = w.miningRemainingSeconds !== undefined ? Number(w.miningRemainingSeconds) : Math.max(0, Math.floor((CYCLE_MS - elapsed) / 1000));
+              setSecondsRemaining(rem);
+              try {
+                localStorage.setItem('neon_mining_active', 'true');
+                localStorage.setItem('neon_mining_start_time', String(serverStartedAt));
+                localStorage.setItem('neon_seconds_remaining', String(rem));
+              } catch (e) {}
+            } else {
+              setIsMiningActive(false);
+              setSecondsRemaining(0);
+              try {
+                localStorage.setItem('neon_mining_active', 'false');
+                localStorage.removeItem('neon_mining_start_time');
+              } catch (e) {}
+              if (serverStartedAt > 0 && power > 0 && unc <= 0) {
+                complete24HourMiningCycle(power);
+              }
+            }
+          }
+
           // FUND PIN STATUS: Directly sync from D1 database for THIS specific user ID.
-          // If false -> user MUST create fund password on first withdrawal!
-          // If true -> user has already created their fund password!
           if (res.user.fundPinSet !== undefined) {
             setUserFundPinSet(Boolean(res.user.fundPinSet));
           }
@@ -1313,6 +1440,21 @@ export const App: React.FC = () => {
 
     verifyAndSyncSession();
 
+    // Active 4-second watchdog for instant multi-device logout detection
+    const watchdogTimer = setInterval(() => {
+      verifyAndSyncSession();
+    }, 4000);
+
+    const handleFocusSync = () => {
+      if (document.visibilityState === 'visible') {
+        verifyAndSyncSession();
+      }
+    };
+    window.addEventListener('visibilitychange', handleFocusSync);
+    window.addEventListener('focus', handleFocusSync);
+
+
+
     // 3. Fetch real wallet history (transactions, withdrawals, deposits)
     const fetchWalletHistory = () => {
       if (!userName) return;
@@ -1323,7 +1465,7 @@ export const App: React.FC = () => {
               id: t.id,
               type: t.type,
               amount: Number(t.amount) || 0,
-              date: t.created_at || 'Recently',
+              date: formatUsaDateTime(t.created_at),
               status: t.status || 'Settled',
               txHash: t.tx_hash || t.id
             }));
@@ -1343,8 +1485,8 @@ export const App: React.FC = () => {
                 netAmount: Number(w.net_amount) || 0,
                 walletAddress: w.wallet_address || '',
                 status: w.status || 'pending',
-                timestamp: w.created_at || 'Recently',
-                timestampMs: w.created_at ? new Date(w.created_at).getTime() : Date.now(),
+                timestamp: formatUsaDateTime(w.created_at),
+                timestampMs: parseUtcMs(w.created_at) || Date.now(),
                 txHash: w.tx_hash,
                 type: isP2P ? 'p2p_transfer' : 'withdrawal',
                 recipientId: recipientMatch ? recipientMatch[1] : (isP2P ? w.wallet_address.replace(/.*@/, '') : undefined),
@@ -1367,7 +1509,7 @@ export const App: React.FC = () => {
               allDeposits.push({
                 id: d.order_id || `dep_${d.id || Date.now()}`,
                 amount: normalizeToPlanTier(Number(d.amount) || 0),
-                timestamp: d.created_at || d.confirmed_at || 'Recently',
+                timestamp: formatUsaDateTime(d.created_at || d.confirmed_at),
                 timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
                 status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
                 type: isP2P ? 'p2p_received' : 'bep20_deposit',
@@ -1395,7 +1537,7 @@ export const App: React.FC = () => {
               allDeposits.push({
                 id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
                 amount: normalizeToPlanTier(Number(t.amount) || 0),
-                timestamp: t.created_at || 'Recently',
+                timestamp: formatUsaDateTime(t.created_at),
                 timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
                 status: 'completed',
                 type: isP2P ? 'p2p_received' : 'bep20_deposit',
@@ -1493,7 +1635,12 @@ export const App: React.FC = () => {
         }
       }).catch(() => {});
 
-      return () => clearInterval(sessionInterval);
+      return () => {
+        clearInterval(watchdogTimer);
+        clearInterval(sessionInterval);
+        window.removeEventListener('visibilitychange', handleFocusSync);
+        window.removeEventListener('focus', handleFocusSync);
+      };
   }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
   // Automatically trigger promotional popup modal 2.5 seconds after opening (User side only)
@@ -1521,7 +1668,7 @@ export const App: React.FC = () => {
       }
       const adminParam = searchParams.get('admin');
       if (!isStandaloneApp && (adminParam === 'portal' || adminParam === 'true' || adminParam === '1')) {
-        setUserRole('superadmin');
+        setUserRole(getStoredAdminRole());
         setShowAdminPortal(true);
       }
     }
@@ -1558,7 +1705,7 @@ export const App: React.FC = () => {
 
     // Find active plan daily yield rate (Tiered: 20 -> 1.0%, 50 -> 1.1%, 150 -> 1.2%, etc.)
     const currentPlan = getPlanForAmount(stakedAmount, miningPlans);
-    const dailyRate = currentPlan?.dailyRatePercent || (teamTurnover.boostedRate || 1.0);
+    const dailyRate = currentPlan?.dailyRatePercent || 1.0;
     const cycleYield = +(stakedAmount * (dailyRate / 100)).toFixed(2);
 
     // 1. Credit Yield to Unclaimed Reinvestment Balance (Unlocks Re-invest!)
@@ -1572,7 +1719,7 @@ export const App: React.FC = () => {
     // 2. Add Ledger Record to Transactions
     const yieldTx: TransactionRecord = {
       id: `tx_${Date.now()}_yield`,
-      type: `24H Mining Cycle Complete (${dailyRate}% on $${stakedAmount} USD Node - 1% Yield Unlocked)`,
+      type: `24H Mining Cycle Complete (${dailyRate}% on $${stakedAmount} USD Node - ${dailyRate}% Yield Unlocked)`,
       amount: cycleYield,
       date: 'Just now',
       status: 'Settled',
@@ -1616,11 +1763,7 @@ export const App: React.FC = () => {
 
   // 24H Proof-of-Activity Engine: Mount & Offline Continuity Check
   useEffect(() => {
-    if (activeMiningPower <= 0) {
-      setIsMiningActive(false);
-      setSecondsRemaining(0);
-      return;
-    }
+    if (activeMiningPower <= 0) return;
 
     const savedActive = loadStorageBool('neon_mining_active', false);
     const savedStartTime = loadStorageNum('neon_mining_start_time', 0);
@@ -1639,9 +1782,6 @@ export const App: React.FC = () => {
         // Any subsequent inactive days earn 0 yield.
         complete24HourMiningCycle(activeMiningPower);
       }
-    } else {
-      setIsMiningActive(false);
-      setSecondsRemaining(0);
     }
   }, [activeMiningPower]);
 
@@ -1716,7 +1856,7 @@ export const App: React.FC = () => {
     }
 
     // 3. User is signed in AND has purchased a plan -> Start fresh 24-Hour Cycle
-    // If mining is STOPPED (RED), start 24h cycle
+    // If mining is STOPPED (RED), start 24h cycle in Cloudflare D1
     if (!isMiningActive) {
       const cycleDuration = 24 * 3600;
       const now = Date.now();
@@ -1730,6 +1870,7 @@ export const App: React.FC = () => {
       } catch (e) {}
 
       if (userName) {
+        const storedToken = localStorage.getItem('neon_session_token') || '';
         const cleanUserId = userName.toUpperCase();
         saveUserSavedData(cleanUserId, {
           isMiningActive: true,
@@ -1757,18 +1898,30 @@ export const App: React.FC = () => {
           activeMinersCount: Math.max(prev.activeMinersCount, prev.activeMinersCount + 1)
         }));
 
-        // Notify Cloudflare API backend
-        nexoraApi.toggleUserStatus(userName, 'active').catch(() => {});
-        nexoraApi.startMiningCycle({ userId: userName }).catch(() => {});
+        // Persist 24-Hour cycle directly to Cloudflare D1 Database
+        nexoraApi.activate24hMining(userName, storedToken).then((res) => {
+          if (res && res.sessionInvalidated) {
+            performLogout('Session expired. Logged in from another device.');
+            return;
+          }
+          if (res && res.isMiningActive && res.miningCycleStartedAt) {
+            setIsMiningActive(true);
+            setSecondsRemaining(res.miningRemainingSeconds || cycleDuration);
+          }
+          if (res && res.unclaimedYield !== undefined && res.unclaimedYield > 0) {
+            setUnclaimedYield(Number(res.unclaimedYield));
+            try { localStorage.setItem('neon_unclaimed_yield', String(res.unclaimedYield)); } catch (e) {}
+          }
+        }).catch(() => {});
       }
 
-      showToast('🟢 Mining Node Started! Core turned GREEN. 24-Hour Proof-of-Activity running. Yield credited in 24h.');
+      showToast('🟢 Mining Node Started! Core turned GREEN. 24-Hour cloud cycle running non-stop. Cannot be stopped manually.');
     } else {
-      // Mining is actively running - show countdown info, do NOT reset timer
+      // Mining is actively running - LOCKED against manual stoppage
       const hrs = Math.floor(secondsRemaining / 3600);
       const mins = Math.floor((secondsRemaining % 3600) / 60);
       const secs = secondsRemaining % 60;
-      showToast(`⛏️ Mining is running — ${hrs}h ${mins}m ${secs}s remaining. Core is GREEN. Yield will be credited when 24h cycle finishes.`);
+      showToast(`🔒 24-Hour Cloud Mining is running (${hrs}h ${mins}m ${secs}s remaining). Core is GREEN. It runs 24/7 on the cloud and cannot be stopped manually.`);
     }
   };
 
@@ -2192,7 +2345,17 @@ export const App: React.FC = () => {
     setUnclaimedYield(0);
     try {
       localStorage.setItem('neon_unclaimed_yield', '0');
+      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
     } catch (e) {}
+
+    // Immediately save user profile to prevent stale watchdog overwrite
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, {
+        activeMiningPower: updatedPlanPower,
+        unclaimedYield: 0
+      });
+    }
 
     setTeamTurnover((prev) => {
       const newPersonal = +(prev.personalStaked + yieldToReinvest).toFixed(2);
@@ -2409,17 +2572,9 @@ export const App: React.FC = () => {
         totalBalance: +(newDepBal + availableWithdrawal).toFixed(2)
       });
 
-      // Use the atomic claim-deposit endpoint — this handles deposit_balance credit,
-      // transaction record, and anti-replay in one shot. Do NOT call adjustUserBalance
-      // separately — that causes duplicate balance credits.
-      nexoraApi.claimDepositTx({
-        userId: userName,
-        txHash: finalTxHash,
-        amount: effectiveAmount,
-        network: 'BEP-20'
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(() => {});
+      // Deposit was already claimed atomically in DepositDemoDialog.tsx.
+      // Refresh admin panel data and live wallet from D1 database.
+      fetchLiveAdminUsers();
     }
 
     showToast(`✓ Received +$${effectiveAmount.toFixed(2)} USDT on BNB Smart Chain! Confirmed in Deposit Balance & Admin Panel.`);
@@ -2763,27 +2918,51 @@ export const App: React.FC = () => {
     showToast('✓ Support ticket dispatched to Company Admin portal!');
   };
 
-  // Admin resets Fund PIN
-  const handleResetUserFundPin = (ticketId: string, uName: string, newPin: string) => {
-    setUserFundPassword(newPin);
+  // Admin resets Fund PIN (persisted in D1 Database)
+  const handleResetUserFundPin = async (ticketId: string, uName: string, newPin?: string) => {
+    const role = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
+    if (role === 'subadmin') return;
+    const finalPin = newPin || String(Math.floor(100000 + Math.random() * 900000));
+    
+    // Find matching user ID
+    const targetUser = adminUsers.find(u => u.name === uName || u.id === uName || u.name.includes(uName));
+    const targetUserId = targetUser ? targetUser.id : uName;
+
+    try {
+      await nexoraApi.changeFundPin({ userId: targetUserId, newPin: finalPin });
+    } catch (err) {
+      console.warn('[Admin] Failed to persist ticket fund PIN reset to D1', err);
+    }
+
+    setUserFundPassword(finalPin);
     setSupportTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'resolved' } : t))
+      prev.map((t) => (t.id === ticketId ? { ...t, status: 'replied' } : t))
     );
     setAdminUsers((prev) =>
-      prev.map((u) => (u.name.includes(uName) || u.id === uName ? { ...u, fundPin: newPin, fundPinSet: true } : u))
+      prev.map((u) => (u.name.includes(uName) || u.id === targetUserId ? { ...u, fundPin: finalPin, fundPinSet: true } : u))
     );
-    showToast(`✓ Fund PIN for ${uName} reset to "${newPin}"!`);
+    showToast(`✓ Fund PIN for ${uName} reset to "${finalPin}"!`);
   };
 
-  // Admin quick resets any user's PIN from directory
-  const handleQuickResetUserPin = (userId: string, newPin: string) => {
+  // Admin quick resets any user's PIN from directory (Persisted in D1 Database)
+  const handleQuickResetUserPin = async (userId: string, newPin: string) => {
+    const role = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
+    if (role === 'subadmin') return;
+
+    try {
+      await nexoraApi.changeFundPin({ userId, newPin });
+    } catch (err) {
+      console.warn('[Admin] Failed to update fund PIN in D1 backend', err);
+    }
+
     setAdminUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, fundPin: newPin, fundPinSet: true } : u))
     );
     if (userId === userName) {
       setUserFundPassword(newPin);
+      setUserFundPinSet(true);
     }
-    showToast(`✓ Reset PIN for ${userId} to ${newPin}`);
+    showToast(`✓ Reset PIN for ${userId} to ${newPin} in live database!`);
   };
 
   // Admin toggles user status (active, inactive, suspended)
@@ -2886,8 +3065,11 @@ export const App: React.FC = () => {
   };
 
   // Superadmin adds new Sub-Admin
-  const handleAddSubAdmin = (newAdmin: SubAdminUser) => {
+  const handleAddSubAdmin = useCallback((newAdmin: SubAdminUser) => {
     setSubAdmins((prev) => {
+      if (prev.some((a) => a.id === newAdmin.id || (a.email && newAdmin.email && a.email.toLowerCase() === newAdmin.email.toLowerCase()))) {
+        return prev;
+      }
       const updated = [...prev, newAdmin];
       try {
         localStorage.setItem('neon_sub_admins', JSON.stringify(updated));
@@ -2895,7 +3077,7 @@ export const App: React.FC = () => {
       return updated;
     });
     showToast(`✓ Sub-Admin "${newAdmin.name}" authorized.`);
-  };
+  }, []);
 
   // Superadmin revokes Sub-Admin
   const handleDeleteSubAdmin = (id: string) => {
@@ -2916,7 +3098,8 @@ export const App: React.FC = () => {
     fundPin?: string,
     email?: string,
     referralCode?: string,
-    ownReferralCode?: string
+    ownReferralCode?: string,
+    walletData?: any
   ) => {
     const cleanId = name.toUpperCase();
     setUserName(name);
@@ -2954,21 +3137,51 @@ export const App: React.FC = () => {
     // Refresh real D1 admin users immediately
     fetchLiveAdminUsers();
 
-    // 1. RESTORE FROM USER'S PERSISTED PROFILE:
+    // 1. RESTORE FROM SERVER WALLET OR PERSISTED PROFILE:
     const savedData = loadUserSavedData(cleanId);
 
-    const activePower = (savedData?.activeMiningPower && savedData.activeMiningPower > 0)
-      ? savedData.activeMiningPower
-      : (existing?.stakedAmount || 0);
+    const activePower = Number(
+      walletData?.activeMiningPower ??
+      walletData?.active_mining_power ??
+      savedData?.activeMiningPower ??
+      existing?.stakedAmount ??
+      0
+    );
 
-    const depBal = (savedData?.depositBalance !== undefined && savedData.depositBalance > 0)
-      ? savedData.depositBalance
-      : (existing?.availableBalance || 0);
+    const depBal = Number(
+      walletData?.depositBalance ??
+      walletData?.deposit_balance ??
+      savedData?.depositBalance ??
+      existing?.availableBalance ??
+      0
+    );
 
-    const withBal = savedData?.availableWithdrawal || 0;
+    const withBal = Number(
+      walletData?.withdrawableBalance ??
+      walletData?.withdrawable_balance ??
+      savedData?.availableWithdrawal ??
+      0
+    );
+
+    const refBal = Number(
+      walletData?.referralBalance ??
+      walletData?.referral_balance ??
+      savedData?.referralBalance ??
+      0
+    );
+
+    const minedYield = Number(
+      walletData?.totalMinedYield ??
+      walletData?.total_mined_yield ??
+      savedData?.totalRewards ??
+      0
+    );
 
     if (activePower > 0) {
       setActiveMiningPower(activePower);
+      try {
+        localStorage.setItem('neon_mining_power', String(activePower));
+      } catch (e) {}
     }
     if (depBal > 0) {
       setDepositBalance(depBal);
@@ -2976,11 +3189,32 @@ export const App: React.FC = () => {
     if (withBal > 0) {
       setAvailableWithdrawal(withBal);
     }
+    if (refBal > 0) {
+      setReferralBalance(refBal);
+      setReferralIncome(refBal);
+    }
+    if (minedYield > 0) {
+      setTotalRewards(minedYield);
+    }
+    const settled = Number(
+      walletData?.totalWithdrawn ??
+      walletData?.total_withdrawn ??
+      savedData?.totalWithdrawn ??
+      0
+    );
+    setServerTotalWithdrawn(settled);
+    try {
+      localStorage.setItem('neon_total_withdrawn', String(settled));
+    } catch (e) {}
     setTotalBalance(+(depBal + withBal).toFixed(2));
 
-    if (savedData?.totalRewards) setTotalRewards(savedData.totalRewards);
-    if (savedData?.referralIncome) setReferralIncome(savedData.referralIncome);
-    if (savedData?.referralBalance) setReferralBalance(savedData.referralBalance);
+    // Sync Unclaimed Mining Yield from Server / D1
+    const serverUnclaimed = Number(walletData?.unclaimedYield ?? walletData?.unclaimed_yield ?? savedData?.unclaimedYield ?? 0);
+    setUnclaimedYield(serverUnclaimed);
+    try {
+      localStorage.setItem('neon_unclaimed_yield', String(serverUnclaimed));
+    } catch (e) {}
+
     if (savedData?.transactions && savedData.transactions.length > 0) {
       setTransactions(savedData.transactions);
     }
@@ -3004,16 +3238,20 @@ export const App: React.FC = () => {
       }
     } catch (e) {}
 
-    // 2. RESTORE 24H MINING CONTINUITY:
-    const miningActive = savedData?.isMiningActive ?? false;
-    const miningStart = savedData?.miningStartTime ?? 0;
+    // 3. RESTORE 24H MINING CONTINUITY (Server D1 is primary source of truth):
+    const serverMiningStart = Number(walletData?.miningCycleStartedAt ?? walletData?.mining_cycle_started_at ?? 0);
+    const localMiningActive = savedData?.isMiningActive ?? false;
+    const localMiningStart = savedData?.miningStartTime ?? 0;
 
-    if (miningActive && miningStart > 0) {
+    const miningStart = serverMiningStart > 0 ? serverMiningStart : (localMiningActive ? localMiningStart : 0);
+    const isServerMining = Boolean(walletData?.isMiningActive || (serverMiningStart > 0 && (Date.now() - serverMiningStart < 24 * 3600 * 1000)));
+
+    if ((isServerMining || (localMiningActive && localMiningStart > 0)) && miningStart > 0) {
       const elapsed = Math.floor((Date.now() - miningStart) / 1000);
       const CYCLE_DURATION = 24 * 3600;
       if (elapsed < CYCLE_DURATION) {
         setIsMiningActive(true);
-        const rem = CYCLE_DURATION - elapsed;
+        const rem = walletData?.miningRemainingSeconds !== undefined ? Number(walletData.miningRemainingSeconds) : Math.max(0, CYCLE_DURATION - elapsed);
         setSecondsRemaining(rem);
         try {
           localStorage.setItem('neon_mining_active', 'true');
@@ -3021,8 +3259,17 @@ export const App: React.FC = () => {
           localStorage.setItem('neon_seconds_remaining', String(rem));
         } catch (e) {}
       } else {
-        // Mining cycle finished while user was logged out! Credit yield
-        complete24HourMiningCycle(activePower);
+        // Mining cycle finished while user was logged out! Credit yield if not already credited
+        if (serverUnclaimed <= 0) {
+          complete24HourMiningCycle(activePower);
+        } else {
+          setIsMiningActive(false);
+          setSecondsRemaining(0);
+          try {
+            localStorage.setItem('neon_mining_active', 'false');
+            localStorage.removeItem('neon_mining_start_time');
+          } catch (e) {}
+        }
       }
     }
 
@@ -3225,6 +3472,8 @@ export const App: React.FC = () => {
           }}
           onNavigateHome={() => navigateTo('home')}
           isStandaloneApp={isStandaloneApp}
+          onOpenInbox={() => handleOpenSupportInbox()}
+          hasUnreadReply={hasUnreadInboxNotification}
         />
 
         {/* Rolling Blockchain Live Ticker */}
@@ -3285,7 +3534,7 @@ export const App: React.FC = () => {
                   else navigateTo('home');
                 }} 
                 onOpenAdminPortal={isStandaloneApp ? undefined : () => {
-                  setUserRole('superadmin');
+                  setUserRole(getStoredAdminRole());
                   setShowAdminPortal(true);
                 }} 
                 onOpenLegalPolicy={(policyKey) => {
@@ -3334,7 +3583,7 @@ export const App: React.FC = () => {
                 totalIncome={totalCumulativeIncome}
                 activeMiningPower={activeMiningPower}
                 activePlanName={activePlanName}
-                activePlanDailyRate={teamTurnover.boostedRate}
+                activePlanDailyRate={activePlanObj?.dailyRatePercent || 1.0}
                 isMiningActive={isMiningActive}
                 isCompoundingActive={isCompoundingActive}
                 countdownText={countdownText}
@@ -3497,8 +3746,8 @@ export const App: React.FC = () => {
                         <span className="text-[11px] font-bold text-[#C084FC]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">Mined: ${totalRewards.toFixed(0)}</span>
-                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Ref: ${referralIncome.toFixed(0)}</span>
+                        <span className="text-[10px] text-[#94A3B8]">Lifetime</span>
+                        <span className="text-[10px] text-[#C084FC] font-mono font-bold">Accumulated</span>
                       </div>
                     </div>
 
@@ -3761,9 +4010,13 @@ export const App: React.FC = () => {
               )
             ) : (
               <ReferralNetworkSection
-                referralLink={`${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`}
+                referralLink={activeMiningPower > 0 ? `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}` : ''}
                 isAccountActive={activeMiningPower > 0}
                 onCopyReferral={() => {
+                  if (activeMiningPower <= 0) {
+                    showToast('⚠️ Referral link locked! Please activate any mining plan ($20+) to unlock sharing.');
+                    return;
+                  }
                   const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`;
                   navigator.clipboard?.writeText(link);
                   showToast('✓ Referral link copied to clipboard!');
@@ -3821,7 +4074,7 @@ export const App: React.FC = () => {
           }}
           onOpenAdminPortal={isStandaloneApp ? undefined : () => {
             setIsDrawerOpen(false);
-            setUserRole('superadmin');
+            setUserRole(getStoredAdminRole());
             setShowAdminPortal(true);
           }}
           currentLang={currentLang}
@@ -4047,7 +4300,6 @@ export const App: React.FC = () => {
               setAvailableWithdrawal(0);
               setIsMiningActive(false);
               setSecondsRemaining(24 * 3600);
-              setSimulatedUsersCount(18429);
               setTeamTurnover({ personalStaked: 0, downlineL1: 0, downlineL2: 0, downlineL3: 0, totalVolume: 0, boostedRate: 1.0 });
               setMiningPlans(MINING_PLANS);
               showToast('✓ All platform data reset to clean zero (0) for fresh testing!');
@@ -4056,6 +4308,27 @@ export const App: React.FC = () => {
               setShowAdminPortal(false);
               window.history.replaceState({ route: 'home' }, '', '#home');
               setActiveRoute('home');
+            }}
+            onReplySupportTicket={(ticketId, replyText, adminName) => {
+              const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+              setSupportTickets((prev) => {
+                const updated: SupportTicket[] = prev.map((t) =>
+                  t.id === ticketId
+                    ? {
+                        ...t,
+                        status: 'replied' as const,
+                        adminReply: replyText,
+                        adminName: adminName || 'Support Desk',
+                        repliedAt: new Date().toISOString(),
+                        userRead: false
+                      }
+                    : t
+                );
+                try {
+                  localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(updated));
+                } catch {}
+                return updated;
+              });
             }}
           />
         )}
@@ -4075,8 +4348,45 @@ export const App: React.FC = () => {
               setSupportTickets((prev) => [ticket, ...prev]);
               showToast('🚨 Emergency ticket dispatched to Admin On-Call Desk!');
             }}
+            onOpenInbox={() => handleOpenSupportInbox('new')}
           />
         )}
+
+        {/* Support Inbox & Query Desk Modal */}
+        <SupportInboxModal
+          isOpen={showSupportInboxModal}
+          onClose={() => setShowSupportInboxModal(false)}
+          userId={isLoggedIn && userName ? userName.toLowerCase() : getDeviceGuestId()}
+          userName={isLoggedIn && userName ? userName : 'Guest Miner'}
+          userMobile={userMobile}
+          userEmail={userEmail}
+          tickets={supportTickets}
+          onTicketCreated={(newTkt) => {
+            const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+            setSupportTickets((prev) => {
+              const updated = [newTkt, ...prev.filter((t) => t.id !== newTkt.id)];
+              try {
+                localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
+          }}
+          onMarkTicketRead={async (tktId) => {
+            const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+            setSupportTickets((prev) => {
+              const updated = prev.map((t) => (t.id === tktId ? { ...t, userRead: true } : t));
+              try {
+                localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
+            try {
+              await nexoraApi.markTicketRead(tktId);
+            } catch (e) {}
+          }}
+          initialTab={inboxInitialTab}
+          userHasActivePlan={activeMiningPower > 0}
+        />
 
         {/* Auth Modal with Mobile + Country Flag + Random Username + Google Auth */}
         <AuthModalDialog

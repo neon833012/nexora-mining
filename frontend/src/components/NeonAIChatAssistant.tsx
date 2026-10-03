@@ -13,7 +13,12 @@ import {
   UserCheck,
   CheckCircle2,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Trash2,
+  Download,
+  FileText,
+  ExternalLink,
+  Ticket
 } from 'lucide-react';
 import { ChatMessage, SupportTicket, LiveChatSession } from '../types/mining';
 import { nexoraApi } from '../services/api';
@@ -28,6 +33,7 @@ interface Props {
     planName?: string;
     availableBalance?: number;
   };
+  onOpenInbox?: () => void;
 }
 
 const STORAGE_KEY = 'neon_live_chat_sessions';
@@ -51,27 +57,236 @@ const saveStoredSessions = (sessions: LiveChatSession[]) => {
   }
 };
 
+// Robust 1-Click File Downloader — opens in new tab so user sees full PDF, also triggers download
+export const triggerPdfDownload = (
+  url: string = '/Neon Mining Official Info.pdf',
+  filename: string = 'Neon Mining Official Info.pdf'
+) => {
+  try {
+    // Open in new tab first so the full PDF renders without being cut
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch (e) {
+    window.open(url, '_blank');
+  }
+};
+
+// Clean Inline Text Formatter: Strips ALL raw asterisks (* and **) completely and renders clean bold text, links, and readable text
+const parseInlineFormatting = (line: string): React.ReactNode => {
+  if (!line) return '';
+  const normalized = line.replace(/\*\*\*/g, '**');
+  const tokens = normalized.split(/(\*\*[^*]+?\*\*|\[[^\]]+?\]\([^)]+?\))/g);
+
+  return tokens.map((token, i) => {
+    // Markdown link: [text](url)
+    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      const linkText = linkMatch[1].replace(/[*_]/g, '');
+      const linkHref = linkMatch[2];
+      return (
+        <a
+          key={i}
+          href={linkHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#00F0FF] hover:underline font-bold"
+        >
+          {linkText}
+        </a>
+      );
+    }
+
+    // Markdown bold: **text**
+    if (token.startsWith('**') && token.endsWith('**') && token.length >= 4) {
+      const inner = token.slice(2, -2).replace(/[*_]/g, '').trim();
+      return (
+        <strong key={i} className="font-bold text-white">
+          {inner}
+        </strong>
+      );
+    }
+
+    // Standard text: Strip any isolated or stray * or ** so stars NEVER appear raw
+    return <span key={i}>{token.replace(/[*_]/g, '')}</span>;
+  });
+};
+
+// Rich Interactive Content & Direct PDF Download Card Renderer
+const renderRichMessageContent = (text: string, isUserMessage: boolean = false) => {
+  if (isUserMessage) {
+    return <p className="whitespace-pre-wrap">{text.replace(/[*_]/g, '')}</p>;
+  }
+
+  const isPdfMessage =
+    text.includes('.pdf') ||
+    text.includes('Business Plan PDF') ||
+    text.includes('Official Presentation') ||
+    text.includes('Official PDF Presentation') ||
+    text.includes('Download Official PDF');
+
+  if (isPdfMessage) {
+    return (
+      <div className="space-y-2.5">
+        <div className="font-medium text-[11.5px] text-gray-200">
+          <span className="text-white font-bold">📄 Official Neon Mining Info PDF</span>
+          <p className="text-[10.5px] text-gray-400 mt-0.5">
+            Complete official presentation with plan economics, cycles, and rules.
+          </p>
+        </div>
+
+        {/* Primary Direct Download Action Card */}
+        <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#0284C7]/20 to-[#00F0FF]/15 border border-[#00F0FF]/40 space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#00F0FF]/20 border border-[#00F0FF]/50 flex items-center justify-center text-[#00F0FF] shrink-0">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="truncate flex-1">
+              <span className="text-[11.5px] font-bold text-white block truncate">
+                Neon Mining Official Info.pdf
+              </span>
+              <span className="text-[9.5px] text-cyan-300 font-mono">
+                Official Guide • Full Info Document
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            {/* Button 1: Open PDF in new tab for full viewing */}
+            <a
+              href="/Neon Mining Official Info.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-1.5 rounded-lg bg-[#00F0FF] hover:bg-cyan-300 active:scale-95 text-black font-black text-[10.5px] flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all cursor-pointer no-underline"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>Open PDF</span>
+            </a>
+            {/* Button 2: Direct download */}
+            <a
+              href="/Neon Mining Official Info.pdf"
+              download="Neon Mining Official Info.pdf"
+              className="px-2 py-1.5 rounded-lg bg-[#07162C] hover:bg-[#0E2548] active:scale-95 border border-cyan-500/40 text-cyan-300 font-bold text-[10.5px] flex items-center justify-center gap-1.5 transition-all cursor-pointer no-underline"
+            >
+              <Download className="w-3 h-3" />
+              <span>Download</span>
+            </a>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-gray-400">
+          • Includes: All plan details, daily rates, withdrawal rules, referral system & more.
+        </p>
+      </div>
+    );
+  }
+
+  // Clean Structured Text Formatter: Strips stars, renders clean bold and bullet points
+  const lines = text.split('\n');
+  const formattedElements: React.ReactNode[] = [];
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // Spacing for empty lines
+    if (!trimmed) {
+      formattedElements.push(<div key={`gap_${idx}`} className="h-1" />);
+      return;
+    }
+
+    // Bullet points (• , - , * )
+    if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const bulletContent = trimmed.replace(/^[•\-*]\s+/, '');
+      formattedElements.push(
+        <div key={`line_${idx}`} className="flex items-start gap-1.5 py-0.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#00F0FF] mt-1.5 shrink-0 shadow-[0_0_5px_#00F0FF]" />
+          <div className="flex-1 text-[#CBD5E1] text-[11px] sm:text-[11.5px] leading-relaxed">
+            {parseInlineFormatting(bulletContent)}
+          </div>
+        </div>
+      );
+      return;
+    }
+
+    // Numbered list items (1. , 2. )
+    const numberedMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+    if (numberedMatch) {
+      const num = numberedMatch[1];
+      const content = numberedMatch[2];
+      formattedElements.push(
+        <div key={`line_${idx}`} className="flex items-start gap-1.5 py-0.5">
+          <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 text-[#00F0FF] border border-cyan-500/40 text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+            {num}
+          </span>
+          <div className="flex-1 text-[#CBD5E1] text-[11px] sm:text-[11.5px] leading-relaxed">
+            {parseInlineFormatting(content)}
+          </div>
+        </div>
+      );
+      return;
+    }
+
+    // Highlight / Notice box (⚡, ⚠️, 🚨, 🎫, 👉)
+    if (
+      trimmed.startsWith('⚡') ||
+      trimmed.startsWith('⚠️') ||
+      trimmed.startsWith('🚨') ||
+      trimmed.startsWith('🎫') ||
+      trimmed.startsWith('👉')
+    ) {
+      formattedElements.push(
+        <div
+          key={`line_${idx}`}
+          className="my-1 p-2 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-200 text-[10.5px] sm:text-[11px] leading-relaxed shadow-sm"
+        >
+          {parseInlineFormatting(trimmed)}
+        </div>
+      );
+      return;
+    }
+
+    // Standard Heading or Paragraph
+    formattedElements.push(
+      <p key={`line_${idx}`} className="text-[#CBD5E1] text-[11px] sm:text-[11.5px] leading-relaxed">
+        {parseInlineFormatting(trimmed)}
+      </p>
+    );
+  });
+
+  return <div className="space-y-0.5">{formattedElements}</div>;
+};
+
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'msg_1',
     sender: 'ai',
-    text: "👋 Welcome to Neon AI Copilot! I am your 24/7 intelligent Web3 mining assistant. Ask me anything about all 7 mining plans ($20 to $3,000), 24h proof-of-activity cycles, $2.00 min withdrawals, 0% P2P transfers, or compounding auto-upgrades!\n\nIf you need personal assistance, tap **'👤 Talk to Human Agent'** anytime.",
+    text: "👋 Welcome to Neon Support! I am your 24/7 intelligent mining assistant. Ask me anything about all 7 mining plans ($20 to $3,000), 24h proof-of-activity cycles, $2.00 min cashouts, 0% P2P transfers, or compounding auto-upgrades!\n\nIf you need personal assistance, tap 'Raise Ticket' anytime.",
     timestamp: 'Just now'
   }
 ];
 
 const PRESET_PROMPTS = [
-  '📄 Download Official PDF Business Plan',
-  'What are all 7 official mining plans?',
-  'What is minimum withdrawal & fee?',
-  'How does 24H proof-of-activity cycle work?',
-  'How does auto-upgrade compounding work?',
-  'How do 0% fee P2P transfers work?',
-  'How does referral & turnover boosters work?',
-  '👤 Talk to Human Support'
+  '📄 Official PDF',
+  '⚡ 7 Mining Plans',
+  '💰 Withdraw & Fee',
+  '⏱️ 24H Mining Cycle',
+  '🔄 Compounding',
+  '🤝 0% P2P Transfers',
+  '👥 Referral Boosters',
+  '🎫 Raise Ticket'
 ];
 
-export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket, currentUser }) => {
+const filterCleanMessages = (msgs: ChatMessage[]): ChatMessage[] => {
+  return (msgs || []).filter((msg) => {
+    const textLower = (msg.text || '').toLowerCase();
+    return (
+      !textLower.includes('query resolved') &&
+      !textLower.includes('resolved your inquiry') &&
+      !textLower.includes('specialist has resolved') &&
+      !textLower.includes('[query resolved]')
+    );
+  });
+};
+
+export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket, currentUser, onOpenInbox }) => {
   const [isOpen, setIsOpen] = useState(false);
   const rawUserId = currentUser?.id && currentUser.id !== 'guest_user' ? currentUser.id : null;
   const userIdentifier = rawUserId || (typeof window !== 'undefined' ? localStorage.getItem('neon_guest_chat_id') || `guest_${Date.now().toString().slice(-4)}` : 'guest');
@@ -123,66 +338,64 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     return { x: initialX, y: initialY };
   });
 
-  const dragRef = useRef<{
-    isDragging: boolean;
-    startX: number;
-    startY: number;
-    origX: number;
-    origY: number;
-    hasMoved: boolean;
-  }>({
-    isDragging: false,
-    startX: 0,
-    startY: 0,
-    origX: 0,
-    origY: 0,
-    hasMoved: false
-  });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0, origX: 0, origY: 0, hasMoved: false });
+  const lastOpenTimeRef = useRef<number>(0);
+  const [isJustOpened, setIsJustOpened] = useState(false);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (err) {}
-    dragRef.current = {
-      isDragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: btnPos.x,
-      origY: btnPos.y,
-      hasMoved: false
+    // Only primary pointer button
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = btnPos.x;
+    const origY = btnPos.y;
+    dragStartRef.current = { x: startX, y: startY, origX, origY, hasMoved: false };
+    isDraggingRef.current = true;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.hypot(dx, dy) > 5) {
+        dragStartRef.current.hasMoved = true;
+      }
+      const maxX = typeof window !== 'undefined' ? window.innerWidth - 64 : 340;
+      const maxY = typeof window !== 'undefined' ? window.innerHeight - 74 : 600;
+      const nx = Math.min(Math.max(10, origX + dx), maxX);
+      const ny = Math.min(Math.max(10, origY + dy), maxY);
+      setBtnPos({ x: nx, y: ny });
     };
-  };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragRef.current.isDragging) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
+    const onPointerUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      isDraggingRef.current = false;
 
-    if (Math.hypot(dx, dy) > 5) {
-      dragRef.current.hasMoved = true;
-    }
+      if (!dragStartRef.current.hasMoved) {
+        // Clean tap/click — open chat without ghost click
+        lastOpenTimeRef.current = Date.now();
+        setIsJustOpened(true);
+        setIsOpen(true);
+        setTimeout(() => {
+          setIsJustOpened(false);
+        }, 400);
+      } else {
+        // Drag finished — persist coordinates
+        try {
+          const maxX = typeof window !== 'undefined' ? window.innerWidth - 64 : 340;
+          const maxY = typeof window !== 'undefined' ? window.innerHeight - 74 : 600;
+          const nx = Math.min(Math.max(10, origX + (ev.clientX - startX)), maxX);
+          const ny = Math.min(Math.max(10, origY + (ev.clientY - startY)), maxY);
+          localStorage.setItem('neon_chatbot_btn_pos', JSON.stringify({ x: nx, y: ny }));
+        } catch {}
+      }
+    };
 
-    const nextX = Math.min(Math.max(10, dragRef.current.origX + dx), window.innerWidth - 64);
-    const nextY = Math.min(Math.max(10, dragRef.current.origY + dy), window.innerHeight - 74);
-
-    setBtnPos({ x: nextX, y: nextY });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragRef.current.isDragging) return;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch (err) {}
-    const hasMoved = dragRef.current.hasMoved;
-    dragRef.current.isDragging = false;
-
-    if (!hasMoved) {
-      setIsOpen(true);
-    } else {
-      try {
-        localStorage.setItem('neon_chatbot_btn_pos', JSON.stringify(btnPos));
-      } catch (err) {}
-    }
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
   };
 
   // Sync with localStorage on load (no API call - polling handles remote sync)
@@ -192,13 +405,14 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     const loadSessionFromStorage = () => {
       const all = getStoredSessions();
       const current = all.find((s) => s.id === sessionId);
+      const cleanMsgs = filterCleanMessages(current?.messages || []);
       if (current && current.status !== 'waiting_admin') {
-        setMessages(current.messages.length > 0 ? current.messages : INITIAL_MESSAGES);
+        setMessages(cleanMsgs.length > 0 ? cleanMsgs : INITIAL_MESSAGES);
         setHasHumanJoined(current.status === 'active_admin');
         setAssignedAdmin(current.assignedAdminName);
         setIsWaitingHuman(false);
       } else {
-        setMessages(current?.messages?.length ? current.messages : INITIAL_MESSAGES);
+        setMessages(cleanMsgs.length ? cleanMsgs : INITIAL_MESSAGES);
         setIsWaitingHuman(false);
         setHasHumanJoined(false);
         setAssignedAdmin(undefined);
@@ -227,9 +441,10 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         if (res.success && res.session) {
           const remote = res.session;
           if (remote.messages && Array.isArray(remote.messages) && remote.messages.length > 0) {
+            const cleanRemote = filterCleanMessages(remote.messages);
             setMessages((prev) => {
-              if (remote.messages.length !== prev.length || JSON.stringify(remote.messages) !== JSON.stringify(prev)) {
-                return remote.messages;
+              if (cleanRemote.length !== prev.length || JSON.stringify(cleanRemote) !== JSON.stringify(prev)) {
+                return cleanRemote;
               }
               return prev;
             });
@@ -321,34 +536,24 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
   };
 
   const handleEscalateToHuman = (customPrompt?: string) => {
-    setIsWaitingHuman(true);
-
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const escalationMsg: ChatMessage = {
       id: `sys_${Date.now()}`,
       sender: 'ai',
-      text: "🚨 **[CONNECTED TO LIVE HUMAN DESK]**\n\nYour chat session and account telemetry have been routed to our **24/7 Human Support Team**! A support specialist has received an urgent on-screen notification and will reply directly in this window shortly. Please type any questions or details below.",
+      text: "🎫 **[OFFICIAL SUPPORT TICKET DESK]**\n\nNeed personal assistance or want to send a query directly to our administration team? Please click **'Raise Ticket'** (at the top/bottom of this chat or tap the **Mail/Inbox icon** in the top header).\n\nOnce our team reviews and replies to your ticket, an on-screen notification light will blink on your header Mail icon!",
       timestamp: now,
-      isEmergency: true
+      isEmergency: false
     };
 
     const updated = [...messages, escalationMsg];
     setMessages(updated);
-    persistSession(updated, 'waiting_admin');
+    persistSession(updated, 'bot');
 
-    if (onDispatchEmergencyTicket) {
-      onDispatchEmergencyTicket({
-        id: `ticket_${Date.now()}`,
-        type: 'emergency_ai',
-        userId: currentUser?.id || userIdentifier,
-        userName: currentUser?.name || userIdentifier,
-        mobile: currentUser?.mobile || '+91 9876543210',
-        subject: 'Live Chat Support Escalation',
-        details: customPrompt || 'User requested live human agent from AI chat assistant.',
-        status: 'pending',
-        priority: 'emergency',
-        timestamp: 'Just now'
-      });
+    // Optionally auto-open the Support Inbox modal for immediate ticket creation
+    if (onOpenInbox) {
+      setTimeout(() => {
+        onOpenInbox();
+      }, 600);
     }
   };
 
@@ -358,14 +563,20 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     setHasHumanJoined(false);
     setAssignedAdmin(undefined);
     try {
-      await nexoraApi.resolveAdminChat(sessionId);
       const all = getStoredSessions().filter((s) => s.id !== sessionId);
       saveStoredSessions(all);
-      localStorage.removeItem(`neon_chat_session_${userIdentifier}`);
+      const newSessionId = `session_${userIdentifier}_${Date.now()}`;
+      localStorage.setItem(`neon_chat_session_${userIdentifier}`, newSessionId);
+      setSessionId(newSessionId);
     } catch {}
   };
 
   const handleSendMessage = (textToSend?: string) => {
+    // Ignore any clicks that fire within 450ms of opening (prevents touch bleed ghost clicks)
+    if (Date.now() - lastOpenTimeRef.current < 450) {
+      return;
+    }
+
     const text = textToSend || inputText;
     if (!text.trim()) return;
 
@@ -381,16 +592,54 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
     setMessages(updatedMessages);
     if (!textToSend) setInputText('');
 
+    const lower = text.toLowerCase();
+    const isPdfRequest =
+      lower.includes('pdf') ||
+      lower.includes('presentation') ||
+      lower.includes('whitepaper') ||
+      lower.includes('business plan') ||
+      lower.includes('ppt') ||
+      lower.includes('brochure') ||
+      lower.includes('deck');
+
+    // PDF Card Response — show card in chat, user taps View/Download from card
+    if (isPdfRequest) {
+      setIsTyping(true);
+
+      setTimeout(() => {
+        setIsTyping(false);
+        const aiResponse =
+          "📄 **Official Neon Mining Info PDF:**\n\n" +
+          "Tap the button below to view or download the complete official guide:\n\n" +
+          "👉 **[📥 View / Download Official Info PDF](/Neon Mining Official Info.pdf)**\n\n" +
+          "Contains: All plan details, daily rates, withdrawal rules, referral system & more.";
+
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const aiMsg: ChatMessage = {
+          id: `ai_${Date.now()}`,
+          sender: 'ai',
+          text: aiResponse,
+          timestamp: now
+        };
+
+        const withAi = [...updatedMessages, aiMsg];
+        setMessages(withAi);
+        persistSession(withAi, isWaitingHuman ? 'waiting_admin' : hasHumanJoined ? 'active_admin' : 'bot');
+      }, 350);
+      return;
+    }
+
     // If already waiting for or speaking with a human agent, forward directly to admin queue
     if (isWaitingHuman || hasHumanJoined) {
       persistSession(updatedMessages, isWaitingHuman ? 'waiting_admin' : 'active_admin');
       return;
     }
 
-    const lower = text.toLowerCase();
-
-    // Check if user specifically requests a human agent or urgent help
+    // Check if user requests a ticket, human agent, or management help
     const isHumanRequest =
+      lower.includes('ticket') ||
+      lower.includes('raise ticket') ||
+      lower.includes('support ticket') ||
       lower.includes('human') ||
       lower.includes('admin') ||
       lower.includes('agent') ||
@@ -423,11 +672,10 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('deck')
       ) {
         aiResponse =
-          "📄 **Official Neon Mining Presentation & Business Plan PDF:**\n\n" +
-          "You can view and download our complete 16-page high-definition corporate presentation deck below:\n\n" +
-          "👉 **[📥 Download Official PDF Presentation](/Neon_Mining_Official_Presentation.pdf)**\n\n" +
-          "👉 **[🌐 View Fullscreen HD Slide Deck](/neon_mining_presentation.html)**\n\n" +
-          "Contains: Infrastructure, 7 Mining Node Tiers, 24H Proof-of-Activity Engine, 3-Tier Referral Rewards (10%-5%-2%), Team Turnover Boosters, and Security Protocols.";
+          "📄 **Official Neon Mining Info PDF:**\n\n" +
+          "You can view and download our official info document below:\n\n" +
+          "👉 **[📥 View / Download Official Info PDF](/Neon Mining Official Info.pdf)**\n\n" +
+          "Contains: All plan details, daily rates, withdrawal rules, referral system & more.";
       }
 
       // 1. ALL 7 MINING PLANS
@@ -455,8 +703,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('withdraw') ||
         lower.includes('cashout') ||
         lower.includes('payout') ||
-        lower.includes('nikal') ||
-        lower.includes('paise kaise nikale') ||
+        lower.includes('how to withdraw') ||
         lower.includes('minimum withdrawal') ||
         lower.includes('fee')
       ) {
@@ -475,7 +722,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('deposit') ||
         lower.includes('recharge') ||
         lower.includes('fund') ||
-        lower.includes('paise kaise dale') ||
+        lower.includes('how to deposit') ||
         lower.includes('add money') ||
         lower.includes('minimum deposit')
       ) {
@@ -497,8 +744,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('green') ||
         lower.includes('start mining') ||
         lower.includes('stop') ||
-        lower.includes('ghanta') ||
-        lower.includes('mining kaise start')
+        lower.includes('how to start mining')
       ) {
         aiResponse =
           "⏱️ **24-Hour Proof-of-Activity Mining Mechanics:**\n\n" +
@@ -515,7 +761,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('reinvest') ||
         lower.includes('apy') ||
         lower.includes('auto-upgrade') ||
-        lower.includes('compounding kaise')
+        lower.includes('how to compound')
       ) {
         aiResponse =
           "🚀 **Daily Auto-Compounding & Automatic Tier Upgrades:**\n\n" +
@@ -528,7 +774,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
         lower.includes('upgrade') ||
         lower.includes('difference') ||
         lower.includes('diff') ||
-        lower.includes('upgrade kaise kare')
+        lower.includes('how to upgrade')
       ) {
         aiResponse =
           "⚡ **Difference-Only Plan Upgrades:**\n\n" +
@@ -543,8 +789,8 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       else if (
         lower.includes('p2p') ||
         lower.includes('transfer') ||
-        lower.includes('bhejna') ||
-        lower.includes('dost') ||
+        lower.includes('internal transfer') ||
+        lower.includes('peer to peer') ||
         lower.includes('send to friend')
       ) {
         aiResponse =
@@ -580,7 +826,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       else if (
         lower.includes('pin') ||
         lower.includes('password') ||
-        lower.includes('bhul') ||
+        lower.includes('forgot pin') ||
         lower.includes('forgot') ||
         lower.includes('reset')
       ) {
@@ -588,29 +834,34 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           "🔑 **Fund Security PIN Recovery:**\n\n" +
           "Your 6-digit Fund PIN is required to authorize all cashouts and P2P transfers. If you have forgotten or need to reset your PIN:\n" +
           "1. Go to **Wallet ➔ Request Fund PIN Reset**.\n" +
-          "2. Or click **'👤 Talk to Human Support'** below — our on-call support specialist can verify your account and reset your PIN immediately!";
+          "2. Or click **'🎫 Raise Ticket'** below — our support specialist can assist you directly via your personal Support Inbox!";
       }
 
-      // 10. ABOUT NEON MINING & 10-YEAR HERITAGE (PROF. JIAWEI HAN)
+      // 10. ABOUT NEON MINING & LEADERSHIP (PROF. JIAWEI HAN & MARINA GURYEVA)
       else if (
         lower.includes('about') ||
         lower.includes('company') ||
         lower.includes('history') ||
         lower.includes('jiawei') ||
         lower.includes('han') ||
-        lower.includes('10 year') ||
-        lower.includes('30 year') ||
-        lower.includes('decade') ||
+        lower.includes('prof') ||
+        lower.includes('professor') ||
+        lower.includes('marina') ||
+        lower.includes('guryeva') ||
+        lower.includes('adviser') ||
+        lower.includes('advisor') ||
         lower.includes('founder') ||
+        lower.includes('leadership') ||
         lower.includes('data center') ||
-        lower.includes('kya hai')
+        lower.includes('what is neon')
       ) {
         aiResponse =
-          "🏛️ **About Neon Mining (A Decade of Green Hashrate Excellence):**\n\n" +
-          "• **10-Year Infrastructure Legacy (Est. 2016)**: Founded in 2016, Neon Mining spent a decade operating industrial hydro and geothermal ASIC clusters across 4 mega-campuses.\n" +
-          "• **Chief Scientific Fellow — Prof. Jiawei Han**: World-renowned pioneer in Data Mining & parallel compute (ACM/IEEE Fellow, 150k+ citations). He architected our proprietary *Adaptive Hash-Balancing Architecture (AHBA)*, achieving **+34.2% higher hash efficiency**.\n" +
-          "• **4 Global Renewable Mega-Campuses**: Tier-4 data centers in Iceland (100% Geothermal), Sweden (Luleå Hydro), Texas (350MW Solar/Wind), and Quebec (Hydro-Québec) powering 45,000+ Hydro ASICs.\n" +
-          "• **2026 Launch of Neon Cloud Mining**: In 2026, we officially launched our consumer cloud mining platform, democratizing institutional hashrate for everyday global users starting from just **$20.00** with 0% P2P transfers and automated 24h compounding!";
+          "🏛️ **About Neon Mining & Leadership:**\n\n" +
+          "• **13 Years of Excellence (Est. 2013)**: Established in late 2013 as an independent industrial cloud mining pioneer, our infrastructure has scaled across Iceland, Europe, and North America, serving over 2,000,000+ miners.\n" +
+          "• **Chief Scientific Fellow — Prof. Jiawei Han**: ACM/IEEE Fellow with 150,000+ academic citations. He directed the implementation of our proprietary *Adaptive Hash-Balancing Architecture (AHBA)*, delivering **+34.2% hash efficiency** across our 45,000+ Hydro ASIC fleet.\n" +
+          "• **Chief Blockchain Adviser — Marina Guryeva**: A prominent authority in blockchain architecture, smart contracts, and Web3 ecosystems with over 10 years of executive leadership, advising Neon Mining's decentralized computing and yield distribution architecture.\n" +
+          "• **2026 Flagship Launch**: In 2026, we launched **Neon Mining** as our most advanced retail cloud mining platform, bringing enterprise-grade ASIC power directly to global users starting from just **$20.00**.\n" +
+          "• **4 Global Renewable Mega-Campuses**: Powered by 100% green tier-4 infrastructure in Iceland (Geothermal), Sweden (Hydro), Texas (Solar/Wind), and Quebec (Hydro-Québec) with a 45,000+ Hydro ASIC fleet.";
       }
 
       // DEFAULT FALLBACK GREETING
@@ -623,7 +874,7 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           "• **Withdrawals**: $2.00 min cashout, 5% fee, BEP-20 network\n" +
           "• **Deposits**: $10.00 min on BSC, instant automated credit\n" +
           "• **0% P2P Transfers** & **Daily Compounding Auto-Upgrades**\n\n" +
-          "How can I help you today? Or tap **'👤 Talk to Human Support'** below for live specialist assistance!";
+          "How can I help you today? Or tap **'🎫 Raise Ticket'** below to submit an official query!";
       }
 
       const aiMsg: ChatMessage = {
@@ -637,7 +888,19 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       setMessages(finalMessages);
       setIsTyping(false);
       persistSession(finalMessages);
-    }, 850);
+    }, 700);
+  };
+
+  // Ghost Delete Message: Completely removes message from UI and Cloudflare D1 without leaving any trace
+  const handleDeleteUserMessage = async (msgId: string) => {
+    const updated = messages.filter((m) => m.id !== msgId);
+    setMessages(updated);
+    persistSession(updated);
+
+    // Silently remove from D1 Database
+    try {
+      await nexoraApi.deleteChatMessage(sessionId, msgId);
+    } catch (e) {}
   };
 
   return (
@@ -646,77 +909,70 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       {!isOpen && (
         <button
           onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
           style={{
             left: `${btnPos.x}px`,
             top: `${btnPos.y}px`,
             touchAction: 'none'
           }}
-          className="fixed z-50 select-none w-13 h-13 rounded-full bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021426] flex items-center justify-center shadow-[0_4px_25px_rgba(0,240,255,0.45)] hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing group"
-          title="Drag anywhere • Tap to open Neon AI Copilot"
+          className="fixed z-50 select-none w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-[#0284C7] to-[#00F0FF] text-[#021426] flex items-center justify-center shadow-[0_4px_25px_rgba(0,240,255,0.45)] hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing group"
+          title="Neon Support (Tap to open • Drag anywhere)"
         >
-          {isWaitingHuman || hasHumanJoined ? (
-            <div className="absolute -top-1 -right-1 flex items-center justify-center">
-              <span className="w-4 h-4 rounded-full bg-red-500 animate-ping absolute" />
-              <span className="w-4 h-4 rounded-full bg-red-600 border-2 border-[#030712] animate-pulse relative" />
-            </div>
-          ) : (
-            <div className="absolute -top-1 -right-1 flex items-center justify-center">
-              <span className="w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#030712] animate-pulse" />
-            </div>
-          )}
-          <Bot className="w-6 h-6 text-[#021426]" />
+          <Headphones className="w-5 h-5 sm:w-6 sm:h-6 text-[#021426]" />
         </button>
       )}
 
-      {/* Slide-Up Chat Drawer / Window */}
+      {/* Slide-Up Chat Window - Compact & Non-intrusive */}
       {isOpen && (
-        <div className="fixed bottom-20 right-3 xs:right-4 z-50 w-[340px] xs:w-[380px] h-[520px] max-h-[80vh] max-w-[calc(100vw-24px)] rounded-2xl bg-[#091220]/95 backdrop-blur-md border border-[#00F0FF]/40 shadow-[0_10px_40px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden animate-scaleUp">
+        <div
+          className={`fixed bottom-20 right-3 sm:right-5 z-50 w-[315px] sm:w-[350px] h-[450px] max-h-[72vh] rounded-2xl bg-[#091220]/95 backdrop-blur-md border border-[#00F0FF]/40 shadow-[0_10px_40px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden animate-scaleUp ${
+            isJustOpened ? 'pointer-events-none' : ''
+          }`}
+        >
           {/* Header */}
-          <div className="p-3 bg-[#0C1A2E] border-b border-[#162740] flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#00F0FF]/20 border border-[#00F0FF] flex items-center justify-center text-[#00F0FF]">
-                {hasHumanJoined ? <Headphones className="w-4 h-4 text-emerald-400" /> : <Bot className="w-4 h-4" />}
+          <div className="p-2.5 sm:p-3 bg-[#0C1A2E] border-b border-[#162740] flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#00F0FF]/20 border border-[#00F0FF] flex items-center justify-center text-[#00F0FF] shrink-0">
+                <Headphones className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-[13px] font-bold text-[#F8FAFC] flex items-center gap-1.5">
-                  <span>{hasHumanJoined ? `Support Specialist (${assignedAdmin || 'Support'})` : 'Neon AI Copilot'}</span>
+                <h4 className="text-[12.5px] sm:text-[13px] font-bold text-white flex items-center gap-1.5 leading-tight">
+                  <span>Neon Support</span>
                 </h4>
-                <div className="flex items-center gap-1.5 text-[10px]">
-                  {isWaitingHuman ? (
-                    <span className="text-red-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
-                      Live Human Support Requested
-                    </span>
-                  ) : hasHumanJoined ? (
-                    <span className="text-red-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                      Live Human Support Active
-                    </span>
-                  ) : (
-                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      24/7 Web3 Autonomous AI
-                    </span>
-                  )}
+                <div className="flex items-center gap-1 text-[9.5px] text-cyan-400 font-medium">
+                  <span>24/7 Active Support</span>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-1">
-              {!isWaitingHuman && !hasHumanJoined && (
-                <button
-                  onClick={() => handleEscalateToHuman()}
-                  className="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                  title="Connect with Human Support Specialist"
-                >
-                  <Headphones className="w-3 h-3 text-red-400" />
-                  <span>Talk to Human</span>
-                </button>
-              )}
-
+              {/* PDF Action */}
               <button
+                type="button"
+                onClick={() => triggerPdfDownload()}
+                className="px-2 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                title="Download Official PDF Presentation"
+              >
+                <FileText className="w-3 h-3 text-cyan-400" />
+                <span>PDF</span>
+              </button>
+
+              {/* Raise Ticket Action */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  if (onOpenInbox) onOpenInbox();
+                }}
+                className="px-2 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/35 text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                title="Raise Official Support Ticket"
+              >
+                <Ticket className="w-3 h-3 text-cyan-400" />
+                <span>Raise Ticket</span>
+              </button>
+
+              {/* Reset Chat */}
+              <button
+                type="button"
                 onClick={handleClearChat}
                 title="Reset conversation"
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-cyan-400 hover:bg-[#0D1B2E] transition-colors cursor-pointer"
@@ -724,7 +980,9 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
 
+              {/* Close */}
               <button
+                type="button"
                 onClick={() => setIsOpen(false)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
               >
@@ -733,36 +991,9 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
             </div>
           </div>
 
-          {/* Status Banner when human requested */}
-          {isWaitingHuman && (
-            <div className="px-3 py-2 bg-red-950/70 border-b border-red-600/40 flex items-center justify-between text-[11px] text-red-200">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
-                <span>Live Support Desk Notified • Specialist will reply here</span>
-              </div>
-              <button
-                onClick={handleClearChat}
-                className="text-[10px] text-red-300 hover:text-white underline cursor-pointer font-bold"
-                title="Cancel human support request"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
-          {hasHumanJoined && (
-            <div className="px-3 py-2 bg-emerald-950/60 border-b border-emerald-600/40 flex items-center justify-between text-[11px] text-emerald-200">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Connected with Specialist: <strong>{assignedAdmin || 'Agent'}</strong></span>
-              </div>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-900/40 px-1.5 py-0.5 rounded">Live</span>
-            </div>
-          )}
-
           {/* Messages Feed */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-[11.5px]">
-            {messages.map((msg) => {
+          <div className="flex-1 p-2.5 sm:p-3 overflow-y-auto space-y-2 text-[11.5px]">
+            {filterCleanMessages(messages).map((msg) => {
               const isUser = msg.sender === 'user';
               const isAdmin = msg.sender === 'admin';
 
@@ -784,9 +1015,9 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
                   )}
 
                   <div
-                    className={`max-w-[85%] rounded-xl p-2.5 leading-[16px] whitespace-pre-line ${
+                    className={`max-w-[85%] rounded-xl p-2 sm:p-2.5 text-[11px] sm:text-[11.5px] leading-relaxed ${
                       isUser
-                        ? 'bg-[#0284C7] text-white rounded-br-none shadow-md'
+                        ? 'bg-[#0284C7] text-white rounded-br-none shadow-md whitespace-pre-wrap'
                         : isAdmin
                         ? 'bg-gradient-to-r from-[#06241B] to-[#041A14] border border-emerald-500/60 text-emerald-100 rounded-bl-none shadow-lg'
                         : msg.isEmergency
@@ -795,22 +1026,34 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
                     }`}
                   >
                     {isAdmin && (
-                      <div className="flex items-center gap-1.5 mb-1 pb-1 border-b border-emerald-500/30 text-[10px] font-bold text-emerald-400">
+                      <div className="flex items-center gap-1.5 mb-1 pb-1 border-b border-emerald-500/30 text-[9.5px] font-bold text-emerald-400">
                         <Sparkles className="w-3 h-3 text-emerald-300" />
-                        <span>Support Specialist ({msg.senderName || 'Support Desk'})</span>
+                        <span>Support Specialist</span>
                       </div>
                     )}
-                    {msg.text}
-                    <span className="text-[9px] opacity-60 block text-right mt-1">
-                      {msg.timestamp}
-                    </span>
+                    {renderRichMessageContent(msg.text, isUser)}
+                    <div className="flex items-center justify-end gap-1.5 mt-1">
+                      <span className="text-[9px] opacity-60">
+                        {msg.timestamp}
+                      </span>
+                      {isUser && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUserMessage(msg.id)}
+                          title="Delete message"
+                          className="opacity-40 hover:opacity-100 hover:text-red-300 transition-all cursor-pointer p-0.5 rounded"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
 
             {isTyping && (
-              <div className="flex items-center gap-1.5 text-[11px] text-[#00F0FF]">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-[#00F0FF]">
                 <Bot className="w-3.5 h-3.5 animate-spin" />
                 <span>Neon AI is querying protocol knowledge...</span>
               </div>
@@ -819,36 +1062,24 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Persistent 'Talk to Human' Action Bar if not yet escalated */}
-          {!isWaitingHuman && !hasHumanJoined && (
-            <div className="px-3 py-1.5 bg-[#081220] border-t border-[#14233C] flex items-center justify-between">
-              <span className="text-[10.5px] text-[#94A3B8]">Query not resolved?</span>
-              <button
-                type="button"
-                onClick={() => handleEscalateToHuman()}
-                className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-600/30 to-amber-500/30 hover:from-amber-600/50 hover:to-amber-500/50 border border-amber-500/50 text-amber-300 font-bold text-[10.5px] flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
-              >
-                <Headphones className="w-3 h-3 text-amber-300" />
-                <span>Talk to Human Specialist</span>
-              </button>
-            </div>
-          )}
-
           {/* Preset Questions Strip */}
-          <div className="p-2 bg-[#060D17] border-t border-[#132034] flex gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="p-1.5 sm:p-2 bg-[#060D17] border-t border-[#132034] flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
             {PRESET_PROMPTS.map((prompt, i) => (
               <button
                 key={i}
+                type="button"
                 onClick={() => {
-                  if (prompt.includes('Human')) {
-                    handleEscalateToHuman();
+                  if (Date.now() - lastOpenTimeRef.current < 450) return;
+                  if (prompt.includes('Ticket')) {
+                    setIsOpen(false);
+                    if (onOpenInbox) onOpenInbox();
                   } else {
                     handleSendMessage(prompt);
                   }
                 }}
                 className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-medium cursor-pointer shrink-0 transition-all ${
-                  prompt.includes('Human')
-                    ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300 hover:bg-amber-500/30'
+                  prompt.includes('Ticket')
+                    ? 'bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/30 shadow-[0_0_8px_rgba(0,240,255,0.2)]'
                     : 'bg-[#0D1829] border border-[#192C45] text-[#38BDF8] hover:border-[#00F0FF]'
                 }`}
               >
@@ -861,28 +1092,24 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (Date.now() - lastOpenTimeRef.current < 450) return;
               handleSendMessage();
             }}
-            className="p-2.5 bg-[#0C1A2E] border-t border-[#162740] flex gap-2"
+            className="p-2 sm:p-2.5 bg-[#0C1A2E] border-t border-[#162740] flex gap-2 shrink-0"
           >
             <input
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={
-                hasHumanJoined
-                  ? 'Message live support specialist...'
-                  : isWaitingHuman
-                  ? 'Add notes for human support agent...'
-                  : "Ask AI or type 'talk to human'..."
-              }
-              className="flex-1 rounded-xl bg-[#060D18] border border-[#192D48] px-3 py-2 text-[12px] text-white focus:outline-none focus:border-[#00F0FF]"
+              placeholder="Ask a question or tap 'Raise Ticket'..."
+              className="flex-1 rounded-xl bg-[#060D18] border border-[#192D48] px-3 py-1.5 text-[11.5px] text-white placeholder:text-gray-500 focus:outline-none focus:border-[#00F0FF]"
             />
             <button
               type="submit"
-              className="w-9 h-9 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white flex items-center justify-center cursor-pointer transition-all active:scale-95"
+              disabled={!inputText.trim()}
+              className="w-8 h-8 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-3.5 h-3.5" />
             </button>
           </form>
         </div>

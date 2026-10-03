@@ -49,8 +49,8 @@ export const AdminPortalModal: React.FC<Props> = ({
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<'withdrawals' | 'tickets' | 'users' | 'subadmins' | 'settings'>('withdrawals');
-  const [newSubAdminName, setNewSubAdminName] = useState('');
   const [newSubAdminEmail, setNewSubAdminEmail] = useState('');
+  const [newSubAdminPassword, setNewSubAdminPassword] = useState('');
   const [canApprove, setCanApprove] = useState(true);
   const [canResetPin, setCanResetPin] = useState(true);
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
@@ -74,19 +74,24 @@ export const AdminPortalModal: React.FC<Props> = ({
 
   const handleCreateSubAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSubAdminName.trim() || !newSubAdminEmail.trim()) return;
+    const email = newSubAdminEmail.trim().toLowerCase();
+    const password = newSubAdminPassword.trim();
+    if (!email || !password) return;
+
+    const assignedName = email.split('@')[0];
 
     const newAdmin: SubAdminUser = {
       id: `sub_${Date.now()}`,
-      name: newSubAdminName.trim(),
-      email: newSubAdminEmail.trim(),
+      name: assignedName,
+      email,
+      password,
       canApproveWithdrawals: canApprove,
       canResetPasswords: canResetPin,
       maxApprovalLimit: 100
     };
 
     onAddSubAdmin(newAdmin);
-    setNewSubAdminName('');
+    setNewSubAdminPassword('');
     setNewSubAdminEmail('');
   };
 
@@ -392,19 +397,7 @@ export const AdminPortalModal: React.FC<Props> = ({
                 </span>
 
                 <div>
-                  <label className="text-[10.5px] text-[#94A3B8] block">Sub-Admin Name:</label>
-                  <input
-                    type="text"
-                    required
-                    value={newSubAdminName}
-                    onChange={(e) => setNewSubAdminName(e.target.value)}
-                    placeholder="e.g. Rahul Sharma"
-                    className="w-full mt-1 p-2 rounded-lg bg-[#0A1424] border border-[#1A2C44] text-[12px] text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] text-[#94A3B8] block">Official Email:</label>
+                  <label className="text-[10.5px] text-[#94A3B8] block">Official Email (Required):</label>
                   <input
                     type="email"
                     required
@@ -412,6 +405,18 @@ export const AdminPortalModal: React.FC<Props> = ({
                     onChange={(e) => setNewSubAdminEmail(e.target.value)}
                     placeholder="e.g. audit.desk@neon-mining.io"
                     className="w-full mt-1 p-2 rounded-lg bg-[#0A1424] border border-[#1A2C44] text-[12px] text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10.5px] text-[#94A3B8] block">Initial Password Set by Admin (Required):</label>
+                  <input
+                    type="text"
+                    required
+                    value={newSubAdminPassword}
+                    onChange={(e) => setNewSubAdminPassword(e.target.value)}
+                    placeholder="Set initial password (e.g. Staff@2026)"
+                    className="w-full mt-1 p-2 rounded-lg bg-[#0A1424] border border-[#1A2C44] text-[12px] text-white font-mono"
                   />
                 </div>
 

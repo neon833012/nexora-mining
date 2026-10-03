@@ -21,6 +21,7 @@ import {
   Check
 } from 'lucide-react';
 import { TeamTurnover } from '../types/mining';
+import { MINING_PLANS, getPlanForAmount } from '../data/miningPlans';
 
 interface Props {
   // Balances
@@ -115,6 +116,8 @@ export const DashboardPreviewSection: React.FC<Props> = ({
     return centers[Math.floor(Math.random() * centers.length)];
   });
 
+  const [isReinvesting, setIsReinvesting] = useState(false);
+
   useEffect(() => {
     const centers = [
       'Campus 01 (Iceland)',
@@ -156,6 +159,16 @@ export const DashboardPreviewSection: React.FC<Props> = ({
   const progressPercent = Math.min(100, Math.floor((teamTurnover.totalVolume / nextTarget) * 100));
 
   const pureMinedYield = +(totalIncome - totalReferralIncome).toFixed(2);
+
+  // Fallback and robust active plan resolution (Strictly ensures plan name is never "No Active Plan" when money is staked)
+  const isPlanActive = Number(activeMiningPower || 0) > 0;
+  const fallbackPlan = isPlanActive ? getPlanForAmount(activeMiningPower, MINING_PLANS) : undefined;
+  const displayPlanName = isPlanActive
+    ? (activePlanName && activePlanName.trim() !== '' && !activePlanName.toLowerCase().includes('no active plan')
+        ? activePlanName
+        : (fallbackPlan ? `${fallbackPlan.planName} ($${fallbackPlan.amount} Tier)` : `Active Mining Rig ($${Number(activeMiningPower).toFixed(2)} USD)`))
+    : 'No Active Plan';
+  const effectiveDailyRate = fallbackPlan?.dailyRatePercent || activePlanDailyRate || 1.0;
 
   return (
     <section className="w-full px-3.5 lg:px-0 space-y-5">
@@ -204,9 +217,9 @@ export const DashboardPreviewSection: React.FC<Props> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-extrabold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
-                <span>{activeMiningPower > 0 ? 'ACTIVE MINING PLAN' : 'NO PLAN ACTIVE'}</span>
+                <span>{isPlanActive ? 'ACTIVE MINING PLAN' : 'NO PLAN ACTIVE'}</span>
               </span>
-              {activeMiningPower > 0 && (
+              {isPlanActive && (
                 <span className="text-[10.5px] text-[#00F0FF] font-mono font-bold bg-[#00F0FF]/10 px-2 py-0.5 rounded-full border border-[#00F0FF]/25">
                   {activeMiningPower} TH/s SHA-256 Hashrate
                 </span>
@@ -218,9 +231,9 @@ export const DashboardPreviewSection: React.FC<Props> = ({
 
             <div className="flex items-baseline gap-2.5">
               <h3 className="text-[20px] lg:text-[25px] font-black text-white tracking-tight">
-                {activeMiningPower > 0 ? activePlanName : 'No Active Plan'}
+                {displayPlanName}
               </h3>
-              {activeMiningPower > 0 && (
+              {isPlanActive && (
                 <span className="text-[14px] font-mono font-bold text-[#10B981]">
                   (${activeMiningPower.toFixed(2)} USD Staked)
                 </span>
@@ -228,7 +241,7 @@ export const DashboardPreviewSection: React.FC<Props> = ({
             </div>
           </div>
 
-          {activeMiningPower <= 0 && (
+          {!isPlanActive && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -244,19 +257,19 @@ export const DashboardPreviewSection: React.FC<Props> = ({
         </div>
 
         {/* Plan Specifications Clean Grid */}
-        {activeMiningPower > 0 && (
+        {isPlanActive && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-[#142642]">
             <div className="p-2.5 rounded-xl bg-[#061120] border border-[#142844]">
               <span className="text-[10px] text-[#94A3B8] uppercase block font-bold">Daily Return Rate</span>
               <span className="text-[14px] font-mono font-black text-[#10B981]">
-                {activePlanDailyRate.toFixed(2)}% / day
+                {effectiveDailyRate.toFixed(2)}% / day
               </span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-[#061120] border border-[#142844]">
               <span className="text-[10px] text-[#94A3B8] uppercase block font-bold">Daily Est. Yield</span>
               <span className="text-[14px] font-mono font-black text-[#00F0FF]">
-                +${todaysIncome.toFixed(2)} USD
+                +${(activeMiningPower * (effectiveDailyRate / 100)).toFixed(2)} USD
               </span>
             </div>
 
@@ -286,10 +299,10 @@ export const DashboardPreviewSection: React.FC<Props> = ({
             <Activity className="w-3.5 h-3.5" />
           </div>
           <div className="text-[20px] lg:text-[24px] font-black font-mono text-[#00F0FF]">
-            +${todaysIncome.toFixed(2)} <span className="text-[11px] font-normal text-[#64748B]">USD</span>
+            +${(todaysIncome > 0 ? todaysIncome : (activeMiningPower * (activePlanDailyRate / 100))).toFixed(2)} <span className="text-[11px] font-normal text-[#64748B]">USD</span>
           </div>
           <div className="text-[10.5px] text-[#94A3B8] flex justify-between pt-1 border-t border-[#10243C]">
-            <span>Rate: <strong className="text-[#10B981]">{activePlanDailyRate.toFixed(1)}% / day</strong></span>
+            <span>Rate: <strong className="text-[#10B981]">{activePlanDailyRate.toFixed(2)}% / day</strong></span>
             <span className="text-[#00F0FF]">Active Cycle</span>
           </div>
         </div>
@@ -411,7 +424,7 @@ export const DashboardPreviewSection: React.FC<Props> = ({
                 </div>
 
                 <span className="text-[10.5px] text-[#94A3B8] block mt-0.5">
-                  24-Hour Mining Engine: Start button dabate hi 24-hour cycle shuru hota hai. Cycle poora hote hi aapke plan ka daily yield (1.0% se 2.0%) unlock ho jata hai. Mining ka koi alag se fee ya extra charge nahi hai.
+                  24-Hour Mining Engine: Tap 'Start Mining' to activate the 24-hour cycle. Daily plan yield (1.0% to 2.0%) unlocks automatically upon cycle completion. No hidden fees or maintenance charges.
                 </span>
               </div>
 
@@ -433,24 +446,30 @@ export const DashboardPreviewSection: React.FC<Props> = ({
 
             {/* Re-invest & Send to Wallet Action Buttons */}
             {(() => {
-              const projectedDailyYield = activeMiningPower > 0 ? +(activeMiningPower * (activePlanDailyRate / 100)).toFixed(2) : 0.20;
+              const projectedDailyYield = activeMiningPower > 0 ? +(activeMiningPower * (effectiveDailyRate / 100)).toFixed(2) : 0.20;
               const readyYield = unclaimedYield !== undefined && unclaimedYield > 0 ? unclaimedYield : 0;
               const isYieldReady = readyYield > 0;
+
+              const isButtonActive = isYieldReady && !isReinvesting;
 
               return (
                 <div className="space-y-2 pt-1">
                   {/* 1. Re-invest Button */}
                   <button
                     type="button"
-                    disabled={!isYieldReady}
-                    onClick={isYieldReady ? onCompoundSingleDay : undefined}
+                    disabled={!isButtonActive}
+                    onClick={isButtonActive ? () => {
+                      setIsReinvesting(true);
+                      onCompoundSingleDay();
+                      setTimeout(() => setIsReinvesting(false), 2000);
+                    } : undefined}
                     className={`w-full py-3 px-4 rounded-xl text-[12.5px] font-black flex items-center justify-center gap-2 transition-all ${
-                      isYieldReady
+                      isButtonActive
                         ? 'bg-gradient-to-r from-[#F59E0B] via-[#EAB308] to-[#F59E0B] text-[#1A1202] hover:brightness-110 cursor-pointer active:scale-[0.98] shadow-[0_0_20px_rgba(245,158,11,0.35)] animate-pulse'
                         : 'bg-[#0A1422] text-[#64748B] border border-[#16273F] cursor-not-allowed opacity-70'
                     }`}
                   >
-                    {isYieldReady ? (
+                    {isButtonActive ? (
                       <>
                         <Sparkles className="w-4 h-4 text-[#1A1202]" />
                         <span>Re-invest into Plan (+${readyYield.toFixed(2)} USD into Plan Value)</span>
@@ -459,7 +478,9 @@ export const DashboardPreviewSection: React.FC<Props> = ({
                       <>
                         <Lock className="w-4 h-4 text-[#64748B]" />
                         <span>
-                          {activeMiningPower <= 0
+                          {isReinvesting
+                            ? 'Re-investing & Updating Plan Power...'
+                            : activeMiningPower <= 0
                             ? 'Re-invest into Plan (Buy a plan first)'
                             : isMiningActive
                             ? `Re-invest into Plan (Locked — 24H Cycle in progress: ${countdownText})`

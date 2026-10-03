@@ -14,8 +14,8 @@ export const HomeCtaBanner: React.FC<HomeCtaBannerProps> = ({
   onOpenSignUp,
   onExplorePlans,
   onOpenCalculator,
-  activeUsersCount = 18429,
-  activeMinersCount = 10742,
+  activeUsersCount = 20437,
+  activeMinersCount = 14500,
   isLoggedIn = false,
 }) => {
   return (

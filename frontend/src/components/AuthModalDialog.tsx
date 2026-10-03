@@ -27,7 +27,7 @@ interface Props {
   incomingResetToken?: string | null;
   incomingResetEmail?: string | null;
   onDismiss: () => void;
-  onAuthSuccess: (userName: string, mobile: string, fundPin?: string, email?: string, referralCode?: string, ownReferralCode?: string) => void;
+  onAuthSuccess: (userName: string, mobile: string, fundPin?: string, email?: string, referralCode?: string, ownReferralCode?: string, wallet?: any) => void;
   onSwitchAuthMode: () => void;
 }
 
@@ -192,7 +192,15 @@ export const AuthModalDialog: React.FC<Props> = ({
               localStorage.setItem('neon_session_token', res.sessionToken);
             } catch (e) {}
           }
-          onAuthSuccess(res.user.id, res.user.mobile || '', undefined, res.user.email || identifier, res.user.uplineCode || undefined, res.user.referralCode || undefined);
+          onAuthSuccess(
+            res.user.id,
+            res.user.mobile || '',
+            undefined,
+            res.user.email || identifier,
+            res.user.uplineCode || undefined,
+            res.user.referralCode || undefined,
+            res.wallet
+          );
         } else {
           if (res?.suspended || res?.message?.toLowerCase().includes('suspended')) {
             setApiError('Your account has been suspended due to irregular mining activity and security policy violations. Please contact support@neon-mining.io for assistance.');

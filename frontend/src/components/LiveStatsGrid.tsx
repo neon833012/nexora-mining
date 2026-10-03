@@ -9,46 +9,12 @@ interface LiveStatsProps {
 }
 
 export const LiveStatsGrid: React.FC<LiveStatsProps> = ({
-  activeUsersCount = 18420,
+  activeUsersCount = 20437,
+  activeMinersCount = 14500,
   currentLang = 'en'
 }) => {
-  // Dynamically calculate 75% to 85% of active users (center baseline at ~80%)
-  const [displayedMiners, setDisplayedMiners] = useState(() => Math.floor(activeUsersCount * 0.798));
-
-  // Sync baseline when active users increase (+40/min)
-  useEffect(() => {
-    setDisplayedMiners((prev) => {
-      const min = Math.floor(activeUsersCount * 0.75);
-      const max = Math.floor(activeUsersCount * 0.85);
-      if (prev < min || prev > max) {
-        return Math.floor(activeUsersCount * 0.798);
-      }
-      return prev;
-    });
-  }, [activeUsersCount]);
-
-  // Dynamic live fluctuation every 2-3 seconds within 75% - 85% boundary
-  useEffect(() => {
-    let timeoutRef: ReturnType<typeof setTimeout>;
-
-    const tick = () => {
-      setDisplayedMiners((prev) => {
-        const min = Math.floor(activeUsersCount * 0.75);
-        const max = Math.floor(activeUsersCount * 0.85);
-        const delta = Math.floor(Math.random() * 32) - 15;
-        const next = prev + delta;
-        if (next < min) return min + Math.floor(Math.random() * 40);
-        if (next > max) return max - Math.floor(Math.random() * 40);
-        return next;
-      });
-
-      const nextIn = 2000 + Math.floor(Math.random() * 1200);
-      timeoutRef = setTimeout(tick, nextIn);
-    };
-
-    timeoutRef = setTimeout(tick, 2000);
-    return () => clearTimeout(timeoutRef);
-  }, [activeUsersCount]);
+  // Use globally synchronized activeMinersCount passed from App (same across all phones)
+  const displayedMiners = activeMinersCount;
 
   return (
     <section className="w-full px-3.5 lg:px-0">

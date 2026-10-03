@@ -546,20 +546,20 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                           </button>
                         </div>
 
-                        {/* Trust Wallet Auto-Fill Guidance Card */}
+                        {/* Transfer Guidance Card */}
                         <div className="w-full text-left p-2.5 rounded-xl bg-[#02060E]/90 border border-[#152B47] text-[10.5px] space-y-1.5 text-[#94A3B8]">
                           <div className="font-bold text-[#F0B90B] flex items-center gap-1.5">
                             <span>💡</span>
-                            <span>Trust Wallet Se Transfer Karne Ki Guide:</span>
+                            <span>How to Transfer via Trust Wallet:</span>
                           </div>
                           <p className="leading-relaxed">
-                            • <strong className="text-white">Mobile par:</strong> Upar diye gaye <span className="text-[#00F0FF] font-bold">"1-Tap Pay in Trust Wallet"</span> button par click karein, app direct amount aur address ke sath khul jayegi!
+                            • <strong className="text-white">1-Tap Pay (Mobile):</strong> Tap the <span className="text-[#00F0FF] font-bold">"1-Tap Pay in Trust Wallet"</span> button above — the app will open with the address and amount pre-filled.
                           </p>
                           <p className="leading-relaxed">
-                            • <strong className="text-white">Home Screen Scanner:</strong> Dusre phone se scan kar rahe hain to Trust Wallet ke <span className="text-[#10B981] font-bold">Home Screen ke top-right QR icon</span> se scan karein — amount auto-fill aayega.
+                            • <strong className="text-white">QR Scanner:</strong> Open Trust Wallet on your device, tap the <span className="text-[#10B981] font-bold">top-right QR icon on the Home Screen</span>, and scan the code — the amount will auto-fill.
                           </p>
                           <p className="leading-relaxed">
-                            • <strong className="text-white">Send Screen:</strong> Agar aap pehle se USDT ke andar 'Send' screen par hain, to camera sirf address leta hai — upar se <span className="text-[#38BDF8] font-bold">'Copy Amount'</span> karke paste kar dein.
+                            • <strong className="text-white">Manual Send:</strong> If you are already on the USDT Send screen, the camera only captures the address. Use <span className="text-[#38BDF8] font-bold">'Copy Amount'</span> above and paste it manually.
                           </p>
                         </div>
 

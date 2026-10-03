@@ -14,9 +14,20 @@ CREATE TABLE IF NOT EXISTS users (
   upline_code TEXT,                          -- Referrer's member ID
   referral_code TEXT UNIQUE NOT NULL,        -- User's own invitation code
   status TEXT DEFAULT 'active',              -- active, inactive, suspended
-  role TEXT DEFAULT 'user',                  -- user, subadmin, superadmin
+  role TEXT DEFAULT 'user',                  -- user only (staff stored in admins table)
+  session_token TEXT,                        -- Active session identifier for single-device login
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_login DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 1b. Admins Table (Staff & Super Admin - Isolated from platform users)
+CREATE TABLE IF NOT EXISTS admins (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'subadmin',     -- superadmin, subadmin
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile);
@@ -32,6 +43,8 @@ CREATE TABLE IF NOT EXISTS wallets (
   active_mining_power REAL DEFAULT 0.0,      -- Total Staked Node Power ($ USD)
   total_withdrawn REAL DEFAULT 0.0,          -- Total historical settled payouts
   total_mined_yield REAL DEFAULT 0.0,        -- Total historical mined rewards
+  unclaimed_yield REAL DEFAULT 0.0,          -- Unlocked 24H cycle yield pending claim/reinvest
+  mining_cycle_started_at INTEGER DEFAULT 0, -- Unix ms timestamp when current 24H cycle started
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -126,4 +139,48 @@ INSERT OR IGNORE INTO platform_settings (key, value) VALUES
   ('referral_l2_percent', '5.0'),
   ('referral_l3_percent', '2.0'),
   ('vault_address', '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d'),
-  ('usdt_contract', '0x55d398326f99059fF775485246999027B3197955');
+  ('usdt_contract', '0x55d398326f99059ff775485246999027B3197955');
+
+-- 8. Claimed On-Chain Transaction Hashes (Permanent Anti-Replay Protection)
+CREATE TABLE IF NOT EXISTS claimed_tx_hashes (
+  tx_hash TEXT PRIMARY KEY,                  -- Normalized lowercase 66-character BEP-20 hash
+  claimed_by_user TEXT NOT NULL,             -- User ID who redeemed the payment
+  amount REAL NOT NULL,                      -- Verified USDT amount
+  purpose TEXT,                              -- Deposit, Plan Staked, Upgrade, etc.
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_claimed_tx_hash ON claimed_tx_hashes(tx_hash);
+
+-- 9. Support Tickets Table
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  user_name TEXT,
+  user_mobile TEXT,
+  user_email TEXT,
+  subject TEXT,
+  query_text TEXT,
+  status TEXT DEFAULT 'pending',
+  admin_reply TEXT,
+  admin_name TEXT,
+  replied_at DATETIME,
+  user_read INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_user ON support_tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON support_tickets(status);
+
+-- 10. Global Broadcast Announcements Table
+CREATE TABLE IF NOT EXISTS broadcast_announcements (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  target_audience TEXT NOT NULL DEFAULT 'all',
+  sender_admin TEXT DEFAULT 'Company Administration',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_audience ON broadcast_announcements(target_audience);

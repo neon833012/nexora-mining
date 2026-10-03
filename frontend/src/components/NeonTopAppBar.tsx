@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, ShieldCheck, Smartphone } from 'lucide-react';
+import { Globe, ShieldCheck, Smartphone, Mail } from 'lucide-react';
 import { LanguageCode, UserRole } from '../types/mining';
 import { NavRoute } from './BottomNavBar';
 import { LANGUAGES_LIST, getTranslation } from '../data/miningPlans';
@@ -18,6 +18,8 @@ interface Props {
   onGetAppClick?: () => void;
   onNavigateHome: () => void;
   isStandaloneApp?: boolean;
+  onOpenInbox?: () => void;
+  hasUnreadReply?: boolean;
 }
 
 const DESKTOP_NAV_ITEMS: { route: NavRoute; key: string; label: string }[] = [
@@ -45,7 +47,9 @@ export const NeonTopAppBar: React.FC<Props> = ({
   onLoginClick,
   onGetAppClick,
   onNavigateHome,
-  isStandaloneApp
+  isStandaloneApp,
+  onOpenInbox,
+  hasUnreadReply
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
@@ -93,9 +97,9 @@ export const NeonTopAppBar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Center: "Get App" button on Mobile - ONLY on Home Screen (Hidden when inside App) */}
-        {activeRoute === 'home' && !isStandaloneApp && (
-          <div className="lg:hidden flex items-center justify-center shrink-0">
+        {/* Center: "Get App" on Mobile */}
+        <div className="lg:hidden flex items-center justify-center gap-1.5 shrink-0">
+          {activeRoute === 'home' && !isStandaloneApp && (
             <button
               onClick={onGetAppClick}
               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gradient-to-r from-[#00F0FF]/15 via-[#0284C7]/20 to-[#00F0FF]/15 hover:from-[#00F0FF]/25 hover:to-[#0284C7]/30 border border-[#00F0FF]/40 text-[10px] font-black text-[#00F0FF] shadow-[0_0_8px_rgba(0,240,255,0.2)] hover:border-[#00F0FF] transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
@@ -104,8 +108,8 @@ export const NeonTopAppBar: React.FC<Props> = ({
               <Smartphone className="w-3 h-3 text-[#00F0FF] shrink-0" />
               <span className="tracking-wide uppercase font-mono">Get App</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Center: Desktop Navigation Bar (Visible only on desktop screens) */}
         <nav className="hidden lg:flex items-center gap-1 xl:gap-2 shrink-0">
@@ -146,6 +150,26 @@ export const NeonTopAppBar: React.FC<Props> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Notification / Support Inbox Icon (Placed directly with Language selector) */}
+          <button
+            onClick={onOpenInbox}
+            className={`relative flex items-center justify-center p-1.5 sm:px-2.5 sm:py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
+              hasUnreadReply
+                ? 'border-cyan-400 bg-cyan-950/40 text-cyan-300 shadow-[0_0_12px_rgba(0,240,255,0.4)] ring-1 ring-cyan-400/50'
+                : 'bg-[#0A1628] border-[#00F0FF]/40 hover:border-[#00F0FF] text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.15)] hover:bg-[#00F0FF]/15'
+            }`}
+            title="Support Inbox & Announcements"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline ml-1">Inbox</span>
+            {hasUnreadReply && (
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-85" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 shadow-[0_0_10px_#00F0FF]" />
+              </span>
+            )}
+          </button>
+
           {/* 25-Language Selector Dropdown - Only visible on Home Screen */}
           {activeRoute === 'home' && (
             <div className="relative shrink-0" ref={langMenuRef}>

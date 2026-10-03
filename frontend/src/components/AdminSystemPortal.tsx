@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Shield,
   ShieldCheck,
@@ -43,6 +43,7 @@ import {
   Trash2,
   Save,
   Menu,
+  Mail,
   X,
   Radio,
   Eye,
@@ -53,8 +54,16 @@ import {
   Bot,
   User,
   Send,
-  Wallet
+  Wallet,
+  ArrowDownCircle,
+  ArrowLeftRight,
+  RotateCcw,
+  Ticket,
+  Megaphone,
+  Globe,
+  Zap
 } from 'lucide-react';
+import { formatUsaDateTime } from '../utils/dateUtils';
 import {
   UserRole,
   WithdrawalRequest,
@@ -66,9 +75,11 @@ import {
   PlatformSettings,
   MiningPlan,
   LiveChatSession,
-  ChatMessage
+  ChatMessage,
+  AdminBroadcastMessage,
+  BroadcastAudience
 } from '../types/mining';
-import { MINING_PLANS } from '../data/miningPlans';
+import { MINING_PLANS, getPlanForAmount } from '../data/miningPlans';
 import { nexoraApi } from '../services/api';
 
 interface Props {
@@ -99,13 +110,15 @@ interface Props {
   onClearAllUsers?: () => void;
   onRefreshMiners?: () => void;
   onClose: () => void;
+  onReplySupportTicket?: (ticketId: string, replyText: string, adminName?: string) => void;
 }
 
 type AdminTab =
   | 'overview'
   | 'users'
   | 'plans'
-  | 'mining'
+  | 'deposits'
+  | 'p2p'
   | 'withdrawals'
   | 'treasury'
   | 'support'
@@ -139,17 +152,18 @@ export const AdminSystemPortal: React.FC<Props> = ({
   onDeleteUser,
   onPurgeInactiveUsers,
   onClearAllUsers,
-  onClose
+  onClose,
+  onReplySupportTicket
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Secure Admin Authentication Gate State (15-Minute Expiration Window)
+  // Secure Admin Authentication Gate State - Persisted Across Refresh & Back
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
       const auth = localStorage.getItem('neon_admin_auth') === 'true' || sessionStorage.getItem('neon_admin_auth') === 'true';
-      const lastActive = Number(localStorage.getItem('neon_admin_last_active')) || 0;
-      if (auth && (Date.now() - lastActive < 15 * 60 * 1000)) {
+      if (auth) {
+        localStorage.setItem('neon_admin_last_active', String(Date.now()));
         return true;
       }
       return false;
@@ -165,6 +179,22 @@ export const AdminSystemPortal: React.FC<Props> = ({
     } catch {}
     return currentRole === 'subadmin' ? 'subadmin' : 'superadmin';
   });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('neon_admin_role') || sessionStorage.getItem('neon_admin_role');
+      if (stored === 'subadmin' || stored === 'superadmin') {
+        if (stored !== authenticatedRole) {
+          setAuthenticatedRole(stored);
+        }
+      } else if (currentRole === 'subadmin' || currentRole === 'superadmin') {
+        if (currentRole !== authenticatedRole) {
+          setAuthenticatedRole(currentRole);
+        }
+      }
+    } catch {}
+  }, [currentRole]);
+
   const [authenticatedName, setAuthenticatedName] = useState<string>(() => {
     try {
       return localStorage.getItem('neon_admin_name') || sessionStorage.getItem('neon_admin_name') || 'Master Super Admin';
@@ -196,7 +226,46 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const cleanId = adminLoginId.trim().toLowerCase();
     const enteredPassword = adminLoginPassword.trim();
 
-    // 1. Super Admin Credentials Check (Strict Production Super Admin: neon83301@gmail.com, admin, superadmin)
+    // PRIORITY 1: Always try backend /api/admin/login FIRST for single-device session enforcement
+    try {
+      const apiRes = await nexoraApi.adminLogin({ identifier: cleanId, password: enteredPassword });
+      if (apiRes && apiRes.success && apiRes.sessionToken && apiRes.admin) {
+        const role = apiRes.admin.role === 'superadmin' ? 'superadmin' : 'subadmin';
+        const name = apiRes.admin.name || (role === 'superadmin' ? 'Master Super Admin' : 'Staff Sub-Admin');
+        const now = String(Date.now());
+        try {
+          localStorage.setItem('neon_admin_auth', 'true');
+          localStorage.setItem('neon_admin_role', role);
+          localStorage.setItem('neon_admin_name', name);
+          localStorage.setItem('neon_admin_id', apiRes.admin.id);
+          localStorage.setItem('neon_admin_session_token', apiRes.sessionToken);
+          localStorage.setItem('neon_admin_last_active', now);
+          localStorage.setItem('neon_last_active_time', now);
+          sessionStorage.setItem('neon_admin_auth', 'true');
+          sessionStorage.setItem('neon_admin_role', role);
+          sessionStorage.setItem('neon_admin_name', name);
+        } catch (err) {}
+        setAuthenticatedRole(role);
+        setAuthenticatedName(name);
+        setIsAdminAuthenticated(true);
+        setIsAuthenticating(false);
+        onSelectRole(role);
+        setActionNotice(`✓ ${role === 'superadmin' ? 'Authenticated as Super Admin (Full Control)' : `Welcome back, ${name}`}`);
+        setTimeout(() => setActionNotice(null), 4000);
+        return;
+      }
+      // Backend returned failure — show backend error message
+      if (apiRes && !apiRes.success && apiRes.message) {
+        setAdminLoginError(apiRes.message);
+        setIsAuthenticating(false);
+        return;
+      }
+    } catch (backendErr) {
+      // Backend unreachable — fallback to local admin checks below
+      console.warn('[Admin Auth] Backend unreachable, trying local fallback');
+    }
+
+    // FALLBACK 2: Local Super Admin Credentials Check (offline mode)
     const currentAdminPass = localStorage.getItem('neon_custom_admin_password') || '123456';
     const isSuperAdminMatch = (
       cleanId === 'neon83301@gmail.com' ||
@@ -205,6 +274,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     ) && (
       enteredPassword === '123456' ||
       enteredPassword === 'admin123456' ||
+      enteredPassword === 'admin12345' ||
       enteredPassword === currentAdminPass
     );
 
@@ -225,12 +295,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
       setIsAdminAuthenticated(true);
       setIsAuthenticating(false);
       onSelectRole('superadmin');
-      setActionNotice('✓ Authenticated as Super Admin (Full Control)');
+      setActionNotice('✓ Authenticated as Super Admin (Offline Mode)');
       setTimeout(() => setActionNotice(null), 4000);
       return;
     }
 
-    // 2. Provisioned Staff Sub-Admin Check
+    // FALLBACK 3: Local Provisioned Staff Sub-Admin Check
     const matchedDelegated = subAdmins.find(
       (sa) =>
         (sa.username && sa.username.toLowerCase() === cleanId) ||
@@ -262,38 +332,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
       setIsAdminAuthenticated(true);
       setIsAuthenticating(false);
       onSelectRole('subadmin');
-      setActionNotice(`✓ Authenticated as Sub-Admin (${staffName}) - Audit & Read-Only Mode`);
+      setActionNotice(`✓ Welcome back, ${staffName}`);
       setTimeout(() => setActionNotice(null), 4000);
       return;
     }
-
-    // 3. Fallback: Authenticate via Cloudflare D1 Backend /api/auth/login
-    try {
-      const apiRes = await nexoraApi.login({ identifier: cleanId, password: enteredPassword });
-      if (apiRes && apiRes.success && apiRes.user) {
-        const role = (apiRes.user.role === 'superadmin' || cleanId === 'neon83301@gmail.com') ? 'superadmin' : 'subadmin';
-        const name = apiRes.user.name || (role === 'superadmin' ? 'Master Super Admin' : 'Staff Sub-Admin');
-        try {
-          const now = String(Date.now());
-          localStorage.setItem('neon_admin_auth', 'true');
-          localStorage.setItem('neon_admin_role', role);
-          localStorage.setItem('neon_admin_name', name);
-          localStorage.setItem('neon_admin_last_active', now);
-          localStorage.setItem('neon_last_active_time', now);
-          sessionStorage.setItem('neon_admin_auth', 'true');
-          sessionStorage.setItem('neon_admin_role', role);
-          sessionStorage.setItem('neon_admin_name', name);
-        } catch (err) {}
-        setAuthenticatedRole(role);
-        setAuthenticatedName(name);
-        setIsAdminAuthenticated(true);
-        setIsAuthenticating(false);
-        onSelectRole(role);
-        setActionNotice(`✓ Authenticated as ${role === 'superadmin' ? 'Super Admin (Full Control)' : 'Sub-Admin (Read-Only Mode)'}`);
-        setTimeout(() => setActionNotice(null), 4000);
-        return;
-      }
-    } catch (e) {}
 
     setAdminLoginError('Invalid Email/Username or Password. Verify your credentials or use "Forgot Password?" to reset.');
     setIsAuthenticating(false);
@@ -334,20 +376,154 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
 
   const handleAdminSignOut = () => {
+    const adminId = localStorage.getItem('neon_admin_id') || localStorage.getItem('neon_admin_name') || 'admin_super';
+    const sessionToken = localStorage.getItem('neon_admin_session_token') || '';
     try {
       localStorage.removeItem('neon_admin_auth');
       localStorage.removeItem('neon_admin_role');
       localStorage.removeItem('neon_admin_name');
       localStorage.removeItem('neon_admin_last_active');
+      localStorage.removeItem('neon_admin_session_token');
+      localStorage.removeItem('neon_admin_id');
+      localStorage.removeItem('neon_last_active_time');
       sessionStorage.removeItem('neon_admin_auth');
       sessionStorage.removeItem('neon_admin_role');
       sessionStorage.removeItem('neon_admin_name');
     } catch (err) {}
+    // Call backend logout to clear session token in DB
+    try {
+      nexoraApi.adminLogout({ adminId }).catch(() => {});
+    } catch (e) {}
     setIsAdminAuthenticated(false);
     setAdminLoginPassword('');
     setAdminLoginError(null);
-    if (onClose) onClose();
+    // DO NOT call onClose() — stay on admin login screen so admin can re-login immediately
   };
+
+  // ========================================================================
+  // SINGLE-DEVICE SESSION HEARTBEAT & 5-MIN INACTIVITY AUTO-LOGOUT
+  // ========================================================================
+  const lastActiveTimeRef = useRef<number>(Date.now());
+  const [sessionTerminatedMsg, setSessionTerminatedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+
+    // Track user activity (mouse, keyboard, touch, scroll, click)
+    const updateActivity = () => {
+      lastActiveTimeRef.current = Date.now();
+      try { localStorage.setItem('neon_admin_last_active', String(Date.now())); } catch (e) {}
+    };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(ev => window.addEventListener(ev, updateActivity, { passive: true }));
+
+    // Session verification heartbeat every 3.5 seconds
+    const heartbeatInterval = setInterval(async () => {
+      const adminId = localStorage.getItem('neon_admin_id') || '';
+      const sessionToken = localStorage.getItem('neon_admin_session_token') || '';
+
+      // 5-minute inactivity check
+      const idleMs = Date.now() - lastActiveTimeRef.current;
+      if (idleMs > 5 * 60 * 1000) {
+        // Auto-logout due to inactivity
+        try {
+          localStorage.removeItem('neon_admin_auth');
+          localStorage.removeItem('neon_admin_role');
+          localStorage.removeItem('neon_admin_name');
+          localStorage.removeItem('neon_admin_session_token');
+          localStorage.removeItem('neon_admin_id');
+          localStorage.removeItem('neon_admin_last_active');
+          localStorage.removeItem('neon_last_active_time');
+          sessionStorage.removeItem('neon_admin_auth');
+          sessionStorage.removeItem('neon_admin_role');
+          sessionStorage.removeItem('neon_admin_name');
+        } catch (e) {}
+        if (adminId) {
+          try { nexoraApi.adminLogout({ adminId }).catch(() => {}); } catch (e) {}
+        }
+        setSessionTerminatedMsg('⏱️ Session Timed Out: Inactive for 5 minutes. Please re-authenticate.');
+        setIsAdminAuthenticated(false);
+        setAdminLoginPassword('');
+        return;
+      }
+
+      // Single-device session check & Database Live Role Sync
+      if (adminId && sessionToken) {
+        try {
+          const verifyRes = await nexoraApi.adminVerifySession({ adminId, sessionToken });
+          if (verifyRes && verifyRes.sessionInvalidated === true) {
+            // Another device logged in — force logout
+            try {
+              localStorage.removeItem('neon_admin_auth');
+              localStorage.removeItem('neon_admin_role');
+              localStorage.removeItem('neon_admin_name');
+              localStorage.removeItem('neon_admin_session_token');
+              localStorage.removeItem('neon_admin_id');
+              localStorage.removeItem('neon_admin_last_active');
+              localStorage.removeItem('neon_last_active_time');
+              sessionStorage.removeItem('neon_admin_auth');
+              sessionStorage.removeItem('neon_admin_role');
+              sessionStorage.removeItem('neon_admin_name');
+            } catch (e) {}
+            setSessionTerminatedMsg('⚠️ Session Terminated: Admin logged in from another device. Only one device is allowed at a time.');
+            setIsAdminAuthenticated(false);
+            setAdminLoginPassword('');
+          } else if (verifyRes && verifyRes.success && verifyRes.valid && verifyRes.role) {
+            // AUTHORITATIVE D1 DATABASE ROLE SYNC: Database is the single source of truth
+            const dbRole = verifyRes.role === 'superadmin' ? 'superadmin' : 'subadmin';
+            if (dbRole !== authenticatedRole) {
+              setAuthenticatedRole(dbRole);
+              try {
+                localStorage.setItem('neon_admin_role', dbRole);
+                sessionStorage.setItem('neon_admin_role', dbRole);
+              } catch (e) {}
+              onSelectRole(dbRole);
+            }
+            if (verifyRes.name && verifyRes.name !== authenticatedName) {
+              setAuthenticatedName(verifyRes.name);
+              try {
+                localStorage.setItem('neon_admin_name', verifyRes.name);
+                sessionStorage.setItem('neon_admin_name', verifyRes.name);
+              } catch (e) {}
+            }
+          }
+        } catch (e) {
+          // Network error — ignore, will retry in next heartbeat
+        }
+      }
+    }, 3500);
+
+    // Run immediate verification on mount / state restore without waiting 3.5s
+    const initAdminId = localStorage.getItem('neon_admin_id') || sessionStorage.getItem('neon_admin_id') || '';
+    const initSessionToken = localStorage.getItem('neon_admin_session_token') || sessionStorage.getItem('neon_admin_session_token') || '';
+    if (initAdminId && initSessionToken) {
+      nexoraApi.adminVerifySession({ adminId: initAdminId, sessionToken: initSessionToken }).then((verifyRes) => {
+        if (verifyRes && verifyRes.sessionInvalidated === true) {
+          handleAdminSignOut();
+        } else if (verifyRes && verifyRes.success && verifyRes.valid && verifyRes.role) {
+          const dbRole = verifyRes.role === 'superadmin' ? 'superadmin' : 'subadmin';
+          setAuthenticatedRole(dbRole);
+          try {
+            localStorage.setItem('neon_admin_role', dbRole);
+            sessionStorage.setItem('neon_admin_role', dbRole);
+          } catch (e) {}
+          onSelectRole(dbRole);
+          if (verifyRes.name) {
+            setAuthenticatedName(verifyRes.name);
+            try {
+              localStorage.setItem('neon_admin_name', verifyRes.name);
+              sessionStorage.setItem('neon_admin_name', verifyRes.name);
+            } catch (e) {}
+          }
+        }
+      }).catch(() => {});
+    }
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      events.forEach(ev => window.removeEventListener(ev, updateActivity));
+    };
+  }, [isAdminAuthenticated]);
 
   // Mining Plans Governance State
   const currentPlans = miningPlans || MINING_PLANS;
@@ -476,6 +652,57 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }
   }, [activeTab, onRefreshMiners]);
 
+  // Live Sub-Admin Staff synchronization directly from Cloudflare D1
+  const [liveSubAdmins, setLiveSubAdmins] = useState<SubAdminUser[]>(subAdmins || []);
+  const [isRefreshingStaff, setIsRefreshingStaff] = useState(false);
+
+  const loadSubAdminsFromD1 = useCallback(() => {
+    setIsRefreshingStaff(true);
+    nexoraApi.getSubAdmins().then((res) => {
+      if (res && res.success && Array.isArray(res.subadmins)) {
+        const mapped: SubAdminUser[] = res.subadmins.map((s: any) => ({
+          id: s.id,
+          name: s.name || s.email?.split('@')[0] || 'Staff Sub-Admin',
+          email: s.email,
+          username: s.email?.split('@')[0]?.toLowerCase(),
+          password: s.password_hash || '••••••••',
+          canApproveWithdrawals: false,
+          canResetPasswords: false,
+          maxApprovalLimit: 0
+        }));
+        // Deduplicate by email/id
+        const seen = new Set<string>();
+        const unique = mapped.filter((m) => {
+          const k = (m.id || m.email || '').toLowerCase();
+          if (!k || seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        setLiveSubAdmins(unique);
+      }
+    }).catch(() => {}).finally(() => {
+      setIsRefreshingStaff(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'subadmins') {
+      loadSubAdminsFromD1();
+    }
+  }, [activeTab, loadSubAdminsFromD1]);
+
+  // Unique staff list - strictly deduplicated to prevent duplicates or blinking
+  const uniqueSubAdmins = useMemo(() => {
+    const seen = new Set<string>();
+    const list = liveSubAdmins && liveSubAdmins.length > 0 ? liveSubAdmins : (subAdmins || []);
+    return list.filter((s) => {
+      const key = (s.id || s.email || s.username || '').toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [liveSubAdmins, subAdmins]);
+
   // Real-Time Institutional Live Clock for Liability Desk
   const [livePortalTime, setLivePortalTime] = useState<string>(() => {
     const now = new Date();
@@ -510,23 +737,43 @@ export const AdminSystemPortal: React.FC<Props> = ({
   }, [adminOrders, adminUsers]);
 
   const normalizeOrderAmount = (amt: number): number => {
-    const PLAN_TIERS = [20, 60, 120, 250, 500, 1500, 3000, 5000, 10000];
+    const PLAN_TIERS = [20, 50, 150, 350, 700, 1500, 3000];
     for (const tier of PLAN_TIERS) {
       if (amt >= tier - 0.50 && amt <= tier + 0.10) return tier;
     }
     return amt;
   };
 
-  const dynamicExternalInflow = useMemo(() => {
-    const ordersInflow = safeAdminOrders
-      .filter((o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p'))
-      .reduce((sum, o) => sum + normalizeOrderAmount(o.amountPaid || 0), 0);
-    const usersStaked = (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
-    return Math.max(ordersInflow, usersStaked);
-  }, [safeAdminOrders, adminUsers]);
+  // DEPOSITS & PLAN PURCHASES LEDGER (Strictly real external on-chain crypto, zero P2P internal transfers)
+  const safeDepositsList = useMemo(() => {
+    return (safeAdminOrders || []).filter(
+      (o) => o.paymentMethod !== 'p2p' && !o.planName?.toLowerCase().includes('p2p') && o.planId !== 'p2p_transfer'
+    );
+  }, [safeAdminOrders]);
 
-  // Platform Gross Inflow is strictly Fresh Crypto Inflow (Direct Plan Purchases + BEP-20 Deposits)
-  const dynamicInflow = dynamicExternalInflow;
+  // Platform Inflow is strictly external funds deposited via BEP-20 / Plans Bought.
+  // Internal P2P transfers are the same circulating funds and strictly DO NOT count towards Total Deposits.
+  const dynamicInflow = useMemo(() => {
+    // 1. Calculate from confirmed real external deposit orders
+    const externalTotal = (safeDepositsList || []).reduce((sum, o) => {
+      const amt = Number(o.amountPaid || o.planAmount || 0);
+      return sum + amt;
+    }, 0);
+
+    if (externalTotal > 0) {
+      return +externalTotal.toFixed(2);
+    }
+
+    // 2. Fallback: Base plan prices of registered users (zero unspent floating balance)
+    return +( (adminUsers || []).reduce((sum, u) => {
+      const staked = u.stakedAmount || 0;
+      if (staked <= 0) return sum;
+      const plan = getPlanForAmount(staked, currentPlans);
+      return sum + (plan ? plan.amount : Math.floor(staked));
+    }, 0) ).toFixed(2);
+  }, [safeDepositsList, adminUsers, currentPlans]);
+
+  const dynamicExternalInflow = dynamicInflow;
 
   const dynamicStaked = useMemo(() => {
     return (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
@@ -536,13 +783,91 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return (adminUsers || []).reduce((sum, u) => sum + (u.totalMinedYield || 0), 0);
   }, [adminUsers]);
 
+  // P2P Record Identification Helper
+  const isP2pRecord = (r: WithdrawalRequest) =>
+    r.type === 'p2p_transfer' ||
+    Boolean(r.walletAddress && r.walletAddress.toLowerCase().includes('p2p')) ||
+    Boolean(r.id && r.id.startsWith('wd_p2p'));
+
   // If zero registered users exist, withdrawal requests MUST be strictly empty []
+  // STRICTLY REAL EXTERNAL CRYPTO WITHDRAWALS (P2P transfers completely moved to P2P tab)
   const safeWithdrawalRequests = useMemo(() => {
     if (!adminUsers || adminUsers.length === 0) return [];
-    return (withdrawalRequests || []).filter((r) =>
-      adminUsers.some((u) => u.id === r.userId || u.name === r.userName)
+    return (withdrawalRequests || []).filter(
+      (r) => !isP2pRecord(r) && adminUsers.some((u) => u.id === r.userId || u.name === r.userName)
     );
   }, [adminUsers, withdrawalRequests]);
+
+  // Autonomous Peer-to-Peer (P2P) Member Transfers (no admin approval required)
+  const safeP2pTransfers = useMemo(() => {
+    return (withdrawalRequests || []).filter((r) => isP2pRecord(r));
+  }, [withdrawalRequests]);
+
+  const [p2pSearchQuery, setP2pSearchQuery] = useState('');
+  const displayedP2pTransfers = useMemo(() => {
+    return [...safeP2pTransfers].sort((a, b) => {
+      const timeA = a.timestampMs || (a.timestamp ? new Date(a.timestamp).getTime() : 0);
+      const timeB = b.timestampMs || (b.timestamp ? new Date(b.timestamp).getTime() : 0);
+      return timeB - timeA;
+    }).filter((r) => {
+      if (!p2pSearchQuery.trim()) return true;
+      const q = p2pSearchQuery.toLowerCase();
+      return (
+        (r.id && r.id.toLowerCase().includes(q)) ||
+        (r.userId && r.userId.toLowerCase().includes(q)) ||
+        (r.userName && r.userName.toLowerCase().includes(q)) ||
+        (r.walletAddress && r.walletAddress.toLowerCase().includes(q)) ||
+        (r.txHash && r.txHash.toLowerCase().includes(q))
+      );
+    });
+  }, [safeP2pTransfers, p2pSearchQuery]);
+
+  const totalP2pVolume = useMemo(() => {
+    return safeP2pTransfers.reduce((sum, r) => sum + (r.amount || 0), 0);
+  }, [safeP2pTransfers]);
+
+
+
+  const [depositFilter, setDepositFilter] = useState<'all' | 'direct' | 'plan'>('all');
+  const [depositSearchQuery, setDepositSearchQuery] = useState('');
+
+  const displayedDeposits = useMemo(() => {
+    return [...safeDepositsList].sort((a, b) => {
+      const timeA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : (a.orderDate ? new Date(a.orderDate).getTime() : 0);
+      const timeB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : (b.orderDate ? new Date(b.orderDate).getTime() : 0);
+      return timeB - timeA;
+    }).filter((o) => {
+      const isDirect =
+        o.planId === 'direct_deposit' ||
+        o.paymentMethod === 'bep20' ||
+        Boolean(o.planName && o.planName.toLowerCase().includes('deposit'));
+      if (depositFilter === 'direct' && !isDirect) return false;
+      if (depositFilter === 'plan' && isDirect) return false;
+      if (depositSearchQuery.trim()) {
+        const q = depositSearchQuery.toLowerCase();
+        return (
+          (o.orderId && o.orderId.toLowerCase().includes(q)) ||
+          (o.userId && o.userId.toLowerCase().includes(q)) ||
+          (o.userName && o.userName.toLowerCase().includes(q)) ||
+          (o.txHash && o.txHash.toLowerCase().includes(q)) ||
+          (o.planName && o.planName.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [safeDepositsList, depositFilter, depositSearchQuery]);
+
+  const totalDirectDepositsAmount = useMemo(() => {
+    return safeDepositsList
+      .filter((o) => o.planId === 'direct_deposit' || o.paymentMethod === 'bep20' || Boolean(o.planName && o.planName.toLowerCase().includes('deposit')))
+      .reduce((sum, o) => sum + (o.amountPaid || o.planAmount || 0), 0);
+  }, [safeDepositsList]);
+
+  const totalPlansBoughtAmount = useMemo(() => {
+    return safeDepositsList
+      .filter((o) => !(o.planId === 'direct_deposit' || o.paymentMethod === 'bep20' || Boolean(o.planName && o.planName.toLowerCase().includes('deposit'))))
+      .reduce((sum, o) => sum + (o.amountPaid || o.planAmount || 0), 0);
+  }, [safeDepositsList]);
 
   const [withdrawalFilter, setWithdrawalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [withdrawalSearchQuery, setWithdrawalSearchQuery] = useState('');
@@ -593,7 +918,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return approvedWithdrawals.reduce((sum, r) => sum + (r.netAmount !== undefined ? r.netAmount : (r.amount ? r.amount * 0.95 : 0)), 0);
   }, [approvedWithdrawals]);
 
-  const dynamicApprovedWithdrawalsAmount = dynamicApprovedNetPayout;
+  const dynamicApprovedWithdrawalsAmount = dynamicApprovedGrossAmount;
 
   const dynamicPendingWithdrawalsAmount = useMemo(() => {
     return pendingWithdrawals.reduce((sum, r) => sum + (r.amount || 0), 0);
@@ -603,10 +928,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
     return approvedWithdrawals.reduce((sum, r) => sum + (r.fee !== undefined ? r.fee : (r.amount ? r.amount * 0.05 : 0)), 0);
   }, [approvedWithdrawals]);
 
-  // Exact Vault Reserve = Total Inflow - Net Cashouts Outflow (Fee remains in company vault)
+  // Exact Vault Reserve = Total Inflow - Gross Cashouts Outflow (Fee remains separate as company profit)
   const dynamicReserves = useMemo(() => {
-    return Math.max(0, dynamicInflow - dynamicApprovedNetPayout);
-  }, [dynamicInflow, dynamicApprovedNetPayout]);
+    return Math.max(0, dynamicInflow - dynamicApprovedGrossAmount);
+  }, [dynamicInflow, dynamicApprovedGrossAmount]);
 
   const dynamicActiveMinersCount = useMemo(() => {
     return (adminUsers || []).filter((u) => (u.stakedAmount || 0) > 0).length;
@@ -680,7 +1005,14 @@ export const AdminSystemPortal: React.FC<Props> = ({
         u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
         u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
         u.mobile.toLowerCase().includes(userSearch.toLowerCase());
-      const matchStatus = userStatusFilter === 'all' || u.status === userStatusFilter;
+      let matchStatus = true;
+      if (userStatusFilter === 'active') {
+        matchStatus = (u.stakedAmount || 0) > 0 && u.status !== 'suspended';
+      } else if (userStatusFilter === 'inactive') {
+        matchStatus = !(u.stakedAmount > 0) && u.status !== 'suspended';
+      } else if (userStatusFilter === 'suspended') {
+        matchStatus = u.status === 'suspended';
+      }
       return matchSearch && matchStatus;
     });
   }, [adminUsers, userSearch, userStatusFilter]);
@@ -698,17 +1030,26 @@ export const AdminSystemPortal: React.FC<Props> = ({
     ];
 
     return plans.map((p) => {
-      const matchingOrders = safeAdminOrders.filter(
-        (o) => o.planAmount === p.amount || o.planId === p.id || o.planName?.toLowerCase().includes(`$${p.amount}`)
-      );
-      const matchingUsers = (adminUsers || []).filter(
-        (u) => u.stakedAmount === p.amount || u.currentPlanName?.toLowerCase().includes(`$${p.amount}`)
-      );
+      const matchingOrders = safeAdminOrders.filter((o) => {
+        const isDeposit =
+          o.planId === 'direct_deposit' ||
+          o.planId === 'p2p_transfer' ||
+          o.paymentMethod === 'bep20' ||
+          o.paymentMethod === 'p2p' ||
+          Boolean(o.planName && o.planName.toLowerCase().includes('deposit')) ||
+          Boolean(o.planName && o.planName.toLowerCase().includes('p2p'));
+        if (isDeposit) return false;
+        return o.planAmount === p.amount || o.planId === p.id;
+      });
+      const matchingUsers = (adminUsers || []).filter((u) => {
+        const staked = u.stakedAmount || 0;
+        if (staked <= 0) return false;
+        const plan = getPlanForAmount(staked, currentPlans);
+        return plan ? plan.id === p.id : false;
+      });
 
-      const soldCount = matchingOrders.length > 0 ? matchingOrders.length : matchingUsers.length;
-      const totalRevenue = matchingOrders.length > 0
-        ? matchingOrders.reduce((sum, o) => sum + (o.amountPaid || o.planAmount), 0)
-        : matchingUsers.reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
+      const soldCount = matchingUsers.length > 0 ? matchingUsers.length : matchingOrders.length;
+      const totalRevenue = soldCount * p.amount;
 
       return {
         ...p,
@@ -732,7 +1073,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const totalUsers = adminUsers ? adminUsers.length : 0;
     const totalStakedCapital = (adminUsers || []).reduce((sum, u) => sum + (u.stakedAmount || 0), 0);
     const totalDailyMiningYield = (adminUsers || []).reduce(
-      (sum, u) => sum + (u.totalMinedYield || (u.stakedAmount ? u.stakedAmount * 0.01 : 0)),
+      (sum, u) => sum + (u.dailyYieldUsdt || (u.stakedAmount ? u.stakedAmount * ((u.dailyRatePercent || 1.0) / 100) : 0)),
       0
     );
     const totalReferralIncome = (adminUsers || []).reduce((sum, u) => sum + (u.referralEarnings || 0), 0);
@@ -755,9 +1096,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const userRows = activeMinersOnly.map((u) => {
       const staked = u.stakedAmount || 0;
       const dailyYield = +(
-        u.totalMinedYield !== undefined && u.totalMinedYield > 0
-          ? u.totalMinedYield
-          : staked * 0.01
+        u.dailyYieldUsdt !== undefined && u.dailyYieldUsdt > 0
+          ? u.dailyYieldUsdt
+          : staked * ((u.dailyRatePercent || 1.0) / 100)
       ).toFixed(2);
       const refIncome = +(u.referralEarnings || 0).toFixed(2);
       const refsCount = u.directReferralsCount || 0;
@@ -803,6 +1144,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
     setTimeout(() => setActionNotice(null), 3500);
   };
 
+  const generateRandom6DigitPin = () => {
+    return String(Math.floor(100000 + Math.random() * 900000));
+  };
+
   const handleExportUsersCSV = () => {
     // Only export real platform users (exclude admin / subadmin)
     const exportableUsers = (adminUsers || []).filter(
@@ -815,15 +1160,43 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }
 
     const headers = [
+      'User ID',
       'Name',
-      'Phone Number',
-      'Email'
+      'Email',
+      'Mobile Number',
+      'Status',
+      'Active Plan Name',
+      'Active Investment (USD)',
+      'Deposit Balance (USDT)',
+      'Mined Profit (USDT)',
+      'Withdrawable Balance (USDT)',
+      'Total Withdrawn (USDT)',
+      'Referral Code',
+      'Invited By (Upline)',
+      'Direct Referrals Count',
+      'Referral Earnings (USDT)',
+      'Fund Security PIN',
+      'Registered Date (USA Eastern)'
     ];
 
     const rows = exportableUsers.map((u) => [
-      `"${(u.name || '').replace(/"/g, '""')}"`,
+      `"${(u.id || '').replace(/"/g, '""')}"`,
+      `"${(u.name || u.id || '').replace(/"/g, '""')}"`,
+      `"${(u.email || '').replace(/"/g, '""')}"`,
       `"${(u.mobile || '').replace(/"/g, '""')}"`,
-      `"${(u.email || '').replace(/"/g, '""')}"`
+      `"${u.status === 'suspended' ? 'Suspended' : (u.stakedAmount > 0 ? 'Active' : 'Inactive')}"`,
+      `"${(u.currentPlanName || (u.stakedAmount > 0 ? 'Active Plan' : 'No Plan')).replace(/"/g, '""')}"`,
+      `"${u.stakedAmount.toFixed(2)}"`,
+      `"${(u.depositBalance || 0).toFixed(2)}"`,
+      `"${u.totalMinedYield.toFixed(2)}"`,
+      `"${u.availableBalance.toFixed(2)}"`,
+      `"${u.totalWithdrawn.toFixed(2)}"`,
+      `"${(u.referralCode || '').replace(/"/g, '""')}"`,
+      `"${(u.invitedBy || 'DIRECT').replace(/"/g, '""')}"`,
+      `"${u.directReferralsCount || 0}"`,
+      `"${(u.referralEarnings || 0).toFixed(2)}"`,
+      `"${isSuperadmin ? (u.fundPin || 'Not set').replace(/"/g, '""') : (u.fundPin ? '******' : 'Not set')}"`,
+      `"${(u.registeredAt || '').replace(/"/g, '""')}"`
     ]);
 
     const csvString = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
@@ -831,11 +1204,12 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `NEON_MINING_USERS_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `NEON_MINING_MINERS_LEDGER_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    triggerNotice(`✓ Exported ${adminUsers.length} user accounts to CSV/Excel file!`);
+    triggerNotice(`✓ Exported ${exportableUsers.length} complete miner records to CSV/Excel!`);
   };
 
   const [isCreatingSubAdmin, setIsCreatingSubAdmin] = useState(false);
@@ -843,18 +1217,25 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const handleCreateSubAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = newSubAdminEmail.trim().toLowerCase();
-    if (!email) return;
+    const password = newSubAdminPassword.trim();
+    if (!email) {
+      triggerNotice('⚠️ Official email is required!');
+      return;
+    }
+    if (!password) {
+      triggerNotice('⚠️ Initial password set by Admin is required!');
+      return;
+    }
 
     setIsCreatingSubAdmin(true);
-    const assignedName = newSubAdminName.trim() || email.split('@')[0];
-    const assignedUsername = (newSubAdminUsername.trim() || email.split('@')[0]).toLowerCase();
-    const assignedPassword = newSubAdminPassword.trim() || '123456';
+    const assignedName = email.split('@')[0];
+    const assignedUsername = email.split('@')[0].toLowerCase();
 
     try {
       const res = await nexoraApi.createSubAdmin({
         email,
-        name: assignedName,
-        password: assignedPassword
+        password,
+        name: assignedName
       });
 
       const newAdmin: SubAdminUser = {
@@ -862,7 +1243,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
         name: assignedName,
         email: email,
         username: assignedUsername,
-        password: assignedPassword,
+        password: password,
         canApproveWithdrawals: false,
         canResetPasswords: false,
         maxApprovalLimit: 0
@@ -873,7 +1254,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
       setNewSubAdminEmail('');
       setNewSubAdminUsername('');
       setNewSubAdminPassword('');
-      triggerNotice(`✓ Sub-Admin (${email}) registered in database! Staff member can login or reset password.`);
+      triggerNotice(`✓ Sub-Admin (${email}) registered with password! Staff member can log in directly.`);
     } catch (err: any) {
       triggerNotice(`Sub-Admin registered locally.`);
     } finally {
@@ -893,7 +1274,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     }
   };
 
-  // Live Support Desk State (Escalated from NeonAIChatAssistant)
+  // Live Support Desk State (Preserved for backward-compatibility & legacy references)
   const [liveSessions, setLiveSessions] = useState<LiveChatSession[]>(() => {
     try {
       const raw = localStorage.getItem('neon_live_chat_sessions');
@@ -905,10 +1286,205 @@ export const AdminSystemPortal: React.FC<Props> = ({
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [adminReplyText, setAdminReplyText] = useState('');
   const [sessionFilter, setSessionFilter] = useState<'all' | 'waiting' | 'active' | 'resolved'>('all');
-  const [supportSubTab, setSupportSubTab] = useState<'chats' | 'pins'>('chats');
+  const [supportSubTab, setSupportSubTab] = useState<'tickets' | 'broadcasts' | 'pins'>('tickets');
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [manualResetUserId, setManualResetUserId] = useState('');
   const [manualResetNewPin, setManualResetNewPin] = useState('888888');
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+
+  // Tickets Management State
+  const [ticketReplyText, setTicketReplyText] = useState<{ [ticketId: string]: string }>({});
+  const [isReplyingTicket, setIsReplyingTicket] = useState<{ [ticketId: string]: boolean }>({});
+  const [adminTicketsList, setAdminTicketsList] = useState<SupportTicket[]>(supportTickets || []);
+  const [ticketFilter, setTicketFilter] = useState<'all' | 'pending' | 'replied'>('all');
+  const [ticketSearchQuery, setTicketSearchQuery] = useState('');
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+
+  // Global Broadcast System State (3 Categories: all, active_miners, no_plan)
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastContent, setBroadcastContent] = useState('');
+  const [broadcastAudience, setBroadcastAudience] = useState<BroadcastAudience>('all');
+  const [isPublishingBroadcast, setIsPublishingBroadcast] = useState(false);
+  const [broadcastsList, setBroadcastsList] = useState<AdminBroadcastMessage[]>(() => {
+    try {
+      const raw = localStorage.getItem('neon_broadcast_announcements');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const fetchAdminTickets = async () => {
+      try {
+        const res = await nexoraApi.getAdminTickets();
+        if (res && res.success && Array.isArray(res.tickets)) {
+          setAdminTicketsList((prev) => {
+            if (JSON.stringify(prev) !== JSON.stringify(res.tickets)) {
+              return res.tickets;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {}
+    };
+    fetchAdminTickets();
+    const interval = setInterval(fetchAdminTickets, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Sync Broadcasts directly from Cloudflare D1 Database & local events
+  useEffect(() => {
+    const fetchBroadcastsFromD1 = async () => {
+      try {
+        const res = await nexoraApi.getBroadcasts();
+        if (res && res.success && Array.isArray(res.broadcasts)) {
+          setBroadcastsList(res.broadcasts);
+          try {
+            localStorage.setItem('neon_broadcast_announcements', JSON.stringify(res.broadcasts));
+          } catch {}
+        }
+      } catch (e) {}
+    };
+    fetchBroadcastsFromD1();
+    const interval = setInterval(fetchBroadcastsFromD1, 5000);
+
+    const syncBroadcasts = () => {
+      fetchBroadcastsFromD1();
+    };
+    window.addEventListener('storage', syncBroadcasts);
+    window.addEventListener('neon_broadcast_sync', syncBroadcasts);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', syncBroadcasts);
+      window.removeEventListener('neon_broadcast_sync', syncBroadcasts);
+    };
+  }, []);
+
+  const handleAdminTicketReply = async (ticketId: string, directText?: string) => {
+    const text = (directText || ticketReplyText[ticketId] || '').trim();
+    if (!text) {
+      triggerNotice('⚠️ Please enter reply message text.');
+      return;
+    }
+
+    setIsReplyingTicket((prev) => ({ ...prev, [ticketId]: true }));
+    try {
+      const activeAdminName = 'Support Desk';
+      const nowIso = new Date().toISOString();
+
+      // 1. Update backend D1 database if connected
+      try {
+        await nexoraApi.replyAdminTicket({
+          ticketId,
+          replyText: text,
+          adminName: activeAdminName
+        });
+      } catch (e) {}
+
+      // 2. Direct Update to Local State for Instant Sync
+      setAdminTicketsList((prev) =>
+        prev.map((t) =>
+          t.id === ticketId
+            ? {
+                ...t,
+                status: 'replied',
+                adminReply: text,
+                adminName: activeAdminName,
+                repliedAt: nowIso,
+                userRead: false
+              }
+            : t
+        )
+      );
+
+      if (onReplySupportTicket) {
+        onReplySupportTicket(ticketId, text, activeAdminName);
+      }
+
+      setTicketReplyText((prev) => ({ ...prev, [ticketId]: '' }));
+      triggerNotice('✓ Response dispatched directly to user Inbox!');
+    } catch (e: any) {
+      triggerNotice('⚠️ Error replying to ticket');
+    } finally {
+      setIsReplyingTicket((prev) => ({ ...prev, [ticketId]: false }));
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (!window.confirm('⚠️ Permanently delete this ticket? This cannot be undone.')) return;
+    try {
+      await nexoraApi.deleteAdminTicket(ticketId);
+      setAdminTicketsList((prev) => prev.filter((t) => t.id !== ticketId));
+      triggerNotice('✓ Ticket deleted successfully.');
+    } catch (e: any) {
+      triggerNotice('⚠️ Error deleting ticket.');
+    }
+  };
+
+  const handleCreateBroadcast = async () => {
+    if (!broadcastTitle.trim() || !broadcastContent.trim()) {
+      triggerNotice('⚠️ Please enter both announcement title and message body.');
+      return;
+    }
+
+    setIsPublishingBroadcast(true);
+    try {
+      const activeAdminName = authenticatedName || (isSuperadmin ? 'Master Super Admin' : 'Support Specialist');
+      const newBroadcast: AdminBroadcastMessage = {
+        id: `bc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        title: broadcastTitle.trim(),
+        content: broadcastContent.trim(),
+        targetAudience: broadcastAudience,
+        senderAdmin: activeAdminName,
+        createdAt: new Date().toISOString()
+      };
+
+      const updated = [newBroadcast, ...broadcastsList];
+      setBroadcastsList(updated);
+      try {
+        localStorage.setItem('neon_broadcast_announcements', JSON.stringify(updated));
+        window.dispatchEvent(new Event('neon_broadcast_sync'));
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+
+      // Push to backend API
+      try {
+        await nexoraApi.createBroadcast({
+          title: newBroadcast.title,
+          content: newBroadcast.content,
+          targetAudience: newBroadcast.targetAudience,
+          senderAdmin: newBroadcast.senderAdmin
+        });
+      } catch {}
+
+      setBroadcastTitle('');
+      setBroadcastContent('');
+      const audienceLabel =
+        broadcastAudience === 'all'
+          ? 'All Registered Users'
+          : broadcastAudience === 'active_miners'
+          ? 'Active Miners Only'
+          : 'Registered Users Without Plan';
+      triggerNotice(`✓ Global Announcement broadcasted to ${audienceLabel}!`);
+    } finally {
+      setIsPublishingBroadcast(false);
+    }
+  };
+
+  const handleDeleteBroadcast = async (broadcastId: string) => {
+    const updated = broadcastsList.filter((b) => b.id !== broadcastId);
+    setBroadcastsList(updated);
+    try {
+      localStorage.setItem('neon_broadcast_announcements', JSON.stringify(updated));
+      window.dispatchEvent(new Event('neon_broadcast_sync'));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
+    try {
+      await nexoraApi.deleteBroadcast(broadcastId);
+    } catch {}
+    triggerNotice('✓ Announcement removed from broadcast system.');
+  };
 
   // Real-Time Cloudflare D1 Poll for Admin Live Support Chats (Multi-Device & Cross-Browser)
   useEffect(() => {
@@ -963,10 +1539,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
   };
 
   const handleSendAdminReply = async (session: LiveChatSession, cannedText?: string) => {
-    if (isSubadmin) {
-      triggerNotice('⚠️ Sub-Admins have read-only access and cannot send replies.');
-      return;
-    }
+
     const textToSend = (cannedText || adminReplyText).trim();
     if (!textToSend) return;
 
@@ -974,7 +1547,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const adminMsg: ChatMessage = {
       id: `admin_msg_${Date.now()}`,
       sender: 'admin',
-      senderName: isSuperadmin ? 'Super Admin / Lead Support' : 'Support Specialist',
+      senderName: 'Support Specialist',
       text: textToSend,
       timestamp: now
     };
@@ -989,7 +1562,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
           lastMessageText: `[Admin] ${textToSend}`,
           unreadAdminCount: 0,
           unreadUserCount: (s.unreadUserCount || 0) + 1,
-          assignedAdminName: isSuperadmin ? 'Super Admin' : 'Support Specialist',
+          assignedAdminName: 'Support Specialist',
           updatedAt: now
         };
       }
@@ -1004,32 +1577,62 @@ export const AdminSystemPortal: React.FC<Props> = ({
     try {
       await nexoraApi.sendAdminChatReply({
         sessionId: session.id,
-        adminName: isSuperadmin ? 'Super Admin' : 'Support Specialist',
+        adminName: 'Support Specialist',
         messageText: textToSend
       });
     } catch (e) {}
   };
 
-  const handleResolveSession = async (sessionId: string) => {
-    if (isSubadmin) {
-      triggerNotice('⚠️ Only Super Admin can resolve customer support tickets.');
+  const handleCopyChatMessage = async (text: string, id: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedMsgId(id);
+      triggerNotice('✓ Copied text to clipboard');
+      setTimeout(() => {
+        setCopiedMsgId((prev) => (prev === id ? null : prev));
+      }, 2000);
+    } catch {
+      triggerNotice('✕ Failed to copy to clipboard');
+    }
+  };
+
+  const handleCloseChatSession = async (sessionId: string) => {
+    if (!window.confirm('⚠️ Are you sure you want to PERMANENTLY DELETE this chat session from the database? This cannot be undone.')) {
       return;
     }
+    try {
+      await nexoraApi.closeAdminChat(sessionId);
+      setLiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (selectedSessionId === sessionId) {
+        setSelectedSessionId(null);
+      }
+      triggerNotice('✓ Chat session permanently deleted');
+    } catch (err: any) {
+      triggerNotice('✕ Failed to delete chat session: ' + (err?.message || 'Server error'));
+    }
+  };
+
+  const handleResolveSession = async (sessionId: string) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const resolveText = '✅ **[Query Resolved]**\nOur admin specialist has resolved your inquiry. If you have any further questions, feel free to message our 24/7 AI Copilot anytime!';
-    const resolveMsg: ChatMessage = {
-      id: `sys_resolved_${Date.now()}`,
-      sender: 'ai',
-      text: resolveText,
-      timestamp: now
-    };
+    const targetSession = liveSessions.find((s) => s.id === sessionId);
     const updatedSessions = liveSessions.map((s) => {
       if (s.id === sessionId) {
         return {
           ...s,
           status: 'resolved' as const,
-          messages: [...s.messages, resolveMsg],
-          lastMessageText: '[Query Resolved by Admin]',
+          lastMessageText: '[Completed]',
           updatedAt: now
         };
       }
@@ -1037,11 +1640,68 @@ export const AdminSystemPortal: React.FC<Props> = ({
     });
 
     saveLiveSessions(updatedSessions);
-    triggerNotice('✓ Query marked as resolved & user notified');
+    triggerNotice('✓ Chat marked as completed');
 
     // Persist to Cloudflare D1
     try {
-      await nexoraApi.resolveAdminChat(sessionId, resolveText);
+      if (targetSession) {
+        await nexoraApi.syncChatSession({
+          sessionId: targetSession.id,
+          userId: targetSession.userId,
+          userName: targetSession.userName,
+          userMobile: targetSession.userMobile,
+          userEmail: targetSession.userEmail,
+          userPlan: targetSession.userPlan,
+          userBalance: targetSession.userBalance,
+          status: 'resolved',
+          messages: targetSession.messages,
+          lastMessageText: '[Completed]'
+        });
+      }
+      await nexoraApi.resolveAdminChat(sessionId);
+    } catch (e) {}
+  };
+
+  const handleReopenChat = async (sessionId: string) => {
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const reopenMsg: ChatMessage = {
+      id: `sys_reopen_${Date.now()}`,
+      sender: 'ai',
+      text: '🔄 **[Chat Re-Opened]** Support session has been re-opened by support specialist.',
+      timestamp: now
+    };
+    const targetSession = liveSessions.find((s) => s.id === sessionId);
+    const updatedSessions = liveSessions.map((s) => {
+      if (s.id === sessionId) {
+        return {
+          ...s,
+          status: 'active_admin' as const,
+          messages: [...s.messages, reopenMsg],
+          lastMessageText: '[Chat Re-Opened]',
+          updatedAt: now
+        };
+      }
+      return s;
+    });
+
+    saveLiveSessions(updatedSessions);
+    triggerNotice('✓ Chat conversation re-opened');
+
+    try {
+      if (targetSession) {
+        await nexoraApi.syncChatSession({
+          sessionId: targetSession.id,
+          userId: targetSession.userId,
+          userName: targetSession.userName,
+          userMobile: targetSession.userMobile,
+          userEmail: targetSession.userEmail,
+          userPlan: targetSession.userPlan,
+          userBalance: targetSession.userBalance,
+          status: 'active_admin',
+          messages: [...targetSession.messages, reopenMsg],
+          lastMessageText: '[Chat Re-Opened]'
+        });
+      }
     } catch (e) {}
   };
 
@@ -1097,49 +1757,265 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
   const pendingTickets = supportTickets.filter((t) => t.status === 'pending');
 
-  // Play subtle notification chime when a user clicks 'Talk to Human'
+  // Ghost Delete Single Chat Message for Admin (removes from D1 with no trace left)
+  const handleGhostDeleteAdminMessage = async (sessionId: string, messageId: string) => {
+    // Update in-memory state immediately so it vanishes without blinking
+    setLiveSessions((prev) =>
+      prev.map((s) => {
+        if (s.id === sessionId) {
+          const filtered = s.messages.filter((m) => m.id !== messageId);
+          const newLastMsg = filtered.length > 0 ? (filtered[filtered.length - 1].text || '') : '';
+          return {
+            ...s,
+            messages: filtered,
+            lastMessageText: newLastMsg
+          };
+        }
+        return s;
+      })
+    );
+
+    triggerNotice('✓ Message deleted without trace');
+
+    // Remove from Cloudflare D1 SQL
+    try {
+      await nexoraApi.deleteChatMessage(sessionId, messageId);
+    } catch (e) {}
+  };
+
+  // Sound Engine: Loud institutional repeating ring chime for alerts
+  const soundRingingAlert = (times: number = 3) => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioCtx = new AudioContextClass();
+
+      for (let i = 0; i < times; i++) {
+        const startTime = audioCtx.currentTime + i * 0.45;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'triangle';
+
+        // 2-tone urgent ringing frequency
+        osc.frequency.setValueAtTime(659.25, startTime); // E5
+        osc.frequency.setValueAtTime(880.00, startTime + 0.15); // A5
+        gain.gain.setValueAtTime(0.35, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+        osc.start(startTime);
+        osc.stop(startTime + 0.4);
+      }
+    } catch (e) {}
+  };
+
+  // Browser Desktop Notification Trigger
+  const sendBrowserNotification = (title: string, body: string) => {
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(title, {
+            body,
+            icon: '/favicon.ico',
+            tag: title
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then((perm) => {
+            if (perm === 'granted') {
+              new Notification(title, {
+                body,
+                icon: '/favicon.ico',
+                tag: title
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+  };
+
+  // Play urgent notification chime + Chrome Notification when user requests human support
   const prevWaitingRef = useRef(0);
   useEffect(() => {
     if (waitingChatsCount > prevWaitingRef.current) {
-      try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass) {
-          const audioCtx = new AudioContextClass();
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-          osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.12); // A5
-          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-          osc.start(audioCtx.currentTime);
-          osc.stop(audioCtx.currentTime + 0.35);
-        }
-      } catch (e) {}
+      soundRingingAlert(3);
+      sendBrowserNotification('🎧 Live Support Alert!', 'A user has requested to Talk to a Human Specialist.');
     }
     prevWaitingRef.current = waitingChatsCount;
   }, [waitingChatsCount]);
 
-  const navItems = [
+  // Play ringing chime + Chrome Notification when new pending withdrawal arrives
+  const prevPendingWdRef = useRef(pendingWithdrawals.length);
+  useEffect(() => {
+    if (pendingWithdrawals.length > prevPendingWdRef.current) {
+      soundRingingAlert(4);
+      const latestWd = pendingWithdrawals[0];
+      const amtStr = latestWd ? `$${(latestWd.amount || 0).toFixed(2)}` : '';
+      sendBrowserNotification('🚨 New Withdrawal Request!', `New cashout request: ${amtStr} from ${latestWd?.userName || 'User'}`);
+    }
+    prevPendingWdRef.current = pendingWithdrawals.length;
+  }, [pendingWithdrawals]);
+
+  // Persistent Seen/Read ID sets for Notification Badges on Deposits, P2P, and Withdrawals
+  const [seenDepositIds, setSeenDepositIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('neon_seen_deposit_ids');
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set();
+  });
+
+  const [seenP2pIds, setSeenP2pIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('neon_seen_p2p_ids');
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set();
+  });
+
+  const [seenWithdrawalIds, setSeenWithdrawalIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('neon_seen_withdrawal_ids');
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set();
+  });
+
+  // On initial load without stored seen items, initialize with existing items so historical ones don't show as unread
+  useEffect(() => {
+    if (!localStorage.getItem('neon_seen_deposit_ids') && safeDepositsList.length > 0) {
+      const ids = new Set(safeDepositsList.map((o) => (o as any).orderId || (o as any).id).filter(Boolean));
+      setSeenDepositIds(ids);
+      try {
+        localStorage.setItem('neon_seen_deposit_ids', JSON.stringify(Array.from(ids)));
+      } catch {}
+    }
+  }, [safeDepositsList]);
+
+  useEffect(() => {
+    if (!localStorage.getItem('neon_seen_p2p_ids') && safeP2pTransfers.length > 0) {
+      const ids = new Set(safeP2pTransfers.map((r) => r.id).filter(Boolean));
+      setSeenP2pIds(ids);
+      try {
+        localStorage.setItem('neon_seen_p2p_ids', JSON.stringify(Array.from(ids)));
+      } catch {}
+    }
+  }, [safeP2pTransfers]);
+
+  useEffect(() => {
+    if (!localStorage.getItem('neon_seen_withdrawal_ids') && pendingWithdrawals.length > 0) {
+      const ids = new Set(pendingWithdrawals.map((r) => r.id).filter(Boolean));
+      setSeenWithdrawalIds(ids);
+      try {
+        localStorage.setItem('neon_seen_withdrawal_ids', JSON.stringify(Array.from(ids)));
+      } catch {}
+    }
+  }, [pendingWithdrawals]);
+
+  // When admin switches to or views a tab, mark all entries in that tab as seen immediately
+  useEffect(() => {
+    if (activeTab === 'deposits' && safeDepositsList.length > 0) {
+      setSeenDepositIds((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        safeDepositsList.forEach((o) => {
+          const key = (o as any).orderId || (o as any).id;
+          if (key && !next.has(key)) {
+            next.add(key);
+            changed = true;
+          }
+        });
+        if (changed) {
+          try {
+            localStorage.setItem('neon_seen_deposit_ids', JSON.stringify(Array.from(next)));
+          } catch {}
+        }
+        return next;
+      });
+    }
+  }, [activeTab, safeDepositsList]);
+
+  useEffect(() => {
+    if (activeTab === 'p2p' && safeP2pTransfers.length > 0) {
+      setSeenP2pIds((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        safeP2pTransfers.forEach((r) => {
+          if (r.id && !next.has(r.id)) {
+            next.add(r.id);
+            changed = true;
+          }
+        });
+        if (changed) {
+          try {
+            localStorage.setItem('neon_seen_p2p_ids', JSON.stringify(Array.from(next)));
+          } catch {}
+        }
+        return next;
+      });
+    }
+  }, [activeTab, safeP2pTransfers]);
+
+  useEffect(() => {
+    if (activeTab === 'withdrawals' && pendingWithdrawals.length > 0) {
+      setSeenWithdrawalIds((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        pendingWithdrawals.forEach((r) => {
+          if (r.id && !next.has(r.id)) {
+            next.add(r.id);
+            changed = true;
+          }
+        });
+        if (changed) {
+          try {
+            localStorage.setItem('neon_seen_withdrawal_ids', JSON.stringify(Array.from(next)));
+          } catch {}
+        }
+        return next;
+      });
+    }
+  }, [activeTab, pendingWithdrawals]);
+
+  const newDepositsCount = useMemo(() => {
+    return safeDepositsList.filter((o) => {
+      const key = (o as any).orderId || (o as any).id;
+      return key && !seenDepositIds.has(key);
+    }).length;
+  }, [safeDepositsList, seenDepositIds]);
+
+  const newP2pCount = useMemo(() => {
+    return safeP2pTransfers.filter((r) => r.id && !seenP2pIds.has(r.id)).length;
+  }, [safeP2pTransfers, seenP2pIds]);
+
+  const newWithdrawalsCount = useMemo(() => {
+    return pendingWithdrawals.filter((r) => r.id && !seenWithdrawalIds.has(r.id)).length;
+  }, [pendingWithdrawals, seenWithdrawalIds]);
+
+  const pendingTicketsCount = useMemo(() => {
+    return adminTicketsList.filter((t) => t.status === 'pending').length;
+  }, [adminTicketsList]);
+
+  const rawNavItems = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, badge: null, category: 'Core' },
     { id: 'users', label: 'Miners', icon: Users, badge: adminUsers.length, category: 'Core' },
     { id: 'plans', label: 'Plans & Rates', icon: Sparkles, badge: `${currentPlans.length}T`, category: 'Finance' },
-    { id: 'mining', label: 'Global Yield', icon: Cpu, badge: null, category: 'Finance' },
-    { id: 'withdrawals', label: 'Withdrawals', icon: ArrowUpRight, badge: pendingWithdrawals.length || null, alert: pendingWithdrawals.length > 0, category: 'Finance' },
+    { id: 'deposits', label: 'Deposits', icon: ArrowDownCircle, badge: newDepositsCount > 0 ? newDepositsCount : null, alert: newDepositsCount > 0, category: 'Finance' },
+    { id: 'p2p', label: 'P2P Transfers', icon: ArrowLeftRight, badge: newP2pCount > 0 ? newP2pCount : null, alert: newP2pCount > 0, category: 'Finance' },
+    { id: 'withdrawals', label: 'Withdrawals', icon: ArrowUpRight, badge: newWithdrawalsCount > 0 ? newWithdrawalsCount : null, alert: newWithdrawalsCount > 0, category: 'Finance' },
     { id: 'treasury', label: 'Treasury', icon: Landmark, badge: null, category: 'Finance' },
     {
       id: 'support',
-      label: 'Live Chat Support',
-      icon: Headphones,
-      badge: waitingChatsCount > 0 ? `🔴 ${waitingChatsCount}` : (liveSessions.length > 0 ? `${liveSessions.length}` : null),
-      alert: waitingChatsCount > 0,
+      label: 'Support Tickets',
+      icon: Ticket,
+      badge: pendingTicketsCount > 0 ? `🔴 ${pendingTicketsCount}` : (adminTicketsList.length > 0 ? `${adminTicketsList.length}` : null),
+      alert: pendingTicketsCount > 0,
       category: 'Security'
     },
-    { id: 'subadmins', label: 'Staff (RBAC)', icon: ShieldCheck, badge: subAdmins.length, category: 'Security' },
+    { id: 'subadmins', label: 'Staff (RBAC)', icon: ShieldCheck, badge: uniqueSubAdmins.length, category: 'Security' },
     { id: 'settings', label: 'Rules & Popup', icon: Sliders, badge: null, category: 'Security' },
   ];
+  const navItems = isSubadmin ? rawNavItems.filter((i) => i.id !== 'subadmins') : rawNavItems;
   // =========================================================================
   // SECURE MASTER ADMIN AUTHENTICATION GATE
   // =========================================================================
@@ -1162,7 +2038,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-mono font-bold uppercase mb-2">
               <Shield className="w-3 h-3" />
-              <span>{showAdminForgotPassword ? 'Password Recovery' : 'Restricted Master Console'}</span>
+              <span>{showAdminForgotPassword ? 'Password Recovery' : 'Neon Administration Portal'}</span>
             </div>
             <h2 className="text-xl font-black text-white tracking-wide">
               {showAdminForgotPassword ? 'RESET ADMIN PASSWORD' : 'ADMINISTRATOR LOGIN'}
@@ -1232,6 +2108,13 @@ export const AdminSystemPortal: React.FC<Props> = ({
           ) : (
             /* Login Form */
             <form onSubmit={handleAdminLogin} className="space-y-4">
+              {/* Session Terminated Notice (another device or inactivity) */}
+              {sessionTerminatedMsg && (
+                <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2 animate-fadeIn">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{sessionTerminatedMsg}</span>
+                </div>
+              )}
               {/* Error Banner */}
               {adminLoginError && (
                 <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs flex items-center gap-2 animate-fadeIn">
@@ -1351,21 +2234,19 @@ export const AdminSystemPortal: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Urgent Human Support Red Alert Button */}
-            {waitingChatsCount > 0 && (
+            {/* Urgent Support Tickets Red Alert Button */}
+            {pendingTicketsCount > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab('support');
-                  setSupportSubTab('chats');
-                  setSessionFilter('waiting');
-                  const firstWaiting = liveSessions.find((s) => s.status === 'waiting_admin');
-                  if (firstWaiting) setSelectedSessionId(firstWaiting.id);
+                  setSupportSubTab('tickets');
+                  setTicketFilter('pending');
                 }}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-red-600/35 border border-red-500 text-white text-[10px] font-black animate-pulse cursor-pointer shadow-md shadow-red-900/50"
               >
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                <span className="text-red-200 font-bold">🔴 {waitingChatsCount} Waiting!</span>
+                <span className="text-red-200 font-bold">🔴 {pendingTicketsCount} Ticket{pendingTicketsCount > 1 ? 's' : ''}!</span>
               </button>
             )}
 
@@ -1379,7 +2260,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase ${
               isSuperadmin ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
             }`}>
-              {currentRole}
+              {authenticatedRole}
             </span>
 
             {/* Lock & Exit to Main App */}
@@ -1480,8 +2361,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
             <div className="pt-3 border-t border-[#14233C] space-y-2">
               <div className="flex items-center justify-between text-[10px] text-[#64748B]">
                 <span className="font-semibold uppercase tracking-wider">SESSION ROLE:</span>
-                <span className={`font-bold font-mono uppercase ${isSuperadmin ? 'text-red-400' : 'text-amber-400'}`}>
-                  {isSuperadmin ? 'Super Admin' : 'Sub-Admin'}
+                <span className={`font-bold font-mono uppercase ${isSuperadmin ? 'text-cyan-400' : 'text-emerald-400'}`}>
+                  {isSuperadmin ? 'Super Admin' : 'Admin Staff'}
                 </span>
               </div>
               <button
@@ -1577,8 +2458,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
         <div className="p-3 bg-[#050A14] border-t border-[#121F33] space-y-2">
           <div className="flex items-center justify-between text-[10px] text-[#64748B]">
             <span className="font-semibold uppercase tracking-wider">SESSION ROLE:</span>
-            <span className={`font-bold font-mono uppercase ${isSuperadmin ? 'text-red-400' : 'text-amber-400'}`}>
-              {isSuperadmin ? 'Super Admin' : 'Sub-Admin'}
+            <span className={`font-bold font-mono uppercase ${isSuperadmin ? 'text-cyan-400' : 'text-emerald-400'}`}>
+              {isSuperadmin ? 'Super Admin' : 'Admin Staff'}
             </span>
           </div>
 
@@ -1601,36 +2482,35 @@ export const AdminSystemPortal: React.FC<Props> = ({
               {activeTab === 'overview' && 'Executive Overview & Solvency Desk'}
               {activeTab === 'users' && 'Registered Miners & Accounts Directory'}
               {activeTab === 'plans' && 'Mining Plans Governance & Rate Controls'}
-              {activeTab === 'mining' && 'Global Mining Telemetry & Fleet Yield'}
+              {activeTab === 'deposits' && 'Direct Deposits & Plan Purchases Ledger'}
+              {activeTab === 'p2p' && 'Autonomous P2P Member Transfers'}
               {activeTab === 'withdrawals' && 'Withdrawal Settlement & Compliance Desk'}
               {activeTab === 'treasury' && 'Platform Treasury & Cold Vault Reserves'}
-              {activeTab === 'support' && 'Security & Fund Password Reset Desk'}
+              {activeTab === 'support' && 'Support Tickets & Global Announcements Desk'}
               {activeTab === 'subadmins' && 'Sub-Admin Role Delegation (RBAC)'}
               {activeTab === 'settings' && 'Platform Rules, Economic Parameters & Popup'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Urgent Human Support Red Alert Banner */}
-            {waitingChatsCount > 0 && (
+            {/* Urgent Support Tickets Red Alert Banner */}
+            {pendingTicketsCount > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab('support');
-                  setSupportSubTab('chats');
-                  setSessionFilter('waiting');
-                  const firstWaiting = liveSessions.find((s) => s.status === 'waiting_admin');
-                  if (firstWaiting) setSelectedSessionId(firstWaiting.id);
+                  setSupportSubTab('tickets');
+                  setTicketFilter('pending');
                 }}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-red-600/30 border border-red-500 text-white text-xs font-black animate-pulse cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:bg-red-600/50 transition-all"
-                title="Click to view live support request"
+                title="Click to view pending support tickets"
               >
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
                 <span className="text-red-200">
-                  🔴 URGENT: {waitingChatsCount} Miner{waitingChatsCount > 1 ? 's' : ''} Requesting Human Support!
+                  🔴 URGENT: {pendingTicketsCount} Support Ticket{pendingTicketsCount > 1 ? 's' : ''} Awaiting Admin Reply!
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-white text-black text-[10px] font-bold uppercase ml-1">
-                  Open Chat →
+                  Open Desk →
                 </span>
               </button>
             )}
@@ -1651,9 +2531,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
             {/* Role indicator badge */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#050A14] border border-[#14233C]">
-              <span className={`w-2 h-2 rounded-full ${isSuperadmin ? 'bg-red-400' : 'bg-amber-400'}`} />
+              <span className={`w-2 h-2 rounded-full ${isSuperadmin ? 'bg-cyan-400' : 'bg-emerald-400'}`} />
               <span className="text-[11px] font-bold text-gray-300">
-                {isSuperadmin ? 'Super Admin' : 'Sub-Admin (Audit Mode)'}
+                {isSuperadmin ? 'Super Admin' : 'Admin Staff'}
               </span>
             </div>
 
@@ -1670,30 +2550,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
         {/* Scrollable Tab Content Container */}
         <main className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-5">
-          {/* Sub-Admin Strict Read-Only Mode Banner */}
-          {isSubadmin && (
-            <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
-                    <span>Sub-Admin Audit Mode (Strict Read-Only)</span>
-                    <span className="text-[9.5px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-200">
-                      View-Only
-                    </span>
-                  </h4>
-                  <p className="text-[11px] text-amber-200/80 leading-relaxed mt-0.5">
-                    You have view-only access across all records, telemetry, users, orders, and ledger history like a PDF. All modifications, balance adjustments, payout approvals, plan updates, and wallet address settings are strictly locked to Master Super Admin.
-                  </p>
-                </div>
-              </div>
-              <span className="text-[10px] font-mono font-bold px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 text-center">
-                CHANGES LOCKED
-              </span>
-            </div>
-          )}
+
 
           {/* ==================== 1. EXECUTIVE DASHBOARD ==================== */}
           {activeTab === 'overview' && (
@@ -1704,7 +2561,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] shadow-lg relative overflow-hidden flex flex-col justify-between">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none" />
                   <div className="flex items-center justify-between text-[#94A3B8] text-[11px] font-semibold">
-                    <span>PLATFORM GROSS INFLOW</span>
+                    <span>TOTAL DEPOSITS</span>
                     <Coins className="w-4 h-4 text-[#00F0FF]" />
                   </div>
                   <div className="my-1.5 text-2xl font-black text-white font-mono">
@@ -1720,7 +2577,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] shadow-lg relative overflow-hidden flex flex-col justify-between">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
                   <div className="flex items-center justify-between text-[#94A3B8] text-[11px] font-semibold">
-                    <span>ACTIVE STAKED FLEET</span>
+                    <span>ACTIVE MINERS FLEET</span>
                     <Layers className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="my-2 text-2xl font-black text-white font-mono">
@@ -1736,7 +2593,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] shadow-lg relative overflow-hidden flex flex-col justify-between">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
                   <div className="flex items-center justify-between text-[#94A3B8] text-[11px] font-semibold">
-                    <span>TOTAL MINED YIELD</span>
+                    <span>TOTAL MINED YIELD (PROFIT)</span>
                     <Cpu className="w-4 h-4 text-emerald-400" />
                   </div>
                   <div className="my-2 text-2xl font-black text-emerald-400 font-mono">
@@ -1752,7 +2609,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] shadow-lg relative overflow-hidden flex flex-col justify-between">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-xl pointer-events-none" />
                   <div className="flex items-center justify-between text-[#94A3B8] text-[11px] font-semibold">
-                    <span>NET COLD VAULT RESERVE</span>
+                    <span>NET VAULT BALANCE</span>
                     <Landmark className="w-4 h-4 text-purple-400" />
                   </div>
                   <div className="my-2 text-2xl font-black text-white font-mono">
@@ -2106,7 +2963,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               <td className="py-2.5 px-3 text-[#10B981] font-bold">
                                 +${row.refIncome.toFixed(2)}
                                 <span className="text-[9px] text-[#64748B] block font-normal font-mono">
-                                  {row.refsCount} Referrals
+                                  {row.refsCount} {row.refsCount === 1 ? 'Referral' : 'Referrals'}
                                 </span>
                               </td>
                               <td className="py-2.5 px-3 text-white font-black">
@@ -2260,28 +3117,32 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             )}
                             <span className="text-[10px] text-gray-400 block">{user.mobile}</span>
                           </div>
-                          {user.status === 'active' || user.stakedAmount > 0 ? (
+                          {user.status === 'suspended' ? (
+                            <span className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 font-bold text-[9.5px]">
+                              Suspended
+                            </span>
+                          ) : (user.stakedAmount || 0) > 0 ? (
                             <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[9.5px]">
-                              Active Plan
+                              Active
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-bold text-[9.5px]">
-                              No Plan
+                            <span className="px-2 py-0.5 rounded-full bg-gray-500/15 text-gray-400 font-bold text-[9.5px]">
+                              Inactive
                             </span>
                           )}
                         </div>
 
                         <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono bg-[#040812] p-2 rounded-lg border border-[#101E33]">
                           <div>
-                            <span className="text-gray-500 block">Staked</span>
+                            <span className="text-gray-500 block">Investment</span>
                             <strong className="text-white">${user.stakedAmount.toFixed(0)}</strong>
                           </div>
                           <div>
-                            <span className="text-gray-500 block">Yield</span>
+                            <span className="text-gray-500 block">Mined Profit</span>
                             <strong className="text-emerald-400">+${user.totalMinedYield.toFixed(2)}</strong>
                           </div>
                           <div>
-                            <span className="text-gray-500 block">Balance</span>
+                            <span className="text-gray-500 block">Withdrawable</span>
                             <strong className="text-cyan-300">${user.availableBalance.toFixed(2)}</strong>
                           </div>
                         </div>
@@ -2295,10 +3156,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onQuickResetUserPin(user.id, '888888');
-                                  triggerNotice(`Reset PIN for ${user.id} to 888888`);
+                                  const randomPin = generateRandom6DigitPin();
+                                  onQuickResetUserPin(user.id, randomPin);
+                                  triggerNotice(`✓ Generated New PIN for ${user.id}: ${randomPin}`);
                                 }}
-                                className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 font-bold text-[10px]"
+                                className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[10px] cursor-pointer"
                               >
                                 Reset PIN
                               </button>
@@ -2343,10 +3205,10 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             <th className="py-3 px-3">Miner Account</th>
                             <th className="py-3 px-3">Contact</th>
                             <th className="py-3 px-3">Status</th>
-                            <th className="py-3 px-3">Staked Plan</th>
-                            <th className="py-3 px-3">Power</th>
-                            <th className="py-3 px-3">Yield</th>
-                            <th className="py-3 px-3">Balance</th>
+                            <th className="py-3 px-3">Active Plan</th>
+                            <th className="py-3 px-3">Active Investment</th>
+                            <th className="py-3 px-3">Mined Profit</th>
+                            <th className="py-3 px-3">Withdrawable Balance</th>
                             <th className="py-3 px-3">Fund PIN</th>
                             <th className="py-3 px-3">Referrals</th>
                             <th className="py-3 px-3 text-right">Actions</th>
@@ -2370,17 +3232,17 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                 <span className="text-gray-400 font-mono text-[10px]">{user.mobile}</span>
                               </td>
                               <td className="py-3 px-3">
-                                {user.status === 'active' || user.stakedAmount > 0 ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[9.5px]">
-                                    Active
-                                  </span>
-                                ) : user.status === 'suspended' ? (
+                                {user.status === 'suspended' ? (
                                   <span className="px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-[9.5px]">
                                     Suspended
                                   </span>
+                                ) : (user.stakedAmount || 0) > 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[9.5px]">
+                                    Active
+                                  </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[9.5px]">
-                                    No Plan
+                                  <span className="px-2 py-0.5 rounded-full bg-gray-500/15 border border-gray-500/30 text-gray-400 font-bold text-[9.5px]">
+                                    Inactive
                                   </span>
                                 )}
                               </td>
@@ -2400,8 +3262,13 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               <td className="py-3 px-3 font-mono font-bold text-emerald-400">
                                 +${user.totalMinedYield.toFixed(2)}
                               </td>
-                              <td className="py-3 px-3 font-mono text-cyan-300 font-bold">
-                                ${user.availableBalance.toFixed(2)}
+                              <td className="py-3 px-3 font-mono font-bold">
+                                <span className="text-cyan-300 block">${user.availableBalance.toFixed(2)}</span>
+                                {(user.depositBalance || 0) > 0 && (
+                                  <span className="text-[9.5px] text-amber-400 font-normal block font-mono">
+                                    Deposit: ${(user.depositBalance || 0).toFixed(2)}
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3 px-3 font-mono text-amber-300 font-bold">
                                 {user.fundPin || 'Not set'}
@@ -2427,10 +3294,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          onQuickResetUserPin(user.id, '888888');
-                                          triggerNotice(`Reset PIN for ${user.id} to 888888`);
+                                          const randomPin = generateRandom6DigitPin();
+                                          onQuickResetUserPin(user.id, randomPin);
+                                          triggerNotice(`✓ Generated New PIN for ${user.id}: ${randomPin}`);
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[10.5px] font-bold"
+                                        className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[10.5px] font-bold cursor-pointer"
                                       >
                                         PIN
                                       </button>
@@ -2540,8 +3408,28 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         <strong className="text-white font-mono">{selectedUserDetail.mobile}</strong>
                       </div>
                       <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
-                        <span className="text-gray-500 block text-[10px]">Available Balance</span>
+                        <span className="text-gray-500 block text-[10px]">Active Investment</span>
+                        <strong className="text-white font-mono">${selectedUserDetail.stakedAmount.toFixed(2)} USD</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
+                        <span className="text-gray-500 block text-[10px]">Deposit Balance</span>
+                        <strong className="text-amber-400 font-mono">${(selectedUserDetail.depositBalance || 0).toFixed(2)} USDT</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
+                        <span className="text-gray-500 block text-[10px]">Withdrawable Balance</span>
                         <strong className="text-cyan-400 font-mono">${selectedUserDetail.availableBalance.toFixed(2)} USDT</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
+                        <span className="text-gray-500 block text-[10px]">Mined Profit</span>
+                        <strong className="text-emerald-400 font-mono">+${selectedUserDetail.totalMinedYield.toFixed(2)} USDT</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
+                        <span className="text-gray-500 block text-[10px]">Direct Referrals</span>
+                        <strong className="text-purple-300 font-mono">{selectedUserDetail.directReferralsCount} Member(s)</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
+                        <span className="text-gray-500 block text-[10px]">Referral Earnings</span>
+                        <strong className="text-emerald-400 font-mono">+${(selectedUserDetail.referralEarnings || 0).toFixed(2)} USDT</strong>
                       </div>
                       <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
                         <span className="text-gray-500 block text-[10px]">Fund PIN</span>
@@ -2550,16 +3438,19 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     </div>
 
                     <div className="pt-2 flex gap-2">
-                      <button
-                        onClick={() => {
-                          onQuickResetUserPin(selectedUserDetail.id, '888888');
-                          setSelectedUserDetail({ ...selectedUserDetail, fundPin: '888888', fundPinSet: true });
-                          triggerNotice(`Reset Fund PIN for ${selectedUserDetail.name} to 888888`);
-                        }}
-                        className="flex-1 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-xs hover:bg-amber-500 hover:text-black transition-all cursor-pointer"
-                      >
-                        Reset PIN to 888888
-                      </button>
+                      {isSuperadmin && (
+                        <button
+                          onClick={() => {
+                            const randomPin = generateRandom6DigitPin();
+                            onQuickResetUserPin(selectedUserDetail.id, randomPin);
+                            setSelectedUserDetail({ ...selectedUserDetail, fundPin: randomPin, fundPinSet: true });
+                            triggerNotice(`✓ Generated New PIN for ${selectedUserDetail.name}: ${randomPin}`);
+                          }}
+                          className="flex-1 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-xs hover:bg-amber-500 hover:text-black transition-all cursor-pointer"
+                        >
+                          Generate New Random PIN
+                        </button>
+                      )}
                       <button
                         onClick={() => setSelectedUserDetail(null)}
                         className="flex-1 py-2 rounded-xl bg-[#14233C] text-gray-300 hover:text-white font-bold text-xs cursor-pointer"
@@ -2622,12 +3513,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         <span>Add Plan</span>
                       </button>
                     </>
-                  ) : (
-                    <span className="text-[11px] text-amber-400 font-mono flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30">
-                      <Lock className="w-3 h-3" />
-                      <span>Read-Only Plans View</span>
-                    </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -2700,8 +3586,8 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${plan.isComingSoon ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>
                             {plan.isComingSoon ? 'Coming Soon' : 'Active Tier'}
                           </span>
-                          <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
-                            <Lock className="w-2.5 h-2.5" /> Locked
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            Standard
                           </span>
                         </div>
                       )}
@@ -2761,33 +3647,114 @@ export const AdminSystemPortal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* ==================== 5. GLOBAL MINING YIELD ==================== */}
-          {activeTab === 'mining' && (
+          {/* ==================== 4. DEPOSITS & INFLOW LEDGER ==================== */}
+          {activeTab === 'deposits' && (
             <div className="space-y-4 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-emerald-400" />
-                    <span>Global Mining Yield Telemetry</span>
-                  </h3>
-                  <p className="text-[10.5px] text-[#64748B]">
-                    Consolidated 24-hour mining output across all active rigs
-                  </p>
+              {/* Header Banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#070E1B] border border-[#14233C]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                    <ArrowDownCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-white">Deposits & Inflow Ledger</h3>
+                    <p className="text-[10.5px] text-[#64748B]">
+                      Track all Direct BEP-20 Deposits and Purchased Mining Contracts across all registered IDs
+                    </p>
+                  </div>
                 </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-2xl font-black text-emerald-400 font-mono block">
-                    ${dynamicMined.toFixed(2)} USDT
+                <div className="flex items-center gap-2 text-[10.5px] font-mono flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-400 font-bold border border-cyan-500/25">
+                    Direct Deposits: ${totalDirectDepositsAmount.toFixed(2)}
                   </span>
-                  <span className="text-[10px] text-gray-500">Fleet Hashrate: {dynamicHashrate} TH/s</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-400 font-bold border border-purple-500/25">
+                    Plans Bought: ${totalPlansBoughtAmount.toFixed(2)}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/25">
+                    Total Inflow: ${dynamicInflow.toFixed(2)}
+                  </span>
                 </div>
               </div>
 
-              {adminUsers.filter((u) => (u.stakedAmount || 0) > 0).length === 0 ? (
+              {/* Filters & Search Header */}
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-2xl bg-[#070E1B] border border-[#14233C]">
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setDepositFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      depositFilter === 'all'
+                        ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>All Inflows</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-[#14233C] text-gray-300">
+                      {safeDepositsList.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDepositFilter('direct')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      depositFilter === 'direct'
+                        ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>Direct Deposits</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-cyan-500/20 text-cyan-300">
+                      {safeDepositsList.filter((o) => o.planId === 'direct_deposit' || o.paymentMethod === 'bep20' || o.planName?.toLowerCase().includes('deposit')).length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDepositFilter('plan')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      depositFilter === 'plan'
+                        ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
+                        : 'bg-[#0A1324] hover:bg-[#0E1B33] text-gray-400 border border-[#14233C]'
+                    }`}
+                  >
+                    <span>Plans Bought</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-purple-500/20 text-purple-300">
+                      {safeDepositsList.filter((o) => !(o.planId === 'direct_deposit' || o.paymentMethod === 'bep20' || o.planName?.toLowerCase().includes('deposit'))).length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full md:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="text"
+                    value={depositSearchQuery}
+                    onChange={(e) => setDepositSearchQuery(e.target.value)}
+                    placeholder="Search User ID, Name, TX..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#050D18] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                  {depositSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setDepositSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Deposit Records List */}
+              {displayedDeposits.length === 0 ? (
                 <div className="py-12 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 p-6">
-                  <Cpu className="w-10 h-10 mx-auto text-emerald-400/50" />
-                  <h4 className="text-white font-bold text-sm">No Active Miners In Fleet</h4>
+                  <ArrowDownCircle className="w-10 h-10 mx-auto text-cyan-400/60" />
+                  <h4 className="text-white font-bold text-sm">No Deposit Records Found</h4>
                   <p className="text-gray-400 text-xs max-w-md mx-auto">
-                    Global mining rewards will begin calculating as soon as the first user activates a mining contract.
+                    Incoming deposits and purchased mining plans from users will be recorded here in real-time.
                   </p>
                 </div>
               ) : (
@@ -2796,38 +3763,208 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <table className="w-full text-left text-[11.5px]">
                       <thead>
                         <tr className="border-b border-[#14233C] bg-[#050A14] text-[#64748B] uppercase text-[9.5px] tracking-wider font-mono">
-                          <th className="py-3 px-3">Miner</th>
-                          <th className="py-3 px-3">Staked Tier</th>
-                          <th className="py-3 px-3">Total Mined</th>
-                          <th className="py-3 px-3">Available Balance</th>
+                          <th className="py-3 px-3">User Account</th>
+                          <th className="py-3 px-3">Inflow Type</th>
+                          <th className="py-3 px-3">Amount Paid</th>
+                          <th className="py-3 px-3">Date (USA Eastern)</th>
+                          <th className="py-3 px-3">TX Hash</th>
                           <th className="py-3 px-3 text-right">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#0E1A2E]">
-                        {adminUsers.filter((u) => (u.stakedAmount || 0) > 0).map((u) => (
-                          <tr key={u.id} className="hover:bg-[#0A1324] transition-colors">
-                            <td className="py-3 px-3">
-                              <span className="font-bold text-white block">{u.name}</span>
-                              <span className="text-[10px] text-gray-500 font-mono">{u.id}</span>
-                            </td>
-                            <td className="py-3 px-3 text-gray-300 font-mono">${u.stakedAmount} ({u.currentPlanName})</td>
-                            <td className="py-3 px-3 font-mono font-bold text-emerald-400">+${u.totalMinedYield.toFixed(2)}</td>
-                            <td className="py-3 px-3 font-mono text-cyan-300 font-bold">${u.availableBalance.toFixed(2)}</td>
-                            <td className="py-3 px-3 text-right">
-                              {Boolean(u.isMiningActive || (u.stakedAmount > 0 && (u.status === 'active' || !u.status))) ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                  <span>Online (Mining Active)</span>
+                        {displayedDeposits.map((order) => {
+                          const isDirect =
+                            order.planId === 'direct_deposit' ||
+                            order.paymentMethod === 'bep20' ||
+                            Boolean(order.planName && order.planName.toLowerCase().includes('deposit'));
+                          const amt = order.amountPaid || order.planAmount || 0;
+                          return (
+                            <tr key={order.orderId || (order as any).id || Math.random().toString()} className="hover:bg-[#0A1324] transition-colors">
+                              <td className="py-3 px-3">
+                                <span className="font-bold text-white block">{order.userName || order.userId}</span>
+                                <span className="text-[10px] text-cyan-400 font-mono">{order.userId}</span>
+                              </td>
+                              <td className="py-3 px-3">
+                                {isDirect ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 font-bold text-[10px] border border-cyan-500/30">
+                                    <ArrowDownCircle className="w-3 h-3" />
+                                    <span>Direct Deposit</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 font-bold text-[10px] border border-purple-500/30">
+                                    <Sparkles className="w-3 h-3 text-purple-400" />
+                                    <span>Plan Bought ({order.planName || `${amt} Plan`})</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 font-mono font-black text-emerald-400 text-sm">
+                                +${amt.toFixed(2)} USDT
+                              </td>
+                              <td className="py-3 px-3 font-mono text-gray-400 text-[10.5px]">
+                                {formatUsaDateTime((order as any).createdAt || order.orderDate)}
+                              </td>
+                              <td className="py-3 px-3 font-mono text-[10.5px]">
+                                {order.txHash ? (
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(order.txHash);
+                                      triggerNotice(`✓ Copied TX Hash: ${order.txHash.slice(0, 10)}...`);
+                                    }}
+                                    className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                                    title="Click to copy hash"
+                                  >
+                                    <span>{order.txHash.slice(0, 8)}...{order.txHash.slice(-6)}</span>
+                                    <Copy className="w-3 h-3 text-gray-500" />
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-500">Confirmed</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[9.5px] border border-emerald-500/30">
+                                  <Check className="w-2.5 h-2.5" />
+                                  <span>Completed</span>
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold border border-amber-500/30">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                  <span>Inactive (Node Stopped)</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ==================== 5. P2P MEMBER TRANSFERS ==================== */}
+          {activeTab === 'p2p' && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Header Banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#070E1B] border border-[#14233C]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <ArrowLeftRight className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-white">Autonomous P2P Member Transfers</h3>
+                    <p className="text-[10.5px] text-[#64748B]">
+                      Zero-fee member-to-member transfers executed autonomously (No admin permissions required)
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[10.5px] font-mono flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-400 font-bold border border-purple-500/25">
+                    P2P Volume: ${totalP2pVolume.toFixed(2)} USDT
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-400 font-bold border border-cyan-500/25">
+                    Transfers: {safeP2pTransfers.length}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/25">
+                    Transfer Fee: 0% Free
+                  </span>
+                </div>
+              </div>
+
+              {/* Search Header */}
+              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#070E1B] border border-[#14233C]">
+                <span className="text-xs font-bold text-gray-400">
+                  Showing {displayedP2pTransfers.length} P2P Settlement Record(s)
+                </span>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="text"
+                    value={p2pSearchQuery}
+                    onChange={(e) => setP2pSearchQuery(e.target.value)}
+                    placeholder="Search Sender, Recipient, Hash..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#050D18] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                  {p2pSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setP2pSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* P2P Transfers Table */}
+              {displayedP2pTransfers.length === 0 ? (
+                <div className="py-12 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 p-6">
+                  <ArrowLeftRight className="w-10 h-10 mx-auto text-purple-400/60" />
+                  <h4 className="text-white font-bold text-sm">No P2P Transfers Logged</h4>
+                  <p className="text-gray-400 text-xs max-w-md mx-auto">
+                    When platform members transfer funds to other users via User ID, the autonomous transaction logs will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-[#070E1B] border border-[#14233C] overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[11.5px]">
+                      <thead>
+                        <tr className="border-b border-[#14233C] bg-[#050A14] text-[#64748B] uppercase text-[9.5px] tracking-wider font-mono">
+                          <th className="py-3 px-3">Sender Account</th>
+                          <th className="py-3 px-3">Recipient</th>
+                          <th className="py-3 px-3">Transfer Amount</th>
+                          <th className="py-3 px-3">Fee</th>
+                          <th className="py-3 px-3">Date (USA Eastern)</th>
+                          <th className="py-3 px-3">TX Hash</th>
+                          <th className="py-3 px-3 text-right">Settlement</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#0E1A2E]">
+                        {displayedP2pTransfers.map((tx) => {
+                          const cleanRecipient = tx.recipientId || (tx.walletAddress ? tx.walletAddress.replace(/.*@/, '@') : 'Member');
+                          return (
+                            <tr key={tx.id} className="hover:bg-[#0A1324] transition-colors">
+                              <td className="py-3 px-3">
+                                <span className="font-bold text-white block">{tx.userName || tx.userId}</span>
+                                <span className="text-[10px] text-cyan-400 font-mono">{tx.userId}</span>
+                              </td>
+                              <td className="py-3 px-3 font-mono">
+                                <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 font-bold border border-purple-500/30 text-[11px]">
+                                  {cleanRecipient.startsWith('@') ? cleanRecipient : `@${cleanRecipient}`}
                                 </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="py-3 px-3 font-mono font-black text-white text-sm">
+                                ${tx.amount.toFixed(2)} USDT
+                              </td>
+                              <td className="py-3 px-3 font-mono text-emerald-400 text-[10.5px]">
+                                $0.00 (0% Free)
+                              </td>
+                              <td className="py-3 px-3 font-mono text-gray-400 text-[10.5px]">
+                                {formatUsaDateTime(tx.timestampMs || tx.timestamp)}
+                              </td>
+                              <td className="py-3 px-3 font-mono text-[10.5px]">
+                                {tx.txHash ? (
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(tx.txHash!);
+                                      triggerNotice(`✓ Copied P2P Hash: ${tx.txHash!.slice(0, 10)}...`);
+                                    }}
+                                    className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                                    title="Click to copy hash"
+                                  >
+                                    <span>{tx.txHash.slice(0, 10)}...</span>
+                                    <Copy className="w-3 h-3 text-gray-500" />
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-500">Autonomous</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[9.5px] border border-emerald-500/30">
+                                  <Check className="w-2.5 h-2.5" />
+                                  <span>Instant Settled</span>
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -2861,14 +3998,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {isSubadmin && (
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5">
-                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>
-                    <strong>Sub-Admin Read-Only Audit:</strong> You have full visibility to monitor miner payout queues and settlement history, but approval & cashout release is strictly restricted to Super Admin.
-                  </span>
-                </div>
-              )}
+
 
               {/* Status Filter & Search Header */}
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-2xl bg-[#070E1B] border border-[#14233C]">
@@ -3002,7 +4132,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               {req.userId}
                             </span>
                             <span className="text-[10px] font-mono text-gray-400">
-                              {req.timestamp || 'Recent'}
+                              {formatUsaDateTime(req.timestampMs || req.timestamp)}
                             </span>
 
                             {/* Status Badge */}
@@ -3080,9 +4210,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       {req.status === 'pending' && (
                         <div className="flex items-center justify-end gap-2 pt-1">
                           {isSubadmin ? (
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-semibold">
-                              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <span>Approval Restricted (Super Admin Only)</span>
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0A1324] border border-[#1E293B] text-gray-400 text-[11px] font-medium">
+                              <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span>Queued for Processing</span>
                             </div>
                           ) : (
                             <>
@@ -3155,450 +4285,587 @@ export const AdminSystemPortal: React.FC<Props> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL INFLOW</span>
+                  <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL DEPOSITS</span>
                   <span className="text-xl font-black text-white font-mono">${dynamicInflow.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-gray-400 block font-mono">Plans + Crypto Deposits</span>
+                  <span className="text-[9.5px] text-gray-400 block font-mono">Plans + Direct Crypto Deposits</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">SETTLED CASHOUTS</span>
-                  <span className="text-xl font-black text-emerald-400 font-mono">${dynamicApprovedNetPayout.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-emerald-400 block font-mono">Net Outflow (Gross: ${dynamicApprovedGrossAmount.toFixed(2)})</span>
+                  <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL WITHDRAWN</span>
+                  <span className="text-xl font-black text-emerald-400 font-mono">${dynamicApprovedGrossAmount.toFixed(2)}</span>
+                  <span className="text-[9.5px] text-emerald-400 block font-mono">Gross Total (Net Payout: ${dynamicApprovedNetPayout.toFixed(2)})</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">FEES COLLECTED (5%)</span>
+                  <span className="text-[10px] text-gray-500 block uppercase font-bold">WITHDRAWAL FEES (5% PROFIT)</span>
                   <span className="text-xl font-black text-cyan-400 font-mono">${dynamicFees.toFixed(2)}</span>
                   <span className="text-[9.5px] text-cyan-400 block font-mono">Company Profit Retained</span>
                 </div>
                 <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">NET COLD VAULT</span>
+                  <span className="text-[10px] text-gray-500 block uppercase font-bold">NET VAULT BALANCE</span>
                   <span className="text-xl font-black text-purple-400 font-mono">${dynamicReserves.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-purple-400 block font-mono">Available Vault Reserve</span>
+                  <span className="text-[9.5px] text-purple-400 block font-mono">Total Deposits - Total Withdrawals</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ==================== 8. LIVE USER SUPPORT DESK & SECURITY PIN DESK ==================== */}
+          {/* ==================== 8. SUPPORT TICKETS DESK & GLOBAL BROADCAST DESK ==================== */}
           {activeTab === 'support' && (
             <div className="space-y-4 animate-fadeIn">
               {/* Top Banner with Real-Time Badges */}
               <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                    <Headphones className="w-4 h-4 text-cyan-400" />
-                    <span>Live User Support Desk & Security Control</span>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Ticket className="w-4 h-4 text-cyan-400" />
+                    <span>Support Tickets & Global Announcements Desk</span>
                   </h3>
                   <p className="text-[10.5px] text-[#64748B]">
-                    Real-time two-way chat with escalated miners and 6-digit withdrawal Fund PIN recovery
+                    Manage miner queries, dispatch verified responses to user inboxes, and broadcast targeted announcements.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {waitingChatsCount > 0 && (
+                  {pendingTicketsCount > 0 ? (
                     <span className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-400 border border-red-500/40 text-xs font-bold animate-pulse flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                      {waitingChatsCount} Waiting Agent
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                      {pendingTicketsCount} Pending Ticket{pendingTicketsCount > 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      All Tickets Answered
                     </span>
                   )}
-                  {activeChatsCount > 0 && (
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      {activeChatsCount} Active
-                    </span>
-                  )}
-                  <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 text-xs font-bold border border-amber-500/30">
-                    {pendingTickets.length} PIN Tickets
+                  <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-400 text-xs font-bold border border-cyan-500/30 flex items-center gap-1.5">
+                    <Megaphone className="w-3.5 h-3.5" />
+                    {broadcastsList.length} Active Broadcast{broadcastsList.length === 1 ? '' : 's'}
                   </span>
+                  {!isSubadmin && (
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 text-xs font-bold border border-amber-500/30">
+                      {pendingTickets.length} PIN Requests
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Sub-Tab Navigation Switcher */}
-              <div className="flex items-center gap-2 border-b border-[#14233C] pb-2">
+              <div className="flex items-center gap-2 border-b border-[#14233C] pb-2 overflow-x-auto">
+                {/* SUBTAB 1: TICKETS */}
                 <button
                   type="button"
-                  onClick={() => setSupportSubTab('chats')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                    supportSubTab === 'chats'
+                  onClick={() => setSupportSubTab('tickets')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                    supportSubTab === 'tickets'
                       ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
                       : 'bg-[#0E1A2E] text-gray-400 hover:text-white border border-[#14233C]'
                   }`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Live Customer Chats</span>
-                  {waitingChatsCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-black animate-bounce">
-                      {waitingChatsCount}
+                  <Ticket className="w-3.5 h-3.5" />
+                  <span>Miner Support Tickets</span>
+                  {pendingTicketsCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-black animate-pulse">
+                      {pendingTicketsCount}
                     </span>
                   )}
-                  <span className="text-[10px] opacity-80">({liveSessions.length})</span>
+                  <span className="text-[10px] opacity-80">({adminTicketsList.length})</span>
                 </button>
 
+                {/* SUBTAB 2: GLOBAL BROADCASTS */}
                 <button
                   type="button"
-                  onClick={() => setSupportSubTab('pins')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                    supportSubTab === 'pins'
+                  onClick={() => setSupportSubTab('broadcasts')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                    supportSubTab === 'broadcasts'
                       ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
                       : 'bg-[#0E1A2E] text-gray-400 hover:text-white border border-[#14233C]'
                   }`}
                 >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>Fund PIN Reset Desk</span>
-                  <span className="text-[10px] opacity-80">({pendingTickets.length})</span>
+                  <Megaphone className="w-3.5 h-3.5" />
+                  <span>Global Broadcasts (3 Filters)</span>
+                  <span className="text-[10px] opacity-80">({broadcastsList.length})</span>
                 </button>
+
+                {/* SUBTAB 3: FUND PIN RESET */}
+                {!isSubadmin && (
+                  <button
+                    type="button"
+                    onClick={() => setSupportSubTab('pins')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                      supportSubTab === 'pins'
+                        ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20'
+                        : 'bg-[#0E1A2E] text-gray-400 hover:text-white border border-[#14233C]'
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Fund PIN Reset Desk</span>
+                    <span className="text-[10px] opacity-80">({pendingTickets.length})</span>
+                  </button>
+                )}
               </div>
 
-              {/* SUB-TAB 1: LIVE CHAT SESSIONS */}
-              {supportSubTab === 'chats' && (
+              {/* ================= VIEW 1: MINER SUPPORT TICKETS ================= */}
+              {supportSubTab === 'tickets' && (
                 <div className="space-y-4">
                   {/* Filters & Search Row */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                      {(['all', 'waiting', 'active', 'resolved'] as const).map((f) => (
+                      {(['all', 'pending', 'replied'] as const).map((f) => (
                         <button
                           key={f}
-                          onClick={() => setSessionFilter(f)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all capitalize whitespace-nowrap cursor-pointer ${
-                            sessionFilter === f
-                              ? 'bg-[#14233C] text-cyan-400 border border-cyan-500/50'
+                          onClick={() => setTicketFilter(f)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all capitalize whitespace-nowrap cursor-pointer ${
+                            ticketFilter === f
+                              ? 'bg-[#14233C] text-cyan-400 border border-cyan-500/50 shadow-md'
                               : 'bg-[#070E1B] text-gray-400 hover:text-gray-200 border border-transparent'
                           }`}
                         >
-                          {f === 'all' && `All (${liveSessions.length})`}
-                          {f === 'waiting' && `🔴 Waiting (${waitingChatsCount})`}
-                          {f === 'active' && `🟢 Active (${activeChatsCount})`}
-                          {f === 'resolved' && `⚪ Resolved (${resolvedChatsCount})`}
+                          {f === 'all' && `All Tickets (${adminTicketsList.length})`}
+                          {f === 'pending' && `⏳ Pending (${adminTicketsList.filter((t) => t.status === 'pending').length})`}
+                          {f === 'replied' && `✓ Replied (${adminTicketsList.filter((t) => t.status === 'replied' || !!t.adminReply).length})`}
                         </button>
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {liveSessions.length > 0 && !isSubadmin && (
-                        <button
-                          type="button"
-                          onClick={handlePurgeAllChats}
-                          className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-red-400 bg-red-950/40 border border-red-500/30 hover:bg-red-900/60 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                          title="Clear all chat conversations"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Clear All Chats</span>
-                        </button>
-                      )}
-
-                      <div className="relative min-w-[220px]">
-                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                        <input
-                          type="text"
-                          placeholder="Search miner name, phone, message..."
-                          value={chatSearchQuery}
-                          onChange={(e) => setChatSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
-                        />
-                      </div>
+                    <div className="relative min-w-[240px]">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                      <input
+                        type="text"
+                        placeholder="Search by miner, mobile, or subject..."
+                        value={ticketSearchQuery}
+                        onChange={(e) => setTicketSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                      />
                     </div>
                   </div>
 
-                  {liveSessions.length === 0 ? (
-                    <div className="py-14 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-3 p-6">
-                      <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
-                        <MessageSquare className="w-6 h-6" />
-                      </div>
-                      <h4 className="text-white font-bold text-sm">No Live Support Sessions Active</h4>
-                      <p className="text-gray-400 text-xs max-w-md mx-auto">
-                        When users interact with the 24/7 AI Copilot or tap <strong>'👤 Talk to Human Agent'</strong>, their conversation and telemetry appear here instantly for real-time live support.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                      {/* Left: Chat Session Threads List */}
-                      <div className="lg:col-span-4 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-                        {filteredSessions.length === 0 ? (
-                          <div className="p-6 text-center text-xs text-gray-500 bg-[#070E1B] rounded-xl border border-[#14233C]">
-                            No conversations match the current filter.
+                  {(() => {
+                    const filtered = adminTicketsList
+                      .filter((t) => {
+                        if (ticketFilter === 'pending') return t.status === 'pending';
+                        if (ticketFilter === 'replied') return t.status === 'replied' || !!t.adminReply;
+                        return true;
+                      })
+                      .filter((t) => {
+                        if (!ticketSearchQuery.trim()) return true;
+                        const q = ticketSearchQuery.toLowerCase();
+                        return (
+                          t.id?.toLowerCase().includes(q) ||
+                          t.userName?.toLowerCase().includes(q) ||
+                          t.mobile?.toLowerCase().includes(q) ||
+                          t.email?.toLowerCase().includes(q) ||
+                          t.subject?.toLowerCase().includes(q) ||
+                          t.queryText?.toLowerCase().includes(q) ||
+                          t.details?.toLowerCase().includes(q)
+                        );
+                      });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-14 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-3 p-6">
+                          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
+                            <Ticket className="w-6 h-6" />
                           </div>
-                        ) : (
-                          filteredSessions.map((session) => {
-                            const isSelected = selectedSession?.id === session.id;
-                            const isWaiting = session.status === 'waiting_admin';
-                            const isActive = session.status === 'active_admin';
-                            const isResolved = session.status === 'resolved';
+                          <h4 className="text-white font-bold text-sm">No Support Tickets Matching Criteria</h4>
+                          <p className="text-gray-400 text-xs max-w-md mx-auto">
+                            When users raise a ticket via their web app or AI chat button, queries arrive here immediately for admin response.
+                          </p>
+                        </div>
+                      );
+                    }
 
-                            return (
-                              <div
-                                key={session.id}
-                                onClick={() => setSelectedSessionId(session.id)}
-                                className={`p-3 rounded-xl transition-all cursor-pointer border text-left ${
-                                  isSelected
-                                    ? 'bg-[#0E1A2E] border-cyan-500 shadow-md shadow-cyan-500/10'
-                                    : isWaiting
-                                    ? 'bg-red-950/30 border-red-500/50 hover:border-red-500/80 shadow-md shadow-red-950/30 animate-pulse'
-                                    : 'bg-[#070E1B] border-[#14233C] hover:border-[#1E3A5F]'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-1 mb-1">
-                                  <div className="flex items-center gap-1.5 truncate">
-                                    <div className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-[10px] font-black shrink-0">
-                                      {session.userName?.charAt(0).toUpperCase() || 'U'}
-                                    </div>
-                                    <strong className="text-white text-xs truncate">{session.userName}</strong>
-                                  </div>
-                                  <span className="text-[10px] text-gray-500 shrink-0">{session.updatedAt}</span>
-                                </div>
+                    return (
+                      <div className="space-y-3.5">
+                        {filtered.map((tkt) => {
+                          const isPending = tkt.status === 'pending';
+                          const currentReply = ticketReplyText[tkt.id] !== undefined ? ticketReplyText[tkt.id] : '';
+                          const isReplying = !!isReplyingTicket[tkt.id];
 
-                                <div className="flex items-center gap-2 mb-1.5 text-[10px] text-[#64748B]">
-                                  <span className="font-mono text-cyan-400">{session.userMobile || session.userId}</span>
-                                  <span>•</span>
-                                  <span className="px-1.5 py-0.2 rounded bg-cyan-950/60 text-cyan-300 font-bold">
-                                    {session.userPlan || 'No Plan'}
-                                  </span>
-                                  <span>•</span>
-                                  <span className="text-emerald-400 font-bold">
-                                    ${(session.userBalance || 0).toFixed(2)}
-                                  </span>
-                                </div>
+                          const CANNED_REPLIES = [
+                            '✓ Your inquiry has been verified and processed successfully.',
+                            'ℹ️ Deposit / Balance has been confirmed and credited to your wallet.',
+                            '⚠️ Please share your BSCScan Transaction Hash (TxHash) for manual lookup.',
+                            '🔒 Your Fund Security PIN has been updated. Please verify in your Wallet.',
+                            '⚡ Node mining power is actively generating yield on 24H cycle.'
+                          ];
 
-                                <p className="text-[11px] text-gray-300 line-clamp-1 truncate bg-[#040812] px-2 py-1 rounded border border-[#101E33]">
-                                  {session.lastMessageText || 'No message content'}
-                                </p>
-
-                                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-[#101E33]">
-                                  {isWaiting && (
-                                    <span className="text-[9.5px] font-black text-red-400 flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span>
-                                      🔴 LIVE SUPPORT REQUESTED
-                                    </span>
-                                  )}
-                                  {isActive && (
-                                    <span className="text-[9.5px] font-black text-emerald-400 flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                      ACTIVE SUPPORT
-                                    </span>
-                                  )}
-                                  {isResolved && (
-                                    <span className="text-[9.5px] font-bold text-gray-500 flex items-center gap-1">
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                      RESOLVED
-                                    </span>
-                                  )}
-                                  {session.status === 'bot' && (
-                                    <span className="text-[9.5px] font-bold text-cyan-400 flex items-center gap-1">
-                                      <Bot className="w-3 h-3 text-cyan-400" />
-                                      AI COPILOT
-                                    </span>
-                                  )}
-
-                                  <span className="text-[10px] text-gray-500">
-                                    {session.messages?.length || 0} msgs
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {/* Right: Selected Active Conversation Desk */}
-                      <div className="lg:col-span-8 bg-[#070E1B] rounded-2xl border border-[#14233C] flex flex-col h-[600px] overflow-hidden">
-                        {selectedSession ? (
-                          <>
-                            {/* Chat Header with User Telemetry & Actions */}
-                            <div className="p-3.5 border-b border-[#14233C] bg-[#0A1224] flex items-center justify-between gap-3 shrink-0">
-                              <div className="flex items-center gap-2.5 truncate">
-                                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-white text-sm shrink-0">
-                                  {selectedSession.userName?.charAt(0).toUpperCase() || 'U'}
-                                </div>
-                                <div className="truncate">
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-white font-bold text-xs sm:text-sm truncate">
-                                      {selectedSession.userName}
+                          return (
+                            <div
+                              key={tkt.id}
+                              className={`p-4 rounded-2xl border transition-all ${
+                                isPending
+                                  ? 'bg-[#060D19] border-cyan-500/40 shadow-[0_0_20px_rgba(0,240,255,0.08)]'
+                                  : 'bg-[#040812] border-[#101E33]'
+                              }`}
+                            >
+                              {/* Ticket Header */}
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-[#0F1B2F] pb-2.5 mb-2.5">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                                      <span>{tkt.subject}</span>
                                     </h4>
-                                    <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold">
-                                      {selectedSession.userPlan || 'Active Rig'}
-                                    </span>
-                                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">
-                                      Bal: ${(selectedSession.userBalance || 0).toFixed(2)}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono">
-                                    <span>{selectedSession.userMobile || selectedSession.userId}</span>
-                                    {selectedSession.userEmail && <span>• {selectedSession.userEmail}</span>}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                {isSubadmin ? (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-semibold">
-                                    <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                    <span>Read-Only Audit</span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {selectedSession.status !== 'resolved' && (
-                                      <button
-                                        onClick={() => handleResolveSession(selectedSession.id)}
-                                        className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                                      >
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                        <span>✓ Query Resolved</span>
-                                      </button>
-                                    )}
-                                    {selectedSession.status === 'waiting_admin' && (
-                                      <button
-                                        onClick={() => handleSendAdminReply(selectedSession, '👋 Hello! Support specialist has connected to your session. How may I assist you today?')}
-                                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 animate-bounce"
-                                      >
-                                        <Headphones className="w-3.5 h-3.5" />
-                                        <span>⚡ Accept & Connect</span>
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => {
-                                        onResetUserFundPin('manual', selectedSession.userName, '888888');
-                                        handleSendAdminReply(selectedSession, '🔑 Security Update: Your 6-digit withdrawal Fund PIN has been safely reset to 888888. Please change it immediately in your Security settings.');
-                                        triggerNotice(`Reset PIN for ${selectedSession.userName} to 888888`);
-                                      }}
-                                      className="px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/40 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                                    >
-                                      <KeyRound className="w-3.5 h-3.5" />
-                                      <span>Reset PIN (888888)</span>
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Message History Transcript Pane */}
-                            <div className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#030712]/50">
-                              {selectedSession.messages?.map((msg) => {
-                                const isUser = msg.sender === 'user';
-                                const isAdmin = msg.sender === 'admin';
-                                const isAi = msg.sender === 'ai';
-
-                                return (
-                                  <div
-                                    key={msg.id}
-                                    className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
-                                  >
-                                    {/* Sender Meta Tag */}
-                                    <div className="flex items-center gap-1.5 text-[9.5px] text-gray-500 mb-1 px-1">
-                                      {isUser && (
-                                        <>
-                                          <User className="w-3 h-3 text-cyan-400" />
-                                          <span className="text-cyan-300 font-bold">{selectedSession.userName}</span>
-                                        </>
-                                      )}
-                                      {isAi && (
-                                        <>
-                                          <Bot className="w-3 h-3 text-emerald-400" />
-                                          <span className="text-emerald-400 font-bold">Neon AI Copilot</span>
-                                        </>
-                                      )}
-                                      {isAdmin && (
-                                        <>
-                                          <ShieldCheck className="w-3 h-3 text-amber-400" />
-                                          <span className="text-amber-400 font-bold">{msg.senderName || 'Support Specialist (You)'}</span>
-                                        </>
-                                      )}
-                                      <span>•</span>
-                                      <span>{msg.timestamp}</span>
-                                    </div>
-
-                                    {/* Message Bubble */}
-                                    <div
-                                      className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
-                                        isAdmin
-                                          ? 'bg-gradient-to-tr from-amber-600/30 to-amber-500/20 border border-amber-500/40 text-amber-100 rounded-tr-none'
-                                          : isAi
-                                          ? 'bg-[#0B1A28] border border-emerald-500/30 text-emerald-100 rounded-tl-none'
-                                          : 'bg-[#0E1A2E] border border-cyan-500/30 text-white rounded-tl-none'
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                        isPending
+                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                       }`}
                                     >
-                                      <p className="whitespace-pre-wrap">{msg.text}</p>
-                                    </div>
+                                      {isPending ? '⏳ Awaiting Reply' : '✓ Replied'}
+                                    </span>
                                   </div>
-                                );
-                              })}
-                            </div>
+                                  <div className="flex items-center gap-2 text-[10.5px] text-gray-500 mt-0.5">
+                                    <span>
+                                      Miner: <strong className="text-gray-300">{tkt.userName}</strong>
+                                    </span>
+                                    {tkt.mobile && (
+                                      <>
+                                        <span>•</span>
+                                        <span>
+                                          Mobile / ID: <span className="font-mono text-cyan-400">{tkt.mobile}</span>
+                                        </span>
+                                      </>
+                                    )}
+                                    {tkt.email && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-gray-400 font-mono">{tkt.email}</span>
+                                      </>
+                                    )}
+                                    <span>•</span>
+                                    <span>{tkt.timestamp || tkt.createdAt || 'Recent'}</span>
+                                  </div>
+                                </div>
 
-                            {isSubadmin ? (
-                              <div className="p-3.5 border-t border-[#14233C] bg-[#0A1224] flex items-center justify-between gap-3 shrink-0">
-                                <div className="flex items-center gap-2.5 text-amber-300 text-xs font-medium">
-                                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                                  <span>
-                                    <strong>Sub-Admin Read-Only:</strong> You can view and audit user live chats, but replying is restricted to Super Admin.
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-mono text-gray-500 bg-[#081220] px-2 py-1 rounded border border-[#14233C]">
+                                    TICKET #{tkt.id.substring(0, 14)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTicket(tkt.id)}
+                                    className="p-1 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 transition-all cursor-pointer active:scale-90"
+                                    title="Delete this ticket permanently"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* User Query Description Card */}
+                              <div className="p-3 rounded-xl bg-[#03060E] border border-[#0F1C30] text-xs text-gray-300 space-y-1 mb-3">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">
+                                  Miner's Inquiry / Issue Description:
+                                </span>
+                                <p className="whitespace-pre-line text-[12px] text-gray-100 leading-relaxed font-sans">
+                                  {tkt.queryText || tkt.details}
+                                </p>
+                              </div>
+
+                              {/* Previous Dispatched Reply if present */}
+                              {tkt.adminReply && (
+                                <div className="p-3.5 rounded-xl bg-gradient-to-br from-[#061A2B] via-[#041322] to-[#061A2B] border border-cyan-500/40 text-xs text-white space-y-1.5 mb-3 animate-fadeIn">
+                                  <div className="flex items-center justify-between text-[10.5px] text-cyan-300">
+                                    <span className="font-bold flex items-center gap-1.5">
+                                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                                      <span>Official Admin Response Dispatched ({tkt.adminName || 'Admin'}):</span>
+                                    </span>
+                                    <span className="text-gray-500 text-[9.5px]">
+                                      {tkt.repliedAt
+                                        ? new Date(tkt.repliedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                        : 'Delivered to User Inbox'}
+                                    </span>
+                                  </div>
+                                  <p className="whitespace-pre-line text-[12px] text-gray-200 leading-relaxed">
+                                    {tkt.adminReply}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Admin Reply Composer & Canned Templates */}
+                              <div className="space-y-2 pt-2 border-t border-[#0F1B2F]">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10.5px] font-bold text-gray-400 block">
+                                    {tkt.adminReply ? 'Update or Append Reply (Dispatches to Miner Inbox):' : 'Compose Official Admin Response:'}
+                                  </label>
+                                  <span className="text-[10px] text-cyan-400">
+                                    Instant Blink Light on User Header
                                   </span>
                                 </div>
-                                <span className="text-[10px] bg-amber-500/15 border border-amber-500/40 text-amber-400 px-2.5 py-1 rounded-lg uppercase tracking-wider font-bold shrink-0">
-                                  Chatting Disabled
-                                </span>
-                              </div>
-                            ) : (
-                              <>
-                                {/* Canned Quick Response Chips */}
-                                <div className="p-2 border-t border-[#14233C] bg-[#070E1B] flex items-center gap-1.5 overflow-x-auto shrink-0">
-                                  <span className="text-[10px] text-gray-500 font-bold uppercase shrink-0 pl-1">Canned:</span>
-                                  {[
-                                    '👋 Hello! How may I assist you today?',
-                                    '🔑 Your Fund PIN has been reset to 888888.',
-                                    '💸 Your withdrawal request has been verified and approved.',
-                                    '💎 Your deposit transaction has been confirmed and credited.',
-                                    '⏱️ Note: 24h proof-of-activity check-in is required daily.'
-                                  ].map((reply, i) => (
+
+                                {/* Quick Canned Responses */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                  <span className="text-[10px] text-gray-500 font-bold shrink-0">Quick Templates:</span>
+                                  {CANNED_REPLIES.map((canned, idx) => (
                                     <button
-                                      key={i}
+                                      key={idx}
                                       type="button"
-                                      onClick={() => handleSendAdminReply(selectedSession, reply)}
-                                      className="px-2.5 py-1 rounded-lg bg-[#0E1A2E] hover:bg-cyan-500/20 border border-[#1A2E4C] hover:border-cyan-500/40 text-[10.5px] text-gray-300 hover:text-white whitespace-nowrap transition-all cursor-pointer"
+                                      onClick={() => setTicketReplyText((prev) => ({ ...prev, [tkt.id]: canned }))}
+                                      className="px-2 py-0.5 rounded-lg bg-[#081324] hover:bg-cyan-500/20 text-[#38BDF8] border border-[#14233C] hover:border-cyan-500/40 text-[10px] whitespace-nowrap transition-all cursor-pointer"
+                                      title={canned}
                                     >
-                                      {reply}
+                                      {canned.substring(0, 28)}...
                                     </button>
                                   ))}
                                 </div>
 
-                                {/* Admin Reply Input Box */}
-                                <div className="p-3 border-t border-[#14233C] bg-[#0A1224] flex items-center gap-2 shrink-0">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                   <textarea
                                     rows={2}
-                                    value={adminReplyText}
-                                    onChange={(e) => setAdminReplyText(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleSendAdminReply(selectedSession);
-                                      }
-                                    }}
-                                    placeholder={`Reply directly to ${selectedSession.userName}... (Press Enter to send)`}
-                                    className="flex-1 p-2.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                                    value={currentReply}
+                                    onChange={(e) =>
+                                      setTicketReplyText((prev) => ({ ...prev, [tkt.id]: e.target.value }))
+                                    }
+                                    placeholder="Type response to dispatch directly to user's inbox..."
+                                    className="flex-1 p-2.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-500 resize-none"
                                   />
                                   <button
-                                    onClick={() => handleSendAdminReply(selectedSession)}
-                                    disabled={!adminReplyText.trim()}
-                                    className="h-full px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:hover:bg-cyan-500 text-black font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                    type="button"
+                                    disabled={isReplying || !currentReply.trim()}
+                                    onClick={() => handleAdminTicketReply(tkt.id)}
+                                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-black font-black text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0 flex items-center justify-center gap-1.5 shadow-md active:scale-95 uppercase tracking-wider"
                                   >
-                                    <Send className="w-3.5 h-3.5" />
-                                    <span className="hidden sm:inline">Send</span>
+                                    {isReplying ? (
+                                      <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Dispatching...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="w-3.5 h-3.5" />
+                                        <span>Send Reply</span>
+                                      </>
+                                    )}
                                   </button>
                                 </div>
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
-                            <MessageSquare className="w-10 h-10 text-gray-600" />
-                            <h4 className="text-white font-bold text-sm">No Conversation Selected</h4>
-                            <p className="text-gray-500 text-xs max-w-xs">
-                              Select a user session from the left list to view transcript history and reply.
-                            </p>
-                          </div>
-                        )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
 
-              {/* SUB-TAB 2: FUND PIN RESET DESK */}
-              {supportSubTab === 'pins' && (
+              {/* ================= VIEW 2: GLOBAL BROADCASTS WITH 3 FILTERS ================= */}
+              {supportSubTab === 'broadcasts' && (
+                <div className="space-y-4">
+                  {/* Create New Global Broadcast Card */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-4">
+                    <div className="flex items-center gap-2.5 pb-3 border-b border-[#14233C]">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                        <Megaphone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Create Global System Announcement</h4>
+                        <p className="text-[11px] text-gray-400">
+                          Send targeted notices to registered miners. Matching users will receive this notice in their Inbox and their top notification light will blink.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 3-TIER AUDIENCE FILTER SELECTOR */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-gray-300 block uppercase tracking-wider">
+                        1. Target Audience Category <span className="text-cyan-400">*</span>
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        {/* Option 1: ALL USERS */}
+                        <div
+                          onClick={() => setBroadcastAudience('all')}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                            broadcastAudience === 'all'
+                              ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                              : 'bg-[#040812] border-[#14233C] text-gray-400 hover:border-gray-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Globe className={`w-4 h-4 ${broadcastAudience === 'all' ? 'text-cyan-400' : 'text-gray-500'}`} />
+                            <span className="text-xs font-bold text-white">All Registered Users</span>
+                          </div>
+                          <p className="text-[10.5px] text-gray-400 mt-1 leading-normal">
+                            Delivered to every account on the platform, whether they have purchased a mining plan or not.
+                          </p>
+                        </div>
+
+                        {/* Option 2: ACTIVE MINERS */}
+                        <div
+                          onClick={() => setBroadcastAudience('active_miners')}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                            broadcastAudience === 'active_miners'
+                              ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                              : 'bg-[#040812] border-[#14233C] text-gray-400 hover:border-gray-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Zap className={`w-4 h-4 ${broadcastAudience === 'active_miners' ? 'text-amber-400' : 'text-gray-500'}`} />
+                            <span className="text-xs font-bold text-white">Active Miners Only</span>
+                          </div>
+                          <p className="text-[10.5px] text-gray-400 mt-1 leading-normal">
+                            Delivered strictly to active investors who currently own an active mining plan / hashrate.
+                          </p>
+                        </div>
+
+                        {/* Option 3: REGISTERED WITHOUT PLAN */}
+                        <div
+                          onClick={() => setBroadcastAudience('no_plan')}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                            broadcastAudience === 'no_plan'
+                              ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                              : 'bg-[#040812] border-[#14233C] text-gray-400 hover:border-gray-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className={`w-4 h-4 ${broadcastAudience === 'no_plan' ? 'text-purple-400' : 'text-gray-500'}`} />
+                            <span className="text-xs font-bold text-white">Registered (No Active Plan)</span>
+                          </div>
+                          <p className="text-[10.5px] text-gray-400 mt-1 leading-normal">
+                            Delivered only to registered members who have created an account but haven't activated any plan yet.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Announcement Title */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-gray-300 block uppercase tracking-wider">
+                        2. Announcement Title / Subject <span className="text-cyan-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={broadcastTitle}
+                        onChange={(e) => setBroadcastTitle(e.target.value)}
+                        placeholder="e.g. ⚡ Special Protocol Rate Optimization & Bonus Hashes"
+                        className="w-full px-3.5 py-2 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                        maxLength={120}
+                      />
+                    </div>
+
+                    {/* Announcement Message Content */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-gray-300 block uppercase tracking-wider">
+                        3. Message Content <span className="text-cyan-400">*</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={broadcastContent}
+                        onChange={(e) => setBroadcastContent(e.target.value)}
+                        placeholder="Write the full announcement message here... This will appear in the recipient's Inbox."
+                        className="w-full p-3 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                      />
+                    </div>
+
+                    {/* Action Button */}
+                    <button
+                      type="button"
+                      disabled={isPublishingBroadcast || !broadcastTitle.trim() || !broadcastContent.trim()}
+                      onClick={handleCreateBroadcast}
+                      className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 via-cyan-500 to-blue-600 hover:brightness-110 text-black font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isPublishingBroadcast ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Broadcasting to Network...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Megaphone className="w-4 h-4" />
+                          <span>
+                            Broadcast to{' '}
+                            {broadcastAudience === 'all'
+                              ? 'All Registered Users'
+                              : broadcastAudience === 'active_miners'
+                              ? 'Active Miners Only'
+                              : 'Registered Users Without Plan'}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Active Broadcasts History List */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                        <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                        <span>Active System Broadcasts ({broadcastsList.length})</span>
+                      </h4>
+                      <span className="text-[10.5px] text-gray-500">Live delivered to user Inbox Desk</span>
+                    </div>
+
+                    {broadcastsList.length === 0 ? (
+                      <div className="py-10 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 p-6">
+                        <CheckCircle2 className="w-7 h-7 mx-auto text-gray-600" />
+                        <h5 className="text-white font-bold text-xs">No Active Broadcasts</h5>
+                        <p className="text-gray-500 text-[11px]">
+                          Use the composer above to broadcast news, maintenance alerts, or promotions to miners.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {broadcastsList.map((bc) => {
+                          const audienceBadge =
+                            bc.targetAudience === 'all' ? (
+                              <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold flex items-center gap-1">
+                                <Globe className="w-3 h-3" />
+                                <span>All Users</span>
+                              </span>
+                            ) : bc.targetAudience === 'active_miners' ? (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1">
+                                <Zap className="w-3 h-3" />
+                                <span>Active Miners Only</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                <span>No Plan Users</span>
+                              </span>
+                            );
+
+                          return (
+                            <div
+                              key={bc.id}
+                              className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-2 hover:border-[#1E375A] transition-all"
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#0F1B2F] pb-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-sm font-bold text-white">{bc.title}</h4>
+                                  {audienceBadge}
+                                </div>
+                                <div className="flex items-center gap-2 text-[10.5px] text-gray-500">
+                                  <span>Author: <strong className="text-gray-300">{bc.senderAdmin}</strong></span>
+                                  <span>•</span>
+                                  <span>
+                                    {new Date(bc.createdAt).toLocaleDateString([], {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBroadcast(bc.id)}
+                                    className="p-1 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-950/40 transition-all cursor-pointer ml-1"
+                                    title="Delete announcement"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="whitespace-pre-line text-xs text-gray-300 leading-relaxed font-sans">
+                                {bc.content}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ================= VIEW 3: FUND PIN RESET DESK ================= */}
+              {!isSubadmin && supportSubTab === 'pins' && (
                 <div className="space-y-4">
                   {/* Manual Quick Reset PIN Card */}
                   <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] space-y-3">
@@ -3627,7 +4894,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                           maxLength={6}
                           value={manualResetNewPin}
                           onChange={(e) => setManualResetNewPin(e.target.value)}
-                          placeholder="e.g. 888888"
+                          placeholder="Leave empty for random PIN"
                           className="w-full p-2 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white font-mono"
                         />
                       </div>
@@ -3639,9 +4906,11 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               triggerNotice('Please provide a User ID or Username');
                               return;
                             }
-                            onQuickResetUserPin(manualResetUserId, manualResetNewPin || '888888');
-                            triggerNotice(`✓ Fund PIN for ${manualResetUserId} overridden to ${manualResetNewPin || '888888'}`);
+                            const finalPin = manualResetNewPin.trim() || generateRandom6DigitPin();
+                            onQuickResetUserPin(manualResetUserId, finalPin);
+                            triggerNotice(`✓ Fund PIN for ${manualResetUserId} set to ${finalPin}`);
                             setManualResetUserId('');
+                            setManualResetNewPin('');
                           }}
                           className="w-full py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs transition-all cursor-pointer"
                         >
@@ -3682,12 +4951,13 @@ export const AdminSystemPortal: React.FC<Props> = ({
                             </p>
                             <button
                               onClick={() => {
-                                onResetUserFundPin(tkt.id, tkt.userName, '888888');
-                                triggerNotice(`Reset PIN for ${tkt.userName} to 888888`);
+                                const randomPin = generateRandom6DigitPin();
+                                onResetUserFundPin(tkt.id, tkt.userName, randomPin);
+                                triggerNotice(`✓ Generated New PIN for ${tkt.userName}: ${randomPin}`);
                               }}
                               className="w-full py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs transition-all cursor-pointer"
                             >
-                              Approve & Reset Fund PIN to 888888
+                              Approve & Generate New Random PIN
                             </button>
                           </div>
                         ))}
@@ -3732,29 +5002,30 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] text-gray-400 block mb-1">Staff Name (Optional):</label>
+                      <label className="text-[11px] text-gray-400 block mb-1">Initial Password Set by Admin (Required):</label>
                       <input
                         type="text"
-                        value={newSubAdminName}
-                        onChange={(e) => setNewSubAdminName(e.target.value)}
-                        placeholder="e.g. Alex Trader"
-                        className="w-full p-2.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-500"
+                        required
+                        value={newSubAdminPassword}
+                        onChange={(e) => setNewSubAdminPassword(e.target.value)}
+                        placeholder="Set initial password (e.g. Staff@2026)"
+                        className="w-full p-2.5 rounded-xl bg-[#040812] border border-[#14233C] text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-500 font-mono"
                       />
                     </div>
                   </div>
 
                   {/* Delegated Permissions Notice */}
                   <div className="p-3 rounded-xl bg-[#040812] border border-[#14233C] text-[11px] text-gray-400 space-y-1">
-                    <span className="font-bold text-gray-300 block">Enforced Sub-Admin Security Controls:</span>
+                    <span className="font-bold text-gray-300 block">Enforced Staff Security Policies:</span>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10.5px]">
                       <span className="text-emerald-400 flex items-center gap-1.5">
-                        <span>✓</span> Read-Only Platform Audit
+                        <span>✓</span> Live Customer Chat & Operations
                       </span>
-                      <span className="text-amber-400 flex items-center gap-1.5">
-                        <span>✕</span> Wallet Addresses Hidden
+                      <span className="text-cyan-400 flex items-center gap-1.5">
+                        <span>✓</span> Protected Cold Vault Storage
                       </span>
-                      <span className="text-amber-400 flex items-center gap-1.5">
-                        <span>✕</span> Export & Editing Blocked
+                      <span className="text-purple-400 flex items-center gap-1.5">
+                        <span>✓</span> Multi-Tier Cryptographic Guard
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-500 pt-1">
@@ -3771,42 +5042,55 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     <span>{isCreatingSubAdmin ? 'REGISTERING STAFF CREDENTIALS...' : 'AUTHORIZE & REGISTER SUB-ADMIN'}</span>
                   </button>
                 </form>
-              ) : (
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>
-                    <strong>Sub-Admin Audit Notice:</strong> You can inspect active staff records and permissions, but only Super Admin can authorize or revoke staff credentials.
-                  </span>
-                </div>
-              )}
+              ) : null}
 
-              {subAdmins.length === 0 ? (
+              <div className="flex items-center justify-between pt-2 pb-1">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-cyan-400" />
+                    <span>Registered Sub-Admin Staff Members ({uniqueSubAdmins.length})</span>
+                  </h4>
+                  <p className="text-[11px] text-gray-400">All authorized staff accounts stored in database with active dashboard & support desk access.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadSubAdminsFromD1}
+                  disabled={isRefreshingStaff}
+                  className="px-3 py-1.5 rounded-xl bg-[#0C1728] hover:bg-[#12233C] border border-[#1A3152] text-[#00F0FF] text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStaff ? 'animate-spin' : ''}`} />
+                  <span>{isRefreshingStaff ? 'Syncing...' : 'Refresh List'}</span>
+                </button>
+              </div>
+
+              {uniqueSubAdmins.length === 0 ? (
                 <div className="py-8 text-center rounded-2xl bg-[#070E1B] border border-[#14233C] text-gray-400 text-xs space-y-1">
-                  <p className="text-white font-bold">No custom delegated sub-admins yet.</p>
-                  <p className="text-[11px]">Authorize staff members above using their official email address.</p>
+                  <p className="text-white font-bold">No custom delegated sub-admins found.</p>
+                  <p className="text-[11px]">Authorize staff members above using their official email address and password.</p>
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {subAdmins.map((adm) => (
+                  {uniqueSubAdmins.map((adm) => (
                     <div
                       key={adm.id}
-                      className="p-3.5 rounded-xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                      className="p-3.5 rounded-xl bg-[#070E1B] border border-[#14233C] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md hover:border-[#00F0FF]/30 transition-all"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <strong className="text-white text-sm">{adm.name || 'Staff Sub-Admin'}</strong>
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <strong className="text-white text-sm">{adm.name || adm.email?.split('@')[0] || 'Staff Sub-Admin'}</strong>
                           <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase">
                             Sub-Admin
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400 font-mono">
                           <span>Email: <span className="text-cyan-300 font-bold">{adm.email}</span></span>
-                          <span>Role: <span className="text-amber-300 font-bold">Read-Only Audit</span></span>
+                          <span>Role: <span className="text-cyan-300 font-bold">Operations & Support Staff</span></span>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[9.5px]">
-                          <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Portal Audit Mode</span>
-                          <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Wallet Addresses: Hidden</span>
-                          <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Export CSV: Blocked</span>
+                          <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded font-bold">🟢 Active Staff</span>
+                          <span className="text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded font-bold">Support Chat Enabled</span>
+                          <span className="text-gray-400 bg-gray-500/10 border border-gray-500/20 px-2 py-0.5 rounded">Security Compliant</span>
                         </div>
                       </div>
 
@@ -3924,7 +5208,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         Save
                       </button>
                     ) : (
-                      <span className="text-[10px] font-mono text-gray-500">🔒 Locked</span>
+                      <span className="text-[10px] font-mono text-cyan-400/80">Enforced</span>
                     )}
                   </div>
                 </div>
@@ -3958,7 +5242,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         Save
                       </button>
                     ) : (
-                      <span className="text-[10px] font-mono text-gray-500">🔒 Locked</span>
+                      <span className="text-[10px] font-mono text-cyan-400/80">Enforced</span>
                     )}
                   </div>
                 </div>
@@ -3991,7 +5275,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                       </button>
                     ) : (
                       <span className="text-[10px] font-mono text-gray-500">
-                        {popupEnabled ? 'Popup: ON (Locked)' : 'Popup: OFF (Locked)'}
+                        {popupEnabled ? 'Popup: Active' : 'Popup: Inactive'}
                       </span>
                     )}
                   </div>

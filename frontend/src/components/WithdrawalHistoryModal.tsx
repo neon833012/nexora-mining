@@ -9,7 +9,8 @@ import {
   Check,
   ShieldCheck,
   Send,
-  ExternalLink
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { WithdrawalRequest } from '../types/mining';
 

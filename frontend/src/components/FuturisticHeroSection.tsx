@@ -24,7 +24,7 @@ export const FuturisticHeroSection: React.FC<Props> = ({
   onExplorePlans,
   onCreateAccount,
   activePlanName = '',
-  activeUsersCount = 18429,
+  activeUsersCount = 20437,
   isLoggedIn = false,
   currentLang = 'en'
 }) => {
@@ -41,7 +41,7 @@ export const FuturisticHeroSection: React.FC<Props> = ({
     // Fluctuate hashrate and network telemetry
     const hashrateInterval = setInterval(() => {
       const delta = (Math.random() * 1.4 - 0.7);
-      const base = 428.5 + (activeUsers - 18429) * 0.05;
+      const base = 428.5 + (activeUsers - 20437) * 0.05;
       const current = (base + delta).toFixed(1);
       setHashrate(current);
 
@@ -69,9 +69,6 @@ export const FuturisticHeroSection: React.FC<Props> = ({
               <span className="text-[#00F0FF] text-[12px]">❖</span>
               <span translate="no" className="notranslate text-[11px] font-bold tracking-wider text-[#00F0FF]">
                 NEON MINING
-              </span>
-              <span translate="no" className="notranslate text-[11px] font-semibold text-[#94A3B8] tracking-wide">
-                · BEP-20 CLOUD PROTOCOL
               </span>
             </div>
 

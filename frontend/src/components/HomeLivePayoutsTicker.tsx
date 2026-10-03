@@ -11,6 +11,28 @@ interface LiveEvent {
   time: string;
 }
 
+export function maskMinerId(miner: string): string {
+  if (!miner) return 'NEON**';
+  const clean = miner.trim().toUpperCase();
+  if (clean.startsWith('NEON')) {
+    const digits = clean.slice(4);
+    if (digits.length <= 2) return `NEON**${digits}`;
+    if (digits.length === 5) {
+      // e.g. NEON35656 -> NEON35**6
+      return `NEON${digits.slice(0, 2)}**${digits.slice(4)}`;
+    }
+    if (digits.length >= 6) {
+      // e.g. NEON472910 -> NEON47**10
+      return `NEON${digits.slice(0, 2)}**${digits.slice(-2)}`;
+    }
+    return `NEON${digits.slice(0, 1)}**${digits.slice(-1)}`;
+  }
+  if (clean.length > 5) {
+    return `${clean.slice(0, 3)}**${clean.slice(-2)}`;
+  }
+  return clean;
+}
+
 // 80% of node activations are $20 (Neon Lite) and $50 (Cryptera)
 const LOW_TIER_PLANS = [
   { amount: '20.00 USDT', plan: 'PLAN 01 · Neon Lite ($20)' },
@@ -226,7 +248,7 @@ export const HomeLivePayoutsTicker: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-[13px] font-bold text-white font-mono block">
-                        {evt.miner}
+                        {maskMinerId(evt.miner)}
                       </span>
                       <span className="text-[10px] text-[#94A3B8] block md:hidden">
                         {evt.plan}

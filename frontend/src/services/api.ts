@@ -640,11 +640,37 @@ class NeonApiService {
     }
   }
 
+  async closeAdminChat(sessionId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/chats/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
   async clearAllAdminChats() {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/chats/clear-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async deleteChatMessage(sessionId: string, messageId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/chat/delete-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, messageId })
       });
       return await res.json();
     } catch (err: any) {
@@ -664,7 +690,20 @@ class NeonApiService {
     }
   }
 
-  async createSubAdmin(params: { email: string; name?: string; password?: string }) {
+  async activate24hMining(userId: string, sessionToken?: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mining/activate-24h`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, sessionToken })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async createSubAdmin(params: { email: string; password: string; name?: string }) {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/subadmins/create`, {
         method: 'POST',
@@ -683,6 +722,165 @@ class NeonApiService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  // ==========================================================================
+  // Single-Device Admin Session Management
+  // ==========================================================================
+  async adminLogin(params: { identifier: string; password: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async adminVerifySession(params: { adminId: string; sessionToken: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/verify-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async adminLogout(params: { adminId: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async createSupportTicket(params: {
+    userId: string;
+    userName: string;
+    userMobile?: string;
+    userEmail?: string;
+    subject: string;
+    queryText: string;
+  }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tickets/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getUserTickets(params: { userId?: string; email?: string; mobile?: string }) {
+    try {
+      const query = new URLSearchParams();
+      if (params.userId) query.set('userId', params.userId);
+      if (params.email) query.set('email', params.email);
+      if (params.mobile) query.set('mobile', params.mobile);
+      const res = await fetch(`${this.baseUrl}/api/tickets/user?${query.toString()}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message, tickets: [] };
+    }
+  }
+
+  async markTicketRead(ticketId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tickets/mark-read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getAdminTickets() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/tickets`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message, tickets: [] };
+    }
+  }
+
+  async replyAdminTicket(params: { ticketId: string; replyText: string; adminName?: string }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/tickets/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async deleteAdminTicket(ticketId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/tickets/${ticketId}`, {
+        method: 'DELETE'
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async createBroadcast(params: {
+    title: string;
+    content: string;
+    targetAudience: 'all' | 'active_miners' | 'no_plan';
+    senderAdmin?: string;
+  }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/broadcasts/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getBroadcasts() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/broadcasts`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message, broadcasts: [] };
+    }
+  }
+
+  async deleteBroadcast(id: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/broadcasts/${id}`, {
+        method: 'DELETE'
       });
       return await res.json();
     } catch (err: any) {
