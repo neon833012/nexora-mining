@@ -1430,7 +1430,15 @@ app.post('/api/plans/subscribe', async (c) => {
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
          VALUES (?, ?, ?, ?, 'Settled', ?)`
-      ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : `Plan Staked (${planName})`, -chargedAmount, planTxHash)
+      ).bind(txId, userId, isUpgrade ? `Tier Upgrade to ${planName}` : `Plan Staked (${planName})`, -chargedAmount, planTxHash),
+
+      // If purchased via direct crypto/BEP-20, record in deposit_orders so it appears in Admin Deposits and Total Inflow
+      ...(isCryptoDirect ? [
+        c.env.DB.prepare(
+          `INSERT OR IGNORE INTO deposit_orders (order_id, user_id, amount, token, network, vault_address, tx_hash, status, created_at, confirmed_at)
+           VALUES (?, ?, ?, 'USDT', 'BEP-20', '0x7a0DeabDCe010736f93886eb3F2ef3BaA727aD5d', ?, 'confirmed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        ).bind(`DEP-BSC-${contractId.slice(-8)}`, userId, chargedAmount, planTxHash)
+      ] : [])
     ];
 
     // Multi-Tier Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)

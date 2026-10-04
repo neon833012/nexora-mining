@@ -3408,12 +3408,14 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         <strong className="text-white font-mono">{selectedUserDetail.mobile}</strong>
                       </div>
                       <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
-                        <span className="text-gray-500 block text-[10px]">Active Investment</span>
-                        <strong className="text-white font-mono">${selectedUserDetail.stakedAmount.toFixed(2)} USD</strong>
+                        <span className="text-gray-500 block text-[10px]">Active Investment (Staked)</span>
+                        <strong className="text-emerald-400 font-mono">${selectedUserDetail.stakedAmount.toFixed(2)} USD</strong>
+                        <span className="text-[9px] text-gray-400 block mt-0.5">{selectedUserDetail.currentPlanName || 'Active Mining'}</span>
                       </div>
                       <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
-                        <span className="text-gray-500 block text-[10px]">Deposit Balance</span>
+                        <span className="text-gray-500 block text-[10px]">Deposit Balance (Unspent)</span>
                         <strong className="text-amber-400 font-mono">${(selectedUserDetail.depositBalance || 0).toFixed(2)} USDT</strong>
+                        <span className="text-[9px] text-gray-500 block mt-0.5">{selectedUserDetail.stakedAmount > 0 ? 'Staked in Mining Node' : 'Idle in Wallet'}</span>
                       </div>
                       <div className="p-2.5 rounded-xl bg-[#040812] border border-[#14233C]">
                         <span className="text-gray-500 block text-[10px]">Withdrawable Balance</span>
