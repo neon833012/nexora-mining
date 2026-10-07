@@ -1616,7 +1616,7 @@ app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
       return c.json({ success: false, message: 'No active mining contract found for this user.' }, 400);
     }
 
-    // 2. Strict Anti-Double-Click & Cooldown Lock (Min 20 hours between claims)
+    // 2. Strict Anti-Double-Click & Cooldown Lock (Exact 24 Hours / 86,400 seconds between claims)
     const recentClaim = await c.env.DB.prepare(`
       SELECT id, created_at, (strftime('%s', 'now') - strftime('%s', created_at)) as seconds_ago 
       FROM transactions 
@@ -1625,11 +1625,12 @@ app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
       ORDER BY created_at DESC LIMIT 1
     `).bind(userId).first() as any;
 
-    if (recentClaim && recentClaim.seconds_ago !== null && Number(recentClaim.seconds_ago) < 20 * 3600) {
-      const remainingHours = ((20 * 3600 - Number(recentClaim.seconds_ago)) / 3600).toFixed(1);
+    const EXACT_24H_SECONDS = 24 * 3600; // Strictly 24 Hours (86,400s)
+    if (recentClaim && recentClaim.seconds_ago !== null && Number(recentClaim.seconds_ago) < EXACT_24H_SECONDS) {
+      const remainingHours = ((EXACT_24H_SECONDS - Number(recentClaim.seconds_ago)) / 3600).toFixed(1);
       return c.json({
         success: false,
-        message: `Daily yield already claimed for this 24-hour cycle. Next yield unlocks in ${remainingHours} hours.`
+        message: `Daily mining yield already claimed for this 24-hour cycle. Next yield unlocks strictly after 24 hours (in ${remainingHours} hours).`
       }, 429);
     }
 
