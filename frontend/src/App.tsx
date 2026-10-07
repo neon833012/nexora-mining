@@ -587,6 +587,7 @@ export const App: React.FC = () => {
   const [lastCompoundTimestamp, setLastCompoundTimestamp] = useState<number>(0);
   const [compoundSecondsLeft, setCompoundSecondsLeft] = useState<number>(0);
   const isCompoundLocked = activeMiningPower <= 0 || unclaimedYield <= 0;
+  const isClaimingYieldRef = useRef(false);
 
   // Formatted timestamp helper for consistent ledger auditing
   const getFormattedTimestamp = () => {
@@ -1708,8 +1709,8 @@ export const App: React.FC = () => {
     const dailyRate = currentPlan?.dailyRatePercent || 1.0;
     const cycleYield = +(stakedAmount * (dailyRate / 100)).toFixed(2);
 
-    // 1. Credit Yield to Unclaimed Reinvestment Balance (Unlocks Re-invest!)
-    setUnclaimedYield((prev) => +(prev + cycleYield).toFixed(2));
+    // 1. Credit Yield to Unclaimed Reinvestment Balance (Strictly single cycle yield, never stacked)
+    setUnclaimedYield(cycleYield);
     try {
       localStorage.setItem('neon_unclaimed_yield', String(cycleYield));
     } catch (e) {}
@@ -2429,10 +2430,15 @@ export const App: React.FC = () => {
       return;
     }
 
+    if (isClaimingYieldRef.current) return;
+
     if (unclaimedYield <= 0) {
       showToast('🔒 Yield is locked! Your 1% daily interest unlocks strictly after your 24-hour mining cycle completes.');
       return;
     }
+
+    isClaimingYieldRef.current = true;
+    setTimeout(() => { isClaimingYieldRef.current = false; }, 4000);
 
     const yieldToSend = unclaimedYield;
 

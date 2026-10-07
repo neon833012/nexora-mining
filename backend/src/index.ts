@@ -1596,14 +1596,51 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
   }
 });
 
-// Send Unlocked 24H Yield to Withdrawable Balance
+// Send Unlocked 24H Yield to Withdrawable Balance (Strict 24H Cooldown & Anti-Double-Click)
 app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
   try {
     const { userId, yieldAmount } = await c.req.json();
-    const numYield = Number(yieldAmount);
-    if (!userId || !numYield || numYield <= 0) {
-      return c.json({ success: false, message: 'Invalid userId or yieldAmount' }, 400);
+    if (!userId) {
+      return c.json({ success: false, message: 'Invalid userId' }, 400);
     }
+
+    // 1. Verify active mining contract exists
+    const contract = await c.env.DB.prepare(`
+      SELECT id, amount, daily_yield_usdt, status 
+      FROM mining_contracts 
+      WHERE UPPER(user_id) = UPPER(?) AND status = 'active' 
+      LIMIT 1
+    `).bind(userId).first() as any;
+
+    if (!contract || !contract.daily_yield_usdt || contract.daily_yield_usdt <= 0) {
+      return c.json({ success: false, message: 'No active mining contract found for this user.' }, 400);
+    }
+
+    // 2. Strict Anti-Double-Click & Cooldown Lock (Min 20 hours between claims)
+    const recentClaim = await c.env.DB.prepare(`
+      SELECT id, created_at, (strftime('%s', 'now') - strftime('%s', created_at)) as seconds_ago 
+      FROM transactions 
+      WHERE UPPER(user_id) = UPPER(?) 
+        AND type = 'Daily Plan Interest Sent to Withdrawable Balance' 
+      ORDER BY created_at DESC LIMIT 1
+    `).bind(userId).first() as any;
+
+    if (recentClaim && recentClaim.seconds_ago !== null && Number(recentClaim.seconds_ago) < 20 * 3600) {
+      const remainingHours = ((20 * 3600 - Number(recentClaim.seconds_ago)) / 3600).toFixed(1);
+      return c.json({
+        success: false,
+        message: `Daily yield already claimed for this 24-hour cycle. Next yield unlocks in ${remainingHours} hours.`
+      }, 429);
+    }
+
+    // 3. Strict Yield Capping: Can NEVER exceed active contract's single 24H daily yield rate
+    const maxDailyAllowed = Number(contract.daily_yield_usdt || 0.20);
+    const numYield = Math.min(Number(yieldAmount || maxDailyAllowed), maxDailyAllowed);
+
+    if (numYield <= 0) {
+      return c.json({ success: false, message: 'Invalid yield amount' }, 400);
+    }
+
     const txId = `YLD-${Date.now().toString().slice(-6)}`;
     await c.env.DB.batch([
       c.env.DB.prepare(
