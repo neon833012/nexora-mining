@@ -45,6 +45,8 @@ interface Props {
 
   // 24H Mining Telemetry
   isMiningActive: boolean;
+  isCoolingDown?: boolean;
+  cooldownSecondsRemaining?: number;
   isCompoundingActive: boolean;
   countdownText: string;
   userName?: string;
@@ -86,6 +88,8 @@ export const DashboardPreviewSection: React.FC<Props> = ({
   activePlanName = 'No Active Plan',
   activePlanDailyRate = 1.0,
   isMiningActive,
+  isCoolingDown = false,
+  cooldownSecondsRemaining = 60,
   isCompoundingActive,
   countdownText,
   userName = 'Miner',
@@ -196,13 +200,13 @@ export const DashboardPreviewSection: React.FC<Props> = ({
         {/* Live Core Status Pill */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="bg-[#050C18] border border-[#142338] rounded-2xl px-4 py-3 flex items-center gap-3 shadow-inner">
-            <div className={`w-3 h-3 rounded-full ${isMiningActive ? 'bg-[#10B981] animate-ping' : 'bg-[#EF4444]'}`} />
+            <div className={`w-3 h-3 rounded-full ${isCoolingDown ? 'bg-[#00E5FF] animate-pulse' : isMiningActive ? 'bg-[#10B981] animate-ping' : 'bg-[#EF4444]'}`} />
             <div>
               <span className="text-[9.5px] font-bold text-[#64748B] uppercase tracking-wider block">
                 Cluster Engine
               </span>
-              <span className={`text-[12px] font-mono font-black ${isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                {isMiningActive ? 'ACTIVE HASHING' : 'IDLE / STOPPED'}
+              <span className={`text-[12px] font-mono font-black ${isCoolingDown ? 'text-[#00E5FF]' : isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                {isCoolingDown ? 'SYSTEM COOL DOWN' : isMiningActive ? 'ACTIVE HASHING' : 'IDLE / STOPPED'}
               </span>
             </div>
           </div>
@@ -395,7 +399,9 @@ export const DashboardPreviewSection: React.FC<Props> = ({
           {/* 24-HOUR MINING ENGINE & DAILY PLAN COMPOUNDING ENGINE */}
           <div
             className={`rounded-2xl border p-4 lg:p-5 shadow-xl transition-all duration-500 space-y-4 ${
-              isMiningActive
+              isCoolingDown
+                ? 'bg-gradient-to-b from-[#082435] to-[#031522] border-[#00E5FF]/60 shadow-[0_0_20px_rgba(0,229,255,0.25)]'
+                : isMiningActive
                 ? 'bg-gradient-to-b from-[#062419] to-[#04120D] border-[#10B981]/60 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
                 : 'bg-gradient-to-b from-[#240808] to-[#120404] border-[#EF4444]/60 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
             }`}
@@ -406,21 +412,31 @@ export const DashboardPreviewSection: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-3 h-3 rounded-full ${
-                      isMiningActive ? 'bg-[#10B981] animate-ping' : 'bg-[#EF4444] animate-pulse'
+                      isCoolingDown
+                        ? 'bg-[#00E5FF] animate-pulse'
+                        : isMiningActive
+                        ? 'bg-[#10B981] animate-ping'
+                        : 'bg-[#EF4444] animate-pulse'
                     }`}
                   />
                   <span
                     className={`text-[12.5px] lg:text-[14px] font-black tracking-wider ${
-                      isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'
+                      isCoolingDown ? 'text-[#00E5FF]' : isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'
                     }`}
                   >
-                    {isMiningActive ? '🟢 MINING ACTIVE (24H PROOF-OF-ACTIVITY)' : '🔴 MINING STOPPED (TAP TO START 24H CYCLE)'}
+                    {isCoolingDown
+                      ? '💧 SYSTEM COOL DOWN (1-MIN COOLDOWN ACTIVE)'
+                      : isMiningActive
+                      ? '🟢 MINING ACTIVE (24H PROOF-OF-ACTIVITY)'
+                      : '🔴 MINING STOPPED (TAP TO START 24H CYCLE)'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2 mt-1 text-[12px] font-mono text-[#CBD5E1]">
                   <Clock className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>Cycle Timer: <strong className={isMiningActive ? 'text-[#10B981] text-[13px]' : 'text-[#EF4444] text-[13px]'}>{countdownText}</strong></span>
+                  <span>Cycle Timer: <strong className={isCoolingDown ? 'text-[#00E5FF] text-[13px]' : isMiningActive ? 'text-[#10B981] text-[13px]' : 'text-[#EF4444] text-[13px]'}>
+                    {isCoolingDown ? `00:${cooldownSecondsRemaining < 10 ? '0' : ''}${cooldownSecondsRemaining}` : countdownText}
+                  </strong></span>
                 </div>
 
                 <span className="text-[10.5px] text-[#94A3B8] block mt-0.5">
@@ -432,13 +448,21 @@ export const DashboardPreviewSection: React.FC<Props> = ({
               <button
                 onClick={onToggleMining}
                 className={`px-4 lg:px-5 py-2.5 rounded-xl text-[12px] lg:text-[12.5px] font-black tracking-wide transition-all cursor-pointer active:scale-95 shadow-md flex items-center justify-center gap-1.5 shrink-0 ${
-                  isMiningActive
+                  isCoolingDown
+                    ? 'bg-[#083344]/80 border border-[#00E5FF]/70 text-[#00E5FF] shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+                    : isMiningActive
                     ? 'bg-[#064E3B]/80 border border-[#10B981]/70 text-[#10B981] shadow-[0_0_12px_rgba(16,185,129,0.3)]'
                     : 'bg-[#EF4444] text-white hover:bg-[#DC2626] shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse'
                 }`}
               >
-                <Zap className={`w-4 h-4 ${isMiningActive ? 'text-[#10B981]' : 'text-white'}`} />
-                <span>{isMiningActive ? `🟢 MINING ACTIVE (${countdownText})` : '🔴 START 24H MINING'}</span>
+                <Zap className={`w-4 h-4 ${isCoolingDown ? 'text-[#00E5FF]' : isMiningActive ? 'text-[#10B981]' : 'text-white'}`} />
+                <span>
+                  {isCoolingDown
+                    ? `💧 COOL DOWN (00:${cooldownSecondsRemaining < 10 ? '0' : ''}${cooldownSecondsRemaining})`
+                    : isMiningActive
+                    ? `🟢 MINING ACTIVE (${countdownText})`
+                    : '🔴 START 24H MINING'}
+                </span>
               </button>
             </div>
 

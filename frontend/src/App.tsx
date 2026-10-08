@@ -581,6 +581,28 @@ export const App: React.FC = () => {
     return 0;
   });
 
+  // 1-Minute Cooldown Period Engine (Water-Blue phase directly following 24H completion)
+  const [isCoolingDown, setIsCoolingDown] = useState<boolean>(() => {
+    const savedCooldown = loadStorageBool('neon_mining_cooldown_active', false);
+    const savedCooldownStart = loadStorageNum('neon_cooldown_start_time', 0);
+    if (savedCooldown && savedCooldownStart > 0) {
+      const elapsed = Math.floor((Date.now() - savedCooldownStart) / 1000);
+      return elapsed < 60;
+    }
+    return false;
+  });
+  const [cooldownSecondsRemaining, setCooldownSecondsRemaining] = useState<number>(() => {
+    const savedCooldown = loadStorageBool('neon_mining_cooldown_active', false);
+    const savedCooldownStart = loadStorageNum('neon_cooldown_start_time', 0);
+    if (savedCooldown && savedCooldownStart > 0) {
+      const elapsed = Math.floor((Date.now() - savedCooldownStart) / 1000);
+      if (elapsed < 60) {
+        return 60 - elapsed;
+      }
+    }
+    return 60;
+  });
+
   // 24-Hour Compound Interest & Reinvestment Engine
   // Yield generates ONLY when 24h mining cycle completes. Re-invest is unlocked ONLY when unclaimedYield > 0.
   const [unclaimedYield, setUnclaimedYield] = useState<number>(() => loadStorageNum('neon_unclaimed_yield', 0.0));
@@ -1745,25 +1767,68 @@ export const App: React.FC = () => {
       })
     );
 
-    // 4. CRITICAL: Stop mining immediately and turn RED!
+    // 4. CRITICAL: Stop mining immediately and enter 1-Minute Cooldown (Water Blue)!
     // Exactly 1 cycle yield has been credited to unclaimed yield.
-    // If user does not tap Start Mining for days, it stays RED and NO extra yield is credited.
     setIsMiningActive(false);
     setSecondsRemaining(0);
+    setIsCoolingDown(true);
+    setCooldownSecondsRemaining(60);
     try {
       localStorage.setItem('neon_mining_active', 'false');
       localStorage.setItem('neon_seconds_remaining', '0');
       localStorage.removeItem('neon_mining_start_time');
       localStorage.setItem('neon_last_completed_mining_time', String(Date.now()));
+      localStorage.setItem('neon_mining_cooldown_active', 'true');
+      localStorage.setItem('neon_cooldown_start_time', String(Date.now()));
     } catch (e) {}
 
     showToast(
-      `🎉 24-Hour Mining Cycle Complete! +$${cycleYield.toFixed(2)} USD (1.0%) yield unlocked. Re-invest is now ON! Node stopped (RED).`
+      `🎉 24-Hour Mining Cycle Complete! +$${cycleYield.toFixed(2)} USD yield unlocked. System entered 1-Minute Cool Down period (Water Blue).`
     );
   };
 
+  // 1-Minute Cooldown Countdown Engine (Runs every second while isCoolingDown is true)
+  useEffect(() => {
+    if (!isCoolingDown) return;
+
+    const timer = setInterval(() => {
+      setCooldownSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          // Exactly 1 minute (60s) complete! Return to STOPPED (RED) state.
+          setIsCoolingDown(false);
+          try {
+            localStorage.removeItem('neon_mining_cooldown_active');
+            localStorage.removeItem('neon_cooldown_start_time');
+          } catch (e) {}
+          showToast('🔴 Cool Down complete! Core returned to RED. Tap to start next 24H cycle.');
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isCoolingDown]);
+
   // 24H Proof-of-Activity Engine: Mount & Offline Continuity Check
   useEffect(() => {
+    // Check if cooldown was active before reload
+    const savedCooldown = loadStorageBool('neon_mining_cooldown_active', false);
+    const savedCooldownStart = loadStorageNum('neon_cooldown_start_time', 0);
+    if (savedCooldown && savedCooldownStart > 0) {
+      const elapsedCd = Math.floor((Date.now() - savedCooldownStart) / 1000);
+      if (elapsedCd < 60) {
+        setIsCoolingDown(true);
+        setCooldownSecondsRemaining(60 - elapsedCd);
+      } else {
+        setIsCoolingDown(false);
+        try {
+          localStorage.removeItem('neon_mining_cooldown_active');
+          localStorage.removeItem('neon_cooldown_start_time');
+        } catch (e) {}
+      }
+    }
+
     if (activeMiningPower <= 0) return;
 
     const savedActive = loadStorageBool('neon_mining_active', false);
@@ -1779,9 +1844,22 @@ export const App: React.FC = () => {
         setSecondsRemaining(CYCLE_DURATION - elapsedSeconds);
       } else {
         // 24-hour cycle finished while user was away!
-        // Credit exactly ONE cycle yield, then STOP (turn RED).
-        // Any subsequent inactive days earn 0 yield.
         complete24HourMiningCycle(activeMiningPower);
+        const overDue = elapsedSeconds - CYCLE_DURATION;
+        if (overDue < 60) {
+          setIsCoolingDown(true);
+          setCooldownSecondsRemaining(60 - overDue);
+          try {
+            localStorage.setItem('neon_mining_cooldown_active', 'true');
+            localStorage.setItem('neon_cooldown_start_time', String(Date.now() - overDue * 1000));
+          } catch (e) {}
+        } else {
+          setIsCoolingDown(false);
+          try {
+            localStorage.removeItem('neon_mining_cooldown_active');
+            localStorage.removeItem('neon_cooldown_start_time');
+          } catch (e) {}
+        }
       }
     }
   }, [activeMiningPower]);
@@ -1841,6 +1919,12 @@ export const App: React.FC = () => {
 
   // Toggle / Start 24-Hour Mining Cycle with strict guards
   const handleToggleMining = () => {
+    // 0. Cool Down Period Active Guard
+    if (isCoolingDown) {
+      showToast(`💧 Cool Down in progress (${cooldownSecondsRemaining}s remaining). System is cooling down before the next 24H cycle can begin.`);
+      return;
+    }
+
     // 1. Must be signed in / registered first
     if (!isLoggedIn) {
       showToast('🔒 Please Sign In or Create Account to start personal mining!');
@@ -3491,6 +3575,8 @@ export const App: React.FC = () => {
           <div className={activeRoute === 'home' ? 'space-y-5 animate-fadeIn' : 'hidden'}>
               <FuturisticHeroSection
                 isMiningActive={isVisualMiningActive}
+                isCoolingDown={isLoggedIn ? isCoolingDown : false}
+                cooldownSecondsRemaining={cooldownSecondsRemaining}
                 onToggleMining={handleToggleMining}
                 miningCountdownText={countdownText}
                 onExplorePlans={() => navigateTo('plans')}
@@ -3591,6 +3677,8 @@ export const App: React.FC = () => {
                 activePlanName={activePlanName}
                 activePlanDailyRate={activePlanObj?.dailyRatePercent || 1.0}
                 isMiningActive={isMiningActive}
+                isCoolingDown={isCoolingDown}
+                cooldownSecondsRemaining={cooldownSecondsRemaining}
                 isCompoundingActive={isCompoundingActive}
                 countdownText={countdownText}
                 userName={userName}

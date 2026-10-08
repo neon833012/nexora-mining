@@ -7,6 +7,8 @@ import { getTranslation } from '../data/miningPlans';
 
 interface Props {
   isMiningActive: boolean;
+  isCoolingDown?: boolean;
+  cooldownSecondsRemaining?: number;
   onToggleMining: () => void;
   miningCountdownText: string;
   onExplorePlans: () => void;
@@ -19,6 +21,8 @@ interface Props {
 
 export const FuturisticHeroSection: React.FC<Props> = ({
   isMiningActive,
+  isCoolingDown = false,
+  cooldownSecondsRemaining = 60,
   onToggleMining,
   miningCountdownText,
   onExplorePlans,
@@ -192,6 +196,8 @@ export const FuturisticHeroSection: React.FC<Props> = ({
         <div className="lg:col-span-5 flex flex-col items-center justify-center mt-3 lg:mt-0 w-full">
           <NeonMiningCoreVisual
             isMiningActive={isMiningActive}
+            isCoolingDown={isCoolingDown}
+            cooldownSecondsRemaining={cooldownSecondsRemaining}
             onToggleMining={onToggleMining}
             hashrate={hashrate}
             activePlanName={activePlanName}
@@ -201,15 +207,19 @@ export const FuturisticHeroSection: React.FC<Props> = ({
           <button
             onClick={onToggleMining}
             className={`mt-3 px-6 py-2.5 rounded-xl font-black text-xs tracking-wider transition-all duration-300 flex items-center gap-2 cursor-pointer active:scale-95 shadow-lg ${
-              isMiningActive
+              isCoolingDown
+                ? 'bg-[#083344]/80 border border-[#00E5FF]/70 text-[#00E5FF] shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+                : isMiningActive
                 ? 'bg-[#064E3B]/80 border border-[#10B981]/70 text-[#10B981] shadow-[0_0_12px_rgba(16,185,129,0.3)]'
                 : 'bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse'
             }`}
           >
-            <Zap className={`w-3.5 h-3.5 ${isMiningActive ? 'text-[#10B981]' : 'text-white'}`} />
+            <Zap className={`w-3.5 h-3.5 ${isCoolingDown ? 'text-[#00E5FF]' : isMiningActive ? 'text-[#10B981]' : 'text-white'}`} />
             <span>
               {!isLoggedIn
                 ? `🟢 ${getTranslation('miningOnline', currentLang, 'START 24H MINING')}`
+                : isCoolingDown
+                ? `💧 COOL DOWN · 00:${cooldownSecondsRemaining < 10 ? '0' : ''}${cooldownSecondsRemaining}`
                 : isMiningActive
                 ? `🟢 ${getTranslation('miningActive', currentLang, 'MINING ACTIVE')} · ${miningCountdownText}`
                 : `🔴 ${getTranslation('miningPaused', currentLang, 'START 24H MINING (Node Stopped)')}`}
