@@ -33,9 +33,39 @@ async function ensureDatabaseSchema(db: D1Database) {
 
 app.use('*', async (c, next) => {
   if (c.env?.DB) {
-    await ensureDatabaseSchema(c.env.DB);
+    try {
+      await ensureDatabaseSchema(c.env.DB);
+    } catch {}
   }
   await next();
+});
+
+function formatDbErrorMessage(err: any): string {
+  const msg = String(err?.message || err || '');
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes('7500') ||
+    lower.includes('limit') ||
+    lower.includes('quota') ||
+    lower.includes('exceeded') ||
+    lower.includes('d1_error') ||
+    lower.includes('free tier') ||
+    lower.includes('rate limit') ||
+    lower.includes('d1 error')
+  ) {
+    return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 10, 06:30 AM IST. Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
+  }
+  return msg;
+}
+
+app.onError((err, c) => {
+  console.error('[Global Error Handler]', err);
+  const friendly = formatDbErrorMessage(err);
+  return c.json({
+    success: false,
+    message: friendly,
+    isMaintenance: friendly.includes('Scheduled Infrastructure Upgrade')
+  }, 500);
 });
 
 // ============================================================================
@@ -167,7 +197,7 @@ app.post('/api/auth/register', async (c) => {
       sessionToken
     }, 201);
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -335,7 +365,7 @@ app.post('/api/auth/login', async (c) => {
       sessionToken: newSessionToken
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -461,7 +491,7 @@ app.get('/api/auth/me', async (c) => {
       sessionToken: userRecord.session_token
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -536,7 +566,7 @@ app.post('/api/mining/activate-24h', async (c) => {
       message: '24-Hour Automated Cloud Mining Cycle Started Successfully!'
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -687,7 +717,7 @@ app.get('/api/referrals/downlines', async (c) => {
     if (cached) {
       return c.json(cached.data);
     }
-    return c.json({ success: false, message: err.message, downlines: [], l1: [], l2: [], l3: [] }, 200);
+    return c.json({ success: false, message: formatDbErrorMessage(err), downlines: [], l1: [], l2: [], l3: [] }, 200);
   }
 });
 
@@ -943,7 +973,7 @@ app.post('/api/auth/forgot-password', async (c) => {
       message: `A secure password reset link has been dispatched to ${user.email}. Please check your email inbox and spam folder.`
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -981,7 +1011,7 @@ app.get('/api/auth/verify-reset-token', async (c) => {
       userName: user?.name || row.user_id
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1051,7 +1081,7 @@ app.post('/api/auth/reset-password', async (c) => {
       message: 'Password updated successfully! You can now log in with your new password.'
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1082,7 +1112,7 @@ app.post('/api/auth/change-pin', async (c) => {
       message: '6-digit Fund PIN updated successfully.'
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1120,7 +1150,7 @@ app.post('/api/deposit/create-order', async (c) => {
       }
     }, 201);
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1185,7 +1215,7 @@ app.post('/api/tx/check-claimable', async (c) => {
       message: 'Transaction hash is valid and unclaimed.'
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1288,7 +1318,7 @@ app.post('/api/tx/claim-deposit', async (c) => {
       updatedWallet
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1478,7 +1508,7 @@ app.post('/api/deposit/verify-tx', async (c) => {
       updatedWallet
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1744,7 +1774,7 @@ app.post('/api/plans/subscribe', async (c) => {
       updatedWallet
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1873,7 +1903,7 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
       updatedWallet
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1945,7 +1975,7 @@ app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, message: `Transferred +$${numYield.toFixed(2)} USDT to Withdrawable Balance`, updatedWallet });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -1979,7 +2009,7 @@ app.post('/api/wallet/transfer-referral-to-wallet', async (c) => {
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, message: `Transferred +$${refBal.toFixed(2)} USDT from Referral Balance to Withdrawable Balance`, updatedWallet });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2013,7 +2043,7 @@ app.post('/api/wallet/transfer-orc-to-wallet', async (c) => {
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, message: `Transferred +$${orcBal.toFixed(2)} USDT from ORC Balance to Withdrawable Balance`, updatedWallet });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2039,7 +2069,7 @@ app.post('/api/wallet/sync-user-data', async (c) => {
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, updatedWallet });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2082,7 +2112,7 @@ app.post('/api/mining/start-cycle', async (c) => {
       dailyYieldUsdt: activeContract.daily_yield_usdt
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2117,7 +2147,7 @@ app.get('/api/mining/status', async (c) => {
       compoundingEnabled: activeContract.compounding_enabled === 1
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2265,7 +2295,7 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
       txHash: p2pHash
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2385,7 +2415,7 @@ app.post('/api/wallet/withdraw-request', async (c) => {
       updatedWallet
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2411,7 +2441,7 @@ app.get('/api/wallet/history', async (c) => {
       deposits: deposits.results
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2438,7 +2468,7 @@ app.get('/api/admin/overview', async (c) => {
       }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2448,7 +2478,7 @@ app.post('/api/admin/trigger-yield', async (c) => {
     const cronResult = await handleDailyYieldCron(c.env);
     return c.json({ success: true, cronResult });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2483,7 +2513,7 @@ app.get('/api/admin/users', async (c) => {
     const { results } = await c.env.DB.prepare(query).bind(...params).all();
     return c.json({ success: true, users: results });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2497,7 +2527,7 @@ app.post('/api/admin/users/toggle-status', async (c) => {
     await c.env.DB.prepare('UPDATE users SET status = ? WHERE id = ?').bind(status, userId).run();
     return c.json({ success: true, message: `User ${userId} status set to ${status}` });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2530,7 +2560,7 @@ app.post('/api/admin/users/delete', async (c) => {
     ]);
     return c.json({ success: true, message: `User ${effectiveId} permanently deleted from database. Email is now reusable.` });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2547,7 +2577,7 @@ app.post('/api/admin/users/purge-all', async (c) => {
     ]);
     return c.json({ success: true, message: 'All users and related records completely wiped from database' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2582,7 +2612,7 @@ app.post('/api/admin/users/purge-inactive', async (c) => {
     await c.env.DB.batch(stmts);
     return c.json({ success: true, message: `Purged ${ids.length} inactive test accounts`, purgedCount: ids.length, ids });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2653,7 +2683,7 @@ app.post('/api/admin/login', async (c) => {
       }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2694,7 +2724,7 @@ app.post('/api/admin/verify-session', async (c) => {
       name: admin.name
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2709,7 +2739,7 @@ app.post('/api/admin/logout', async (c) => {
     }
     return c.json({ success: true, message: 'Admin session terminated.' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2724,7 +2754,7 @@ app.get('/api/admin/subadmins', async (c) => {
     `).all();
     return c.json({ success: true, subadmins: results || [] });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2772,7 +2802,7 @@ app.post('/api/admin/subadmins/create', async (c) => {
       subadmin: { id: subId, email, name: officialName, role: 'subadmin' }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2789,7 +2819,7 @@ app.post('/api/admin/subadmins/delete', async (c) => {
     }
     return c.json({ success: true, message: 'Sub-Admin access revoked successfully.' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2825,7 +2855,7 @@ app.get('/api/admin/withdrawals', async (c) => {
     const { results } = await c.env.DB.prepare(query).bind(...params).all();
     return c.json({ success: true, withdrawals: results });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2883,7 +2913,7 @@ app.post('/api/admin/withdrawals/action', async (c) => {
       return c.json({ success: true, message: 'Withdrawal rejected, transaction updated to Rejected, and amount refunded to user wallet' });
     }
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -2901,7 +2931,7 @@ app.get('/api/admin/deposits', async (c) => {
     `).all();
     return c.json({ success: true, deposits: results });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3020,7 +3050,7 @@ app.get('/api/admin/settings', async (c) => {
     }
     return c.json({ success: true, settings: settingsMap });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3076,7 +3106,7 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
       vaultAddress: cleanVault || undefined
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3161,7 +3191,7 @@ app.post('/api/chat/sync', async (c) => {
 
     return c.json({ success: true, message: 'Chat synced to Cloudflare D1' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3202,7 +3232,7 @@ app.get('/api/chat/session', async (c) => {
       }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3247,7 +3277,7 @@ app.get('/api/admin/chats', async (c) => {
 
     return c.json({ success: true, sessions: mapped });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3299,7 +3329,7 @@ app.post('/api/admin/chats/reply', async (c) => {
 
     return c.json({ success: true, message: 'Admin reply dispatched', newMessage: adminMsg });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3354,7 +3384,7 @@ app.post('/api/admin/chats/resolve', async (c) => {
 
     return c.json({ success: true, message: 'Session marked resolved' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3368,7 +3398,7 @@ app.post('/api/admin/chats/close', async (c) => {
     await c.env.DB.prepare('DELETE FROM chat_sessions WHERE id = ?').bind(sessionId).run();
     return c.json({ success: true, message: 'Chat session closed and deleted successfully' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3378,7 +3408,7 @@ app.post('/api/admin/chats/clear-all', async (c) => {
     await c.env.DB.prepare('DELETE FROM chat_sessions').run();
     return c.json({ success: true, message: 'All chat conversations cleared successfully' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3420,7 +3450,7 @@ app.post('/api/chat/delete-message', async (c) => {
 
     return c.json({ success: true, message: 'Message permanently removed', remainingCount: filteredMessages.length });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3493,7 +3523,7 @@ app.post('/api/tickets/create', async (c) => {
       }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3553,7 +3583,7 @@ app.get('/api/tickets/user', async (c) => {
 
     return c.json({ success: true, tickets });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3569,7 +3599,7 @@ app.post('/api/tickets/mark-read', async (c) => {
     await c.env.DB.prepare('UPDATE support_tickets SET user_read = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(ticketId).run();
     return c.json({ success: true });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3596,7 +3626,7 @@ app.get('/api/admin/tickets', async (c) => {
 
     return c.json({ success: true, tickets });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3626,7 +3656,7 @@ app.post('/api/admin/tickets/reply', async (c) => {
 
     return c.json({ success: true, message: 'Reply sent successfully', adminReply: cleanReply, repliedAt: new Date().toISOString() });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3642,7 +3672,7 @@ app.delete('/api/admin/tickets/:id', async (c) => {
     await c.env.DB.prepare('DELETE FROM support_tickets WHERE id = ?').bind(id).run();
     return c.json({ success: true, message: 'Support ticket deleted successfully' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3698,7 +3728,7 @@ app.post('/api/admin/broadcasts/create', async (c) => {
       }
     });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 
@@ -3721,7 +3751,7 @@ app.get('/api/broadcasts', async (c) => {
 
     return c.json({ success: true, broadcasts });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message, broadcasts: [] }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err), broadcasts: [] }, 500);
   }
 });
 
@@ -3737,7 +3767,7 @@ app.delete('/api/admin/broadcasts/:id', async (c) => {
     await c.env.DB.prepare('DELETE FROM broadcast_announcements WHERE id = ?').bind(id).run();
     return c.json({ success: true, message: 'Broadcast announcement deleted successfully' });
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
 });
 

@@ -28,54 +28,54 @@ interface RegionalSchedule {
 
 const REGIONAL_SCHEDULES: RegionalSchedule[] = [
   {
-    country: 'United States (East)',
-    flag: '🇺🇸',
-    city: 'New York / HQ',
-    zone: 'EDT',
-    time: 'Oct 10, 07:00 AM',
+    country: 'India',
+    flag: '🇮🇳',
+    city: 'New Delhi / Mumbai',
+    zone: 'IST',
+    time: 'Oct 10, 06:30 AM',
     isPrimary: true
-  },
-  {
-    country: 'United States (West)',
-    flag: '🇺🇸',
-    city: 'California',
-    zone: 'PDT',
-    time: 'Oct 10, 04:00 AM'
-  },
-  {
-    country: 'United Kingdom',
-    flag: '🇬🇧',
-    city: 'London',
-    zone: 'BST',
-    time: 'Oct 10, 12:00 PM'
-  },
-  {
-    country: 'Germany / Europe',
-    flag: '🇩🇪',
-    city: 'Frankfurt',
-    zone: 'CEST',
-    time: 'Oct 10, 01:00 PM'
   },
   {
     country: 'UAE / Middle East',
     flag: '🇦🇪',
     city: 'Dubai',
     zone: 'GST',
-    time: 'Oct 10, 03:00 PM'
-  },
-  {
-    country: 'India',
-    flag: '🇮🇳',
-    city: 'New Delhi / Mumbai',
-    zone: 'IST',
-    time: 'Oct 10, 04:30 PM'
+    time: 'Oct 10, 05:00 AM'
   },
   {
     country: 'Singapore / Asia',
     flag: '🇸🇬',
     city: 'Singapore',
     zone: 'SGT',
-    time: 'Oct 10, 07:00 PM'
+    time: 'Oct 10, 09:00 AM'
+  },
+  {
+    country: 'United Kingdom',
+    flag: '🇬🇧',
+    city: 'London',
+    zone: 'BST',
+    time: 'Oct 10, 02:00 AM'
+  },
+  {
+    country: 'Germany / Europe',
+    flag: '🇩🇪',
+    city: 'Frankfurt',
+    zone: 'CEST',
+    time: 'Oct 10, 03:00 AM'
+  },
+  {
+    country: 'United States (East)',
+    flag: '🇺🇸',
+    city: 'New York / HQ',
+    zone: 'EDT',
+    time: 'Oct 9, 09:00 PM'
+  },
+  {
+    country: 'United States (West)',
+    flag: '🇺🇸',
+    city: 'California',
+    zone: 'PDT',
+    time: 'Oct 9, 06:00 PM'
   }
 ];
 
@@ -101,10 +101,10 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div>
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                <span>US Infrastructure Upgrade · Global Node Sync</span>
+                <span>Scheduled Infrastructure Upgrade · Global Node Sync</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">
-                Core Cloud Mining Maintenance
+                Neon Cloud Mining Infrastructure Maintenance
               </h2>
             </div>
           </div>
@@ -118,21 +118,21 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
           </button>
         </div>
 
-        {/* Content Body - Scrollable if screen is small */}
+        {/* Content Body */}
         <div className="p-4 sm:p-5 space-y-4 text-xs sm:text-[13px] text-gray-300 overflow-y-auto">
-          {/* Main Primary US Notice Box */}
+          {/* Main Primary Notice Box */}
           <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-950/40 via-[#0B172A] to-[#0A1A32] border border-amber-500/40 space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-[12.5px] sm:text-[13.5px]">
                 <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>USA Primary Schedule: Tomorrow, Oct 10 · 07:00 AM EDT</span>
+                <span>Primary Schedule: Tomorrow, Oct 10 · 06:30 AM IST</span>
               </div>
               <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
-                US Eastern Time
+                Indian Standard Time (IST)
               </span>
             </div>
             <p className="text-gray-300 leading-relaxed text-[11.5px] sm:text-[12.5px]">
-              Nexora Mining USA engineering operations are executing a scheduled high-throughput database synchronization and cloud ASIC node cluster capacity scaling.
+              Neon Mining core database architecture and global ASIC cloud mining nodes are undergoing a scheduled high-throughput synchronization to guarantee uninterrupted high-speed operations.
             </p>
           </div>
 
@@ -141,7 +141,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div className="flex items-center justify-between text-xs font-bold text-gray-200">
               <span className="flex items-center gap-1.5 text-[#00F0FF]">
                 <Globe className="w-3.5 h-3.5" />
-                Global Resumption Schedule By Country:
+                Global Resumption Timetable (Synchronized to 06:30 AM IST):
               </span>
               <span className="text-[10.5px] text-gray-400 font-normal">Auto-resets per region</span>
             </div>
@@ -152,7 +152,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
                   key={idx}
                   className={`p-2 rounded-lg flex items-center justify-between text-[11px] sm:text-[11.5px] transition-all ${
                     reg.isPrimary 
-                      ? 'bg-amber-950/30 border border-amber-500/40 text-amber-200' 
+                      ? 'bg-amber-950/40 border border-amber-500/50 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.2)]' 
                       : 'bg-[#0B1628] border border-[#162742] text-gray-300'
                   }`}
                 >
@@ -162,15 +162,15 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
                       <div className="font-semibold text-white truncate flex items-center gap-1">
                         {reg.country}
                         {reg.isPrimary && (
-                          <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400 font-bold uppercase">
-                            HQ
+                          <span className="text-[9px] px-1 rounded bg-amber-500/25 text-amber-300 font-bold uppercase">
+                            PRIMARY
                           </span>
                         )}
                       </div>
                       <div className="text-[9.5px] text-gray-400 truncate">{reg.city} ({reg.zone})</div>
                     </div>
                   </div>
-                  <div className="text-right shrink-0 font-mono font-bold text-cyan-300 text-[11px]">
+                  <div className={`text-right shrink-0 font-mono font-bold text-[11px] ${reg.isPrimary ? 'text-amber-300' : 'text-cyan-300'}`}>
                     {reg.time}
                   </div>
                 </div>
@@ -205,7 +205,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
               <div>
                 <div className="text-cyan-300 font-bold text-[11px] sm:text-[12px]">Automatic Resumption</div>
                 <div className="text-gray-400 text-[10.5px] sm:text-[11px] mt-0.5 leading-snug">
-                  Real-time database queries, downlines, and ledger sync automatically restore at schedule.
+                  Real-time database queries, downlines, and ledger sync automatically restore at 06:30 AM IST.
                 </div>
               </div>
             </div>
@@ -272,12 +272,12 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
         </span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-[11px] sm:text-xs">
           <span className="font-extrabold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
-            <span>🇺🇸</span> System Notice:
+            <span>⚠️</span> System Notice:
           </span>
           <span className="text-gray-200 truncate">
-            Scheduled US Node Upgrade until <strong className="text-amber-300">Oct 10, 07:00 AM EDT (USA) / 04:30 PM IST (India)</strong>.
+            Scheduled Cloud Node Upgrade until <strong className="text-amber-300">Oct 10, 06:30 AM IST (India)</strong>.
           </span>
-          <span className="hidden lg:inline-block text-emerald-400 font-medium">
+          <span className="hidden md:inline-block text-emerald-400 font-medium">
             (All funds & mining yields are 100% secure)
           </span>
         </div>

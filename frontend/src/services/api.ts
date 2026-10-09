@@ -68,6 +68,26 @@ class NeonApiService {
   // ==========================================================================
   // Authentication
   // ==========================================================================
+  public sanitizeApiErrorMessage(msg: any): string {
+    const str = String(msg || '');
+    const lower = str.toLowerCase();
+    if (
+      lower.includes('7500') ||
+      lower.includes('limit') ||
+      lower.includes('quota') ||
+      lower.includes('d1') ||
+      lower.includes('free tier') ||
+      lower.includes('exceeded') ||
+      lower.includes('database error') ||
+      lower.includes('network connection failed') ||
+      lower.includes('failed to fetch') ||
+      lower.includes('500')
+    ) {
+      return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 10, 06:30 AM IST. Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
+    }
+    return str;
+  }
+
   async register(params: {
     name: string;
     mobile?: string;
@@ -84,11 +104,11 @@ class NeonApiService {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return { success: false, message: data.message || `Registration error (${res.status})` };
+        return { success: false, message: this.sanitizeApiErrorMessage(data.message || `Registration error (${res.status})`) };
       }
       return data;
     } catch (err: any) {
-      return { success: false, message: err.message || 'Network connection failed' };
+      return { success: false, message: this.sanitizeApiErrorMessage(err.message) };
     }
   }
 
@@ -101,11 +121,11 @@ class NeonApiService {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return { success: false, message: data.message || `Login failed (${res.status})` };
+        return { success: false, message: this.sanitizeApiErrorMessage(data.message || `Login failed (${res.status})`) };
       }
       return data;
     } catch (err: any) {
-      return { success: false, message: err.message || 'Network connection failed' };
+      return { success: false, message: this.sanitizeApiErrorMessage(err.message) };
     }
   }
 

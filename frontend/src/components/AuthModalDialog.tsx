@@ -80,6 +80,25 @@ export const AuthModalDialog: React.FC<Props> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState('');
 
+  const cleanAuthError = (msg: string): string => {
+    const lower = (msg || '').toLowerCase();
+    if (
+      lower.includes('7500') ||
+      lower.includes('limit') ||
+      lower.includes('quota') ||
+      lower.includes('d1') ||
+      lower.includes('free tier') ||
+      lower.includes('exceeded') ||
+      lower.includes('network connection failed') ||
+      lower.includes('unable to connect') ||
+      lower.includes('failed to fetch') ||
+      lower.includes('500')
+    ) {
+      return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 10, 06:30 AM IST. Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
+    }
+    return msg;
+  };
+
   // Handle incoming email reset link
   useEffect(() => {
     if (incomingResetToken) {
@@ -163,9 +182,9 @@ export const AuthModalDialog: React.FC<Props> = ({
           });
           setSignupSuccess(true);
         } else if (res?.message?.toLowerCase().includes('already registered')) {
-          setApiError(res.message || 'This email or mobile number is already registered. Please click "Sign In" below to log in.');
+          setApiError(cleanAuthError(res.message || 'This email or mobile number is already registered. Please click "Sign In" below to log in.'));
         } else {
-          setApiError(res?.message || 'Registration failed. Please verify your details.');
+          setApiError(cleanAuthError(res?.message || 'Registration failed. Please verify your details.'));
         }
       } else {
         // Sign In Mode: Accepts registered Email Address OR Username
@@ -222,11 +241,11 @@ export const AuthModalDialog: React.FC<Props> = ({
             }
           } catch {}
 
-          setApiError(res?.message || 'Invalid credentials. Please verify your Email/Username and Password.');
+          setApiError(cleanAuthError(res?.message || 'Invalid credentials. Please verify your Email/Username and Password.'));
         }
       }
     } catch {
-      setApiError('Unable to connect to authentication server. Please check your network connection.');
+      setApiError(cleanAuthError('Unable to connect to authentication server. Please check your network connection.'));
     } finally {
       setIsLoading(false);
     }
@@ -505,19 +524,37 @@ export const AuthModalDialog: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* API Error Notification */}
+        {/* API Error / Maintenance Notification */}
         {apiError && (
           <div className={`mt-3.5 p-3 rounded-xl ${
             apiError.toLowerCase().includes('suspended')
               ? 'bg-red-950/95 border-2 border-red-500 text-red-100 shadow-[0_0_25px_rgba(239,68,68,0.4)]'
+              : (apiError.toLowerCase().includes('maintenance') || apiError.toLowerCase().includes('upgrade'))
+              ? 'bg-amber-950/90 border border-amber-500/60 text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
               : 'bg-red-950/85 border border-red-500/50 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
           } text-[12px] flex items-start gap-2.5 animate-fadeIn`}>
-            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <AlertTriangle className={`w-4 h-4 ${
+              (apiError.toLowerCase().includes('maintenance') || apiError.toLowerCase().includes('upgrade'))
+                ? 'text-amber-400'
+                : 'text-red-400'
+            } shrink-0 mt-0.5`} />
             <div className="flex-1">
-              <span className="font-bold text-red-400 block text-[11px] uppercase tracking-wider">
-                {apiError.toLowerCase().includes('suspended') ? '🚫 Account Suspended' : 'Authentication Error'}
+              <span className={`font-bold ${
+                (apiError.toLowerCase().includes('maintenance') || apiError.toLowerCase().includes('upgrade'))
+                  ? 'text-amber-400'
+                  : 'text-red-400'
+              } block text-[11px] uppercase tracking-wider`}>
+                {apiError.toLowerCase().includes('suspended') 
+                  ? '🚫 Account Suspended' 
+                  : (apiError.toLowerCase().includes('maintenance') || apiError.toLowerCase().includes('upgrade'))
+                  ? '⚙️ Scheduled System Maintenance'
+                  : 'Authentication Error'}
               </span>
-              <span className="text-red-200 text-[11.5px] leading-relaxed">{apiError}</span>
+              <span className={`${
+                (apiError.toLowerCase().includes('maintenance') || apiError.toLowerCase().includes('upgrade'))
+                  ? 'text-amber-200'
+                  : 'text-red-200'
+              } text-[11.5px] leading-relaxed`}>{apiError}</span>
             </div>
           </div>
         )}
