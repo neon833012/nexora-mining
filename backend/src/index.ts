@@ -555,6 +555,9 @@ app.get('/api/referrals/downlines', async (c) => {
       const qry = `
         SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, u.referral_code,
                COALESCE(w.active_mining_power, 0) as active_mining_power,
+               COALESCE(w.withdrawable_balance, 0) as withdrawable_balance,
+               COALESCE(w.total_mined_yield, 0) as total_mined_yield,
+               COALESCE(w.referral_balance, 0) as referral_balance,
                (SELECT COUNT(*) FROM users sub WHERE UPPER(sub.upline_code) = UPPER(u.id) OR (u.referral_code IS NOT NULL AND UPPER(sub.upline_code) = UPPER(u.referral_code))) as team_size
         FROM users u 
         LEFT JOIN wallets w ON u.id = w.user_id
@@ -627,6 +630,96 @@ app.get('/api/referrals/downlines', async (c) => {
     return c.json({ success: false, message: err.message }, 500);
   }
 });
+
+/**
+ * 10-Tier Over-Ride Commission (ORC) Distribution Engine (Cloudflare D1-Backed)
+ * Covers ALL downline earnings: Daily Mining Yield + Referral Rewards + Platform Earnings.
+ * L1: 5%, L2: 3%, L3: 2%, L4-L10: 1% each directly into uplines' D1 orc_balance & total_orc_income.
+ */
+async function distributeOrcCommission(
+  db: D1Database,
+  earnerUserId: string,
+  earnedAmount: number,
+  earningDescription: string
+) {
+  if (!db || !earnerUserId || !earnedAmount || earnedAmount <= 0) return;
+
+  try {
+    const earner = await db.prepare(
+      'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) LIMIT 1'
+    ).bind(earnerUserId).first() as any;
+
+    if (!earner || !earner.upline_code) return;
+
+    const orcRates: Record<number, number> = {
+      1: 0.05,
+      2: 0.03,
+      3: 0.02,
+      4: 0.01,
+      5: 0.01,
+      6: 0.01,
+      7: 0.01,
+      8: 0.01,
+      9: 0.01,
+      10: 0.01
+    };
+
+    let currentUpline = earner.upline_code;
+    const batchStatements: any[] = [];
+
+    for (let lvl = 1; lvl <= 10; lvl++) {
+      if (!currentUpline) break;
+      const cleanUp = String(currentUpline).trim();
+      const uplineUser = await db.prepare(
+        'SELECT id, upline_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(referral_code) = UPPER(?) LIMIT 1'
+      ).bind(cleanUp, cleanUp).first() as any;
+
+      if (!uplineUser) break;
+
+      // Qualification rule: Only uplines with active mining power receive ORC
+      const uplineWallet = await db.prepare(
+        'SELECT active_mining_power FROM wallets WHERE UPPER(user_id) = UPPER(?)'
+      ).bind(uplineUser.id).first() as any;
+
+      const rate = orcRates[lvl] || 0.01;
+      const orcCommission = Number((earnedAmount * rate).toFixed(4));
+
+      if (uplineWallet && Number(uplineWallet.active_mining_power) > 0 && orcCommission > 0) {
+        const txId = `ORC-${Date.now().toString().slice(-6)}-L${lvl}`;
+        batchStatements.push(
+          db.prepare(
+            `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield, orc_balance, total_orc_income)
+             VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0)`
+          ).bind(uplineUser.id),
+          db.prepare(
+            `UPDATE wallets 
+             SET orc_balance = orc_balance + ?,
+                 total_orc_income = total_orc_income + ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE UPPER(user_id) = UPPER(?)`
+          ).bind(orcCommission, orcCommission, uplineUser.id),
+          db.prepare(
+            `INSERT INTO transactions (id, user_id, type, amount, status)
+             VALUES (?, ?, ?, ?, 'Settled')`
+          ).bind(
+            txId,
+            uplineUser.id,
+            `ORC Level ${lvl} (${(rate * 100).toFixed(0)}%) from ${earnerUserId} [${earningDescription}]`,
+            orcCommission
+          )
+        );
+      }
+
+      currentUpline = uplineUser.upline_code;
+    }
+
+    if (batchStatements.length > 0) {
+      await db.batch(batchStatements);
+    }
+  } catch (err) {
+    console.error('Error distributing 10-tier ORC:', err);
+  }
+}
 
 // Forgot Password / Recovery Verification
 // Forgot Password / Recovery Verification with Resend Email Dispatch
@@ -1246,6 +1339,7 @@ app.post('/api/deposit/verify-tx', async (c) => {
     ];
 
     // 3-Tier Multi-Level Referral Commission Distribution (L1: 10%, L2: 5%, L3: 2%)
+    const creditedUplines: { id: string; commission: number }[] = [];
     if (user && user.upline_code) {
       const tierConfig = [
         { level: 1, rate: 0.10, label: 'L1 (10%)' },
@@ -1276,6 +1370,7 @@ app.post('/api/deposit/verify-tx', async (c) => {
 
         const commission = Number((order.amount * tier.rate).toFixed(2));
         if (commission > 0) {
+          creditedUplines.push({ id: uplineUser.id, commission });
           batchStatements.push(
             c.env.DB.prepare(
               `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, total_withdrawn, total_mined_yield)
@@ -1307,6 +1402,11 @@ app.post('/api/deposit/verify-tx', async (c) => {
     }
 
     await c.env.DB.batch(batchStatements);
+
+    // Distribute 10-Tier ORC on referral commission earnings to qualifying uplines
+    for (const cred of creditedUplines) {
+      await distributeOrcCommission(c.env.DB, cred.id, cred.commission, 'Referral Commission Earning');
+    }
 
     // Fetch updated wallet
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(effectiveUserId).first();
@@ -1501,6 +1601,7 @@ app.post('/api/plans/subscribe', async (c) => {
       'SELECT upline_code FROM users WHERE id = ?'
     ).bind(userId).first() as any;
 
+    const creditedUplines: { id: string; commission: number }[] = [];
     if (subscriberUser && subscriberUser.upline_code) {
       const tierConfig = [
         { level: 1, rate: 0.10, label: 'L1 (10%)' },
@@ -1531,6 +1632,7 @@ app.post('/api/plans/subscribe', async (c) => {
 
         const commission = Number((planCost * tier.rate).toFixed(2));
         if (commission > 0) {
+          creditedUplines.push({ id: uplineUser.id, commission });
           const refTxHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
           batchStatements.push(
             c.env.DB.prepare(
@@ -1564,6 +1666,11 @@ app.post('/api/plans/subscribe', async (c) => {
     }
 
     await c.env.DB.batch(batchStatements);
+
+    // Distribute 10-Tier ORC on referral commission earnings to qualifying uplines
+    for (const cred of creditedUplines) {
+      await distributeOrcCommission(c.env.DB, cred.id, cred.commission, 'Referral Commission Earning');
+    }
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(userId).first();
 
@@ -1661,6 +1768,11 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
 
     await c.env.DB.batch(batchStatements);
 
+    // If reinvested from daily yield, distribute 10-Tier ORC on that earned yield to uplines
+    if (source === 'yield') {
+      await distributeOrcCommission(c.env.DB, userId, numYield, 'Daily Mining Yield Compounded');
+    }
+
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
 
     return c.json({
@@ -1734,6 +1846,10 @@ app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
          VALUES (?, ?, 'Daily Plan Interest Sent to Withdrawable Balance', ?, 'Settled')`
       ).bind(txId, userId, numYield)
     ]);
+
+    // Distribute 10-Tier ORC on daily mining yield to qualifying uplines
+    await distributeOrcCommission(c.env.DB, userId, numYield, 'Daily Mining Yield Claim');
+
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, message: `Transferred +$${numYield.toFixed(2)} USDT to Withdrawable Balance`, updatedWallet });
   } catch (err: any) {

@@ -1703,6 +1703,10 @@ export const App: React.FC = () => {
           const mapDownline = (d: any, lvl: number): ReferredUserItem => {
             const power = Number(d.active_mining_power) || 0;
             const commissionRate = lvl === 1 ? 0.10 : lvl === 2 ? 0.05 : lvl === 3 ? 0.02 : 0;
+            const memberWithdrawable = Number(d.withdrawable_balance || 0);
+            const memberYield = Number(d.total_mined_yield || 0);
+            const memberRef = Number(d.referral_balance || 0);
+            const totalEarnings = memberWithdrawable > 0 ? memberWithdrawable : (memberYield + memberRef);
             return {
               id: d.id,
               name: d.name || d.id,
@@ -1710,7 +1714,7 @@ export const App: React.FC = () => {
               registeredAt: d.created_at || 'Recently',
               planName: power > 0 ? `Active Node ($${power})` : 'No Plan',
               planAmount: power,
-              commissionEarned: +(power * commissionRate).toFixed(2),
+              commissionEarned: totalEarnings > 0 ? +totalEarnings.toFixed(2) : +(power * commissionRate).toFixed(2),
               status: d.status === 'active' ? 'active' : 'inactive',
               level: lvl,
               invitedBy: lvl === 1 ? 'Direct (You)' : lvl === 2 ? 'Your L1 Referral' : lvl === 3 ? 'Your L2 Referral' : `Your L${lvl - 1} Referral`,

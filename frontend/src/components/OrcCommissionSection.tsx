@@ -25,11 +25,11 @@ interface Props {
   onReinvestOrcToPlan?: () => void;
 }
 
-// 10-Tier ORC Rate Schedule
+// 10-Tier ORC Rate Schedule (Calculated on Downline Member's Total Withdrawable Earnings: Yield + Referral)
 export const ORC_TIER_RATES: Record<number, number> = {
-  1: 5.0, // Level 1: 5% of member's daily mining earnings
-  2: 3.0, // Level 2: 3% of member's daily mining earnings
-  3: 2.0, // Level 3: 2% of member's daily mining earnings
+  1: 5.0, // Level 1: 5% of member's total earnings (Daily Yield + Referral Income)
+  2: 3.0, // Level 2: 3% of member's total earnings
+  3: 2.0, // Level 3: 2% of member's total earnings
   4: 1.0, // Level 4: 1%
   5: 1.0, // Level 5: 1%
   6: 1.0, // Level 6: 1%
@@ -39,18 +39,20 @@ export const ORC_TIER_RATES: Record<number, number> = {
   10: 1.0 // Level 10: 1%
 };
 
-// Helper: Estimate daily mining earnings for a member based on their active power
-export const getMemberDailyEarning = (planAmount: number): number => {
-  if (!planAmount || planAmount <= 0) return 0;
+// Helper: Estimate daily earnings for a member based on active mining power + referral income
+export const getMemberDailyEarning = (planAmount: number, commissionEarned: number = 0): number => {
+  if (!planAmount || planAmount <= 0) return +(commissionEarned || 0).toFixed(4);
   const ratePercent = planAmount >= 3000 ? 2.0 : planAmount >= 1500 ? 1.7 : planAmount >= 700 ? 1.5 : planAmount >= 350 ? 1.35 : planAmount >= 150 ? 1.2 : planAmount >= 50 ? 1.1 : 1.0;
-  return +(planAmount * (ratePercent / 100)).toFixed(4);
+  const miningDailyYield = planAmount * (ratePercent / 100);
+  // Total member daily earnings include their daily mining yield plus any affiliate commission activity
+  return +(miningDailyYield + (commissionEarned > 0 ? commissionEarned * 0.1 : 0)).toFixed(4);
 };
 
-// Helper: Calculate ORC earned by upline from this member's daily yield
+// Helper: Calculate ORC earned by upline from this member's total earnings (Yield + Referral)
 export const getMemberOrcDailyYield = (user: ReferredUserItem): number => {
   const lvl = user.level || 1;
   const orcRate = ORC_TIER_RATES[lvl] || 1.0;
-  const memberDailyEarn = getMemberDailyEarning(user.planAmount);
+  const memberDailyEarn = getMemberDailyEarning(user.planAmount, user.commissionEarned || 0);
   return +(memberDailyEarn * (orcRate / 100)).toFixed(4);
 };
 
@@ -533,7 +535,7 @@ export const OrcCommissionSection: React.FC<Props> = ({
                 10-Level Downline Miners Directory
               </h3>
               <p className="text-[11px] text-[#94A3B8]">
-                Real-time tracking of team mining earnings and your respective override royalties
+                Real-time tracking of team earnings (Mining Yield + Referral Income) and your respective override royalties
               </p>
             </div>
           </div>
@@ -603,7 +605,7 @@ export const OrcCommissionSection: React.FC<Props> = ({
                     <th className="py-3 px-4">Tier</th>
                     <th className="py-3 px-4">Sponsor</th>
                     <th className="py-3 px-4">Staked Plan</th>
-                    <th className="py-3 px-4">Member Daily Yield</th>
+                    <th className="py-3 px-4">Member Earning (Yield + Ref)</th>
                     <th className="py-3 px-4">Your ORC %</th>
                     <th className="py-3 px-4 text-right">Your Daily ORC</th>
                     <th className="py-3 px-4 text-center">Team Size</th>
@@ -614,7 +616,7 @@ export const OrcCommissionSection: React.FC<Props> = ({
                   {filteredUsers.map((user, idx) => {
                     const lvl = user.level || 1;
                     const orcRate = ORC_TIER_RATES[lvl] || 1.0;
-                    const memberDailyEarn = getMemberDailyEarning(user.planAmount);
+                    const memberDailyEarn = getMemberDailyEarning(user.planAmount, user.commissionEarned || 0);
                     const yourDailyOrc = getMemberOrcDailyYield(user);
 
                     return (
@@ -679,7 +681,7 @@ export const OrcCommissionSection: React.FC<Props> = ({
               {filteredUsers.map((user, idx) => {
                 const lvl = user.level || 1;
                 const orcRate = ORC_TIER_RATES[lvl] || 1.0;
-                const memberDailyEarn = getMemberDailyEarning(user.planAmount);
+                const memberDailyEarn = getMemberDailyEarning(user.planAmount, user.commissionEarned || 0);
                 const yourDailyOrc = getMemberOrcDailyYield(user);
 
                 return (
@@ -709,7 +711,7 @@ export const OrcCommissionSection: React.FC<Props> = ({
 
                     <div className="grid grid-cols-2 gap-2 text-[11px] pt-1.5 border-t border-[#16273F]">
                       <div>
-                        <span className="text-[#64748B] block text-[9.5px] uppercase">Node & Daily Yield:</span>
+                        <span className="text-[#64748B] block text-[9.5px] uppercase">Node & Daily Earning:</span>
                         <span className="font-mono text-white font-bold">${user.planAmount || 0} (~${memberDailyEarn.toFixed(2)}/d)</span>
                       </div>
                       <div className="text-right">
@@ -742,8 +744,8 @@ export const OrcCommissionSection: React.FC<Props> = ({
           • <strong className="text-white">Referral Stake Commission (3 Tiers):</strong> Paid as a one-time bounty when a member buys or stakes a node (Level 1: 10%, Level 2: 5%, Level 3: 2%).
         </p>
         <p className="leading-relaxed">
-          • <strong className="text-white">Over-Ride Commission (ORC · 10 Levels):</strong> Paid on a recurring 24-hour cycle calculated on the actual mining profits mined by your team:
-          <span className="text-[#00F0FF] ml-1">L1 gives 5%, L2 gives 3%, L3 gives 2%, and L4 through L10 give 1% each of their daily yield.</span>
+          • <strong className="text-white">Over-Ride Commission (ORC · 10 Levels):</strong> Calculated on <strong className="text-white">ALL earnings</strong> generated by your team members — including Daily Mining Yield, Referral Commissions, and all withdrawable income:
+          <span className="text-[#00F0FF] ml-1">L1 gives 5% of their total withdrawable earnings, L2 gives 3%, L3 gives 2%, and L4 through L10 give 1% each directly into your Cloudflare D1-backed ORC balance.</span>
         </p>
       </div>
     </div>
