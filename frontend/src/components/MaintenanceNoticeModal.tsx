@@ -8,13 +8,76 @@ import {
   X, 
   Activity, 
   Zap, 
-  RefreshCw 
+  RefreshCw,
+  Globe
 } from 'lucide-react';
 
 interface MaintenanceModalProps {
   isOpen: boolean;
   onDismiss: () => void;
 }
+
+interface RegionalSchedule {
+  country: string;
+  flag: string;
+  city: string;
+  zone: string;
+  time: string;
+  isPrimary?: boolean;
+}
+
+const REGIONAL_SCHEDULES: RegionalSchedule[] = [
+  {
+    country: 'United States (East)',
+    flag: '🇺🇸',
+    city: 'New York / HQ',
+    zone: 'EDT',
+    time: 'Oct 10, 07:00 AM',
+    isPrimary: true
+  },
+  {
+    country: 'United States (West)',
+    flag: '🇺🇸',
+    city: 'California',
+    zone: 'PDT',
+    time: 'Oct 10, 04:00 AM'
+  },
+  {
+    country: 'United Kingdom',
+    flag: '🇬🇧',
+    city: 'London',
+    zone: 'BST',
+    time: 'Oct 10, 12:00 PM'
+  },
+  {
+    country: 'Germany / Europe',
+    flag: '🇩🇪',
+    city: 'Frankfurt',
+    zone: 'CEST',
+    time: 'Oct 10, 01:00 PM'
+  },
+  {
+    country: 'UAE / Middle East',
+    flag: '🇦🇪',
+    city: 'Dubai',
+    zone: 'GST',
+    time: 'Oct 10, 03:00 PM'
+  },
+  {
+    country: 'India',
+    flag: '🇮🇳',
+    city: 'New Delhi / Mumbai',
+    zone: 'IST',
+    time: 'Oct 10, 04:30 PM'
+  },
+  {
+    country: 'Singapore / Asia',
+    flag: '🇸🇬',
+    city: 'Singapore',
+    zone: 'SGT',
+    time: 'Oct 10, 07:00 PM'
+  }
+];
 
 export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen, onDismiss }) => {
   if (!isOpen) return null;
@@ -25,12 +88,12 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
       <div className="absolute inset-0" onClick={onDismiss} />
 
       {/* Modal Dialog */}
-      <div className="relative z-10 w-full max-w-[540px] rounded-2xl bg-[#091222] border border-amber-500/50 shadow-[0_0_50px_rgba(245,158,11,0.25)] overflow-hidden animate-scaleUp my-auto flex flex-col">
+      <div className="relative z-10 w-full max-w-[580px] rounded-2xl bg-[#091222] border border-amber-500/50 shadow-[0_0_50px_rgba(245,158,11,0.25)] overflow-hidden animate-scaleUp my-auto flex flex-col max-h-[92vh]">
         {/* Glowing top line */}
         <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-[#00F0FF]" />
 
         {/* Header */}
-        <div className="p-4 sm:p-5 pb-3 border-b border-[#162742] relative flex items-start justify-between gap-3 bg-[#0A1628]/80">
+        <div className="p-4 sm:p-5 pb-3 border-b border-[#162742] relative flex items-start justify-between gap-3 bg-[#0A1628]/90">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
               <AlertTriangle className="w-5 h-5 animate-pulse" />
@@ -38,10 +101,10 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div>
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                <span>Scheduled Infrastructure Upgrade</span>
+                <span>US Infrastructure Upgrade · Global Node Sync</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">
-                Core Cloud Node Synchronization
+                Core Cloud Mining Maintenance
               </h2>
             </div>
           </div>
@@ -55,17 +118,64 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-4 sm:p-5 space-y-4 text-xs sm:text-[13px] text-gray-300">
-          {/* Main Notice Box */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-950/30 via-[#0B172A] to-[#0A1A32] border border-amber-500/30 space-y-2">
-            <div className="flex items-center gap-2 text-amber-300 font-bold text-[12px] sm:text-[13px]">
-              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Maintenance Window: Until Tomorrow, 06:00 AM IST</span>
+        {/* Content Body - Scrollable if screen is small */}
+        <div className="p-4 sm:p-5 space-y-4 text-xs sm:text-[13px] text-gray-300 overflow-y-auto">
+          {/* Main Primary US Notice Box */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-950/40 via-[#0B172A] to-[#0A1A32] border border-amber-500/40 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-[12.5px] sm:text-[13.5px]">
+                <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>USA Primary Schedule: Tomorrow, Oct 10 · 07:00 AM EDT</span>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
+                US Eastern Time
+              </span>
             </div>
             <p className="text-gray-300 leading-relaxed text-[11.5px] sm:text-[12.5px]">
-              Our engineers are currently performing a scheduled database optimization and global mining node capacity expansion to ensure zero-latency high-volume execution for all users.
+              Nexora Mining USA engineering operations are executing a scheduled high-throughput database synchronization and cloud ASIC node cluster capacity scaling.
             </p>
+          </div>
+
+          {/* Multi-Country Regional Resumption Schedule */}
+          <div className="p-3.5 rounded-xl bg-[#070F1E] border border-[#1A2F4C] space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-200">
+              <span className="flex items-center gap-1.5 text-[#00F0FF]">
+                <Globe className="w-3.5 h-3.5" />
+                Global Resumption Schedule By Country:
+              </span>
+              <span className="text-[10.5px] text-gray-400 font-normal">Auto-resets per region</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {REGIONAL_SCHEDULES.map((reg, idx) => (
+                <div 
+                  key={idx}
+                  className={`p-2 rounded-lg flex items-center justify-between text-[11px] sm:text-[11.5px] transition-all ${
+                    reg.isPrimary 
+                      ? 'bg-amber-950/30 border border-amber-500/40 text-amber-200' 
+                      : 'bg-[#0B1628] border border-[#162742] text-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-base leading-none">{reg.flag}</span>
+                    <div className="truncate">
+                      <div className="font-semibold text-white truncate flex items-center gap-1">
+                        {reg.country}
+                        {reg.isPrimary && (
+                          <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400 font-bold uppercase">
+                            HQ
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9.5px] text-gray-400 truncate">{reg.city} ({reg.zone})</div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 font-mono font-bold text-cyan-300 text-[11px]">
+                    {reg.time}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Key Assurance Cards */}
@@ -95,7 +205,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
               <div>
                 <div className="text-cyan-300 font-bold text-[11px] sm:text-[12px]">Automatic Resumption</div>
                 <div className="text-gray-400 text-[10.5px] sm:text-[11px] mt-0.5 leading-snug">
-                  Real-time database queries, downlines, and ledger sync automatically restore at 06:00 AM IST.
+                  Real-time database queries, downlines, and ledger sync automatically restore at schedule.
                 </div>
               </div>
             </div>
@@ -130,7 +240,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
         </div>
 
         {/* Footer */}
-        <div className="p-4 sm:p-5 pt-3 border-t border-[#162742] bg-[#0A1628]/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 pt-3 border-t border-[#162742] bg-[#0A1628]/90 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-[11px] text-gray-400 flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>Platform operational in preview / read-safe mode</span>
@@ -161,13 +271,13 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
         </span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-[11px] sm:text-xs">
-          <span className="font-extrabold text-amber-400 uppercase tracking-wider shrink-0">
-            System Notice:
+          <span className="font-extrabold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+            <span>🇺🇸</span> System Notice:
           </span>
           <span className="text-gray-200 truncate">
-            Scheduled Cloud Node Upgrade in progress until <strong className="text-amber-300">Oct 10, 06:00 AM IST</strong>.
+            Scheduled US Node Upgrade until <strong className="text-amber-300">Oct 10, 07:00 AM EDT (USA) / 04:30 PM IST (India)</strong>.
           </span>
-          <span className="hidden md:inline-block text-emerald-400 font-medium">
+          <span className="hidden lg:inline-block text-emerald-400 font-medium">
             (All funds & mining yields are 100% secure)
           </span>
         </div>
@@ -177,7 +287,7 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
         onClick={onOpenNotice}
         className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-[11px] font-bold tracking-tight shrink-0 transition-colors cursor-pointer whitespace-nowrap shadow-[0_0_10px_rgba(245,158,11,0.2)]"
       >
-        View Notice
+        View Global Schedule
       </button>
     </div>
   );
