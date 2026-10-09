@@ -1678,28 +1678,23 @@ export const App: React.FC = () => {
 
     verifyAndSyncSession();
 
-    // Active 4-second watchdog for instant multi-device logout detection
-    const watchdogTimer = setInterval(() => {
-      verifyAndSyncSession();
-    }, 4000);
-
     const handleFocusSync = () => {
       if (document.visibilityState === 'visible') {
         verifyAndSyncSession();
+        fetchWalletHistory();
       }
     };
     window.addEventListener('visibilitychange', handleFocusSync);
     window.addEventListener('focus', handleFocusSync);
 
-
-
     fetchWalletHistory();
 
-    // Fast polling: check every 3.5 seconds so if someone else signs in or admin approves/rejects, views update immediately!
+    // Periodic sync every 12 seconds when tab is active (pauses when minimized to save D1 reads)
     const sessionInterval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       verifyAndSyncSession();
       fetchWalletHistory();
-    }, 3500);
+    }, 12000);
 
       // 4. Fetch real referred downlines (L1 + L2 + L3) from Cloudflare D1
       nexoraApi.getDownlines(userName).then((res) => {
@@ -1780,7 +1775,6 @@ export const App: React.FC = () => {
       }).catch(() => {});
 
       return () => {
-        clearInterval(watchdogTimer);
         clearInterval(sessionInterval);
         window.removeEventListener('visibilitychange', handleFocusSync);
         window.removeEventListener('focus', handleFocusSync);

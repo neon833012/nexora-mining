@@ -1328,7 +1328,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
       } catch (e) {}
     };
     fetchAdminTickets();
-    const interval = setInterval(fetchAdminTickets, 4000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchAdminTickets();
+    }, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1346,7 +1348,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
       } catch (e) {}
     };
     fetchBroadcastsFromD1();
-    const interval = setInterval(fetchBroadcastsFromD1, 5000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchBroadcastsFromD1();
+    }, 15000);
 
     const syncBroadcasts = () => {
       fetchBroadcastsFromD1();
