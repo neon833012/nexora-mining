@@ -94,7 +94,7 @@ export const AuthModalDialog: React.FC<Props> = ({
       lower.includes('failed to fetch') ||
       lower.includes('500')
     ) {
-      return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 10, 06:30 AM IST. Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
+      return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 9, 09:00 PM EDT (USA HQ) / Oct 10, 06:30 AM IST (India). Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
     }
     return msg;
   };

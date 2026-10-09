@@ -28,12 +28,26 @@ interface RegionalSchedule {
 
 const REGIONAL_SCHEDULES: RegionalSchedule[] = [
   {
+    country: 'United States (East)',
+    flag: '🇺🇸',
+    city: 'New York / HQ',
+    zone: 'EDT',
+    time: 'Oct 9, 09:00 PM',
+    isPrimary: true
+  },
+  {
+    country: 'United States (West)',
+    flag: '🇺🇸',
+    city: 'California',
+    zone: 'PDT',
+    time: 'Oct 9, 06:00 PM'
+  },
+  {
     country: 'India',
     flag: '🇮🇳',
     city: 'New Delhi / Mumbai',
     zone: 'IST',
-    time: 'Oct 10, 06:30 AM',
-    isPrimary: true
+    time: 'Oct 10, 06:30 AM'
   },
   {
     country: 'UAE / Middle East',
@@ -41,13 +55,6 @@ const REGIONAL_SCHEDULES: RegionalSchedule[] = [
     city: 'Dubai',
     zone: 'GST',
     time: 'Oct 10, 05:00 AM'
-  },
-  {
-    country: 'Singapore / Asia',
-    flag: '🇸🇬',
-    city: 'Singapore',
-    zone: 'SGT',
-    time: 'Oct 10, 09:00 AM'
   },
   {
     country: 'United Kingdom',
@@ -64,18 +71,11 @@ const REGIONAL_SCHEDULES: RegionalSchedule[] = [
     time: 'Oct 10, 03:00 AM'
   },
   {
-    country: 'United States (East)',
-    flag: '🇺🇸',
-    city: 'New York / HQ',
-    zone: 'EDT',
-    time: 'Oct 9, 09:00 PM'
-  },
-  {
-    country: 'United States (West)',
-    flag: '🇺🇸',
-    city: 'California',
-    zone: 'PDT',
-    time: 'Oct 9, 06:00 PM'
+    country: 'Singapore / Asia',
+    flag: '🇸🇬',
+    city: 'Singapore',
+    zone: 'SGT',
+    time: 'Oct 10, 09:00 AM'
   }
 ];
 
@@ -101,7 +101,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div>
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                <span>Scheduled Infrastructure Upgrade · Global Node Sync</span>
+                <span>USA HEADQUARTERS · GLOBAL NODE UPGRADE</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">
                 Neon Cloud Mining Infrastructure Maintenance
@@ -125,15 +125,20 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-[12.5px] sm:text-[13.5px]">
                 <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>Primary Schedule: Tomorrow, Oct 10 · 06:30 AM IST</span>
+                <span>USA Primary HQ Schedule: Tonight, Oct 9 · 09:00 PM EDT</span>
               </div>
               <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
-                Indian Standard Time (IST)
+                US Eastern Time (HQ)
               </span>
             </div>
-            <p className="text-gray-300 leading-relaxed text-[11.5px] sm:text-[12.5px]">
-              Neon Mining core database architecture and global ASIC cloud mining nodes are undergoing a scheduled high-throughput synchronization to guarantee uninterrupted high-speed operations.
-            </p>
+            <div className="text-gray-300 leading-relaxed text-[11.5px] sm:text-[12.5px] space-y-1">
+              <p>
+                Neon Mining USA Headquarters engineering operations are performing a scheduled database optimization and global ASIC cloud mining node synchronization.
+              </p>
+              <p className="text-emerald-400 font-medium text-[11px]">
+                🇮🇳 India Regional Operations will resume at: <strong>Tomorrow, Oct 10 · 06:30 AM IST</strong>
+              </p>
+            </div>
           </div>
 
           {/* Multi-Country Regional Resumption Schedule */}
@@ -141,7 +146,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div className="flex items-center justify-between text-xs font-bold text-gray-200">
               <span className="flex items-center gap-1.5 text-[#00F0FF]">
                 <Globe className="w-3.5 h-3.5" />
-                Global Resumption Timetable (Synchronized to 06:30 AM IST):
+                Global Resumption Timetable (USA HQ & Regional Nodes):
               </span>
               <span className="text-[10.5px] text-gray-400 font-normal">Auto-resets per region</span>
             </div>
@@ -163,7 +168,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
                         {reg.country}
                         {reg.isPrimary && (
                           <span className="text-[9px] px-1 rounded bg-amber-500/25 text-amber-300 font-bold uppercase">
-                            PRIMARY
+                            PRIMARY HQ
                           </span>
                         )}
                       </div>
@@ -205,7 +210,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
               <div>
                 <div className="text-cyan-300 font-bold text-[11px] sm:text-[12px]">Automatic Resumption</div>
                 <div className="text-gray-400 text-[10.5px] sm:text-[11px] mt-0.5 leading-snug">
-                  Real-time database queries, downlines, and ledger sync automatically restore at 06:30 AM IST.
+                  Real-time database queries, downlines, and ledger sync automatically restore at schedule.
                 </div>
               </div>
             </div>
@@ -272,10 +277,10 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
         </span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-[11px] sm:text-xs">
           <span className="font-extrabold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
-            <span>⚠️</span> System Notice:
+            <span>🇺🇸</span> System Notice:
           </span>
           <span className="text-gray-200 truncate">
-            Scheduled Cloud Node Upgrade until <strong className="text-amber-300">Oct 10, 06:30 AM IST (India)</strong>.
+            Scheduled US Node Upgrade until <strong className="text-amber-300">Oct 9, 09:00 PM EDT (USA HQ) / Oct 10, 06:30 AM IST (India)</strong>.
           </span>
           <span className="hidden md:inline-block text-emerald-400 font-medium">
             (All funds & mining yields are 100% secure)
