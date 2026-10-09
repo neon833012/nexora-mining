@@ -1464,6 +1464,109 @@ export const App: React.FC = () => {
     };
   }, [isLoggedIn, performLogout, performAdminLogout]);
 
+  // Fetch real wallet history (transactions, withdrawals, deposits) from Cloudflare D1
+  const fetchWalletHistory = useCallback(() => {
+    if (!userName) return;
+    nexoraApi.getWalletHistory(userName).then((res) => {
+      if (res && res.success) {
+        if (Array.isArray(res.transactions)) {
+          const mappedTxs: TransactionRecord[] = res.transactions.map((t: any) => ({
+            id: t.id,
+            type: t.type,
+            amount: Number(t.amount) || 0,
+            date: formatUsaDateTime(t.created_at),
+            status: t.status || 'Settled',
+            txHash: t.tx_hash || t.id
+          }));
+          setTransactions(mappedTxs);
+        }
+        if (Array.isArray(res.withdrawals)) {
+          const mappedWd: WithdrawalRequest[] = res.withdrawals.map((w: any) => {
+            const isP2P = w.wallet_address?.toLowerCase().includes('p2p');
+            const recipientMatch = isP2P ? w.wallet_address.match(/@([a-zA-Z0-9_]+)/) : null;
+            return {
+              id: w.id,
+              userId: w.user_id,
+              userName: userName,
+              userMobile: userMobile,
+              amount: Number(w.amount) || 0,
+              fee: Number(w.fee) || 0,
+              netAmount: Number(w.net_amount) || 0,
+              walletAddress: w.wallet_address || '',
+              status: w.status || 'pending',
+              timestamp: formatUsaDateTime(w.created_at),
+              timestampMs: parseUtcMs(w.created_at) || Date.now(),
+              txHash: w.tx_hash,
+              type: isP2P ? 'p2p_transfer' : 'withdrawal',
+              recipientId: recipientMatch ? recipientMatch[1] : (isP2P ? w.wallet_address.replace(/.*@/, '') : undefined),
+              rejectionReason: w.rejection_reason
+            };
+          });
+          setWithdrawalRequests(mappedWd);
+        }
+
+        // Sync deposit history: Merge real on-chain deposits + incoming P2P transfers
+        const allDeposits: DepositRecord[] = [];
+        const seenHashes = new Set<string>();
+
+        if (Array.isArray(res.deposits)) {
+          for (const d of res.deposits) {
+            const isP2P = d.network === 'P2P Transfer' || d.token === 'P2P' || (d.vault_address && d.vault_address.startsWith('@'));
+            const cleanSender = isP2P ? (d.vault_address || '').replace(/^@/, '') : undefined;
+            const hashKey = (d.tx_hash || d.order_id || '').toLowerCase();
+            if (hashKey) seenHashes.add(hashKey);
+            allDeposits.push({
+              id: d.order_id || `dep_${d.id || Date.now()}`,
+              amount: normalizeToPlanTier(Number(d.amount) || 0),
+              timestamp: formatUsaDateTime(d.created_at || d.confirmed_at),
+              timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
+              status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
+              type: isP2P ? 'p2p_received' : 'bep20_deposit',
+              token: d.token || 'USDT',
+              network: isP2P ? 'P2P Transfer' : (d.network || 'BNB Smart Chain (BEP-20)'),
+              txHash: d.tx_hash,
+              senderId: cleanSender
+            });
+          }
+        }
+
+        if (Array.isArray(res.transactions)) {
+          const incomingTxs = res.transactions.filter(
+            (t: any) => Number(t.amount) > 0 && (
+              t.type?.toLowerCase().includes('deposit') || 
+              t.type?.toLowerCase().includes('p2p')
+            )
+          );
+          for (const t of incomingTxs) {
+            const hashKey = (t.tx_hash || t.id || '').toLowerCase();
+            if (hashKey && seenHashes.has(hashKey)) continue;
+            if (hashKey) seenHashes.add(hashKey);
+            const isP2P = t.type?.toLowerCase().includes('p2p');
+            const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
+            allDeposits.push({
+              id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
+              amount: normalizeToPlanTier(Number(t.amount) || 0),
+              timestamp: formatUsaDateTime(t.created_at),
+              timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
+              status: 'completed',
+              type: isP2P ? 'p2p_received' : 'bep20_deposit',
+              token: 'USDT',
+              network: isP2P ? 'P2P Transfer' : 'BNB Smart Chain (BEP-20)',
+              txHash: t.tx_hash || t.id,
+              senderId: senderMatch ? senderMatch[1] : undefined
+            });
+          }
+        }
+
+        // Clean out any legacy demo / seeded records
+        const cleanDeposits = allDeposits.filter(
+          (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
+        );
+        setDepositRecords(cleanDeposits);
+      }
+    }).catch(() => {});
+  }, [userName, userMobile]);
+
   // 2. If user is logged in, verify session & sync real wallet from D1 (Single Active Session Enforcement)
   useEffect(() => {
     if (!isLoggedIn || !userName) return;
@@ -1505,11 +1608,16 @@ export const App: React.FC = () => {
           setDepositBalance(dep);
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
-          setReferralIncome(ref);
+          setReferralIncome((prev) => Math.max(prev, ref));
           const orcInc = Number((w as any).totalOrcIncome ?? (w as any).total_orc_income) || 0;
           const orcBal = Number((w as any).orcBalance ?? (w as any).orc_balance) || 0;
-          if (orcInc > 0) setTotalOrcIncome(orcInc);
-          if (orcBal > 0) setOrcBalance(orcBal);
+          if (orcInc > 0) setTotalOrcIncome((prev) => Math.max(prev, orcInc));
+          setOrcBalance(orcBal);
+          try {
+            localStorage.setItem('neon_referral_balance', String(ref));
+            localStorage.setItem('neon_orc_balance', String(orcBal));
+            localStorage.setItem('neon_available_withdrawal', String(withdr));
+          } catch (e) {}
           if (mined > 0) setTotalRewards(mined);
           const settled = Number(w.totalWithdrawn ?? w.total_withdrawn) || 0;
           setServerTotalWithdrawn(settled);
@@ -1585,109 +1693,6 @@ export const App: React.FC = () => {
 
 
 
-    // 3. Fetch real wallet history (transactions, withdrawals, deposits)
-    const fetchWalletHistory = () => {
-      if (!userName) return;
-      nexoraApi.getWalletHistory(userName).then((res) => {
-        if (res && res.success) {
-          if (Array.isArray(res.transactions)) {
-            const mappedTxs: TransactionRecord[] = res.transactions.map((t: any) => ({
-              id: t.id,
-              type: t.type,
-              amount: Number(t.amount) || 0,
-              date: formatUsaDateTime(t.created_at),
-              status: t.status || 'Settled',
-              txHash: t.tx_hash || t.id
-            }));
-            setTransactions(mappedTxs);
-          }
-          if (Array.isArray(res.withdrawals)) {
-            const mappedWd: WithdrawalRequest[] = res.withdrawals.map((w: any) => {
-              const isP2P = w.wallet_address?.toLowerCase().includes('p2p');
-              const recipientMatch = isP2P ? w.wallet_address.match(/@([a-zA-Z0-9_]+)/) : null;
-              return {
-                id: w.id,
-                userId: w.user_id,
-                userName: userName,
-                userMobile: userMobile,
-                amount: Number(w.amount) || 0,
-                fee: Number(w.fee) || 0,
-                netAmount: Number(w.net_amount) || 0,
-                walletAddress: w.wallet_address || '',
-                status: w.status || 'pending',
-                timestamp: formatUsaDateTime(w.created_at),
-                timestampMs: parseUtcMs(w.created_at) || Date.now(),
-                txHash: w.tx_hash,
-                type: isP2P ? 'p2p_transfer' : 'withdrawal',
-                recipientId: recipientMatch ? recipientMatch[1] : (isP2P ? w.wallet_address.replace(/.*@/, '') : undefined),
-                rejectionReason: w.rejection_reason
-              };
-            });
-            setWithdrawalRequests(mappedWd);
-          }
-
-          // Sync deposit history: Merge real on-chain deposits + incoming P2P transfers
-          const allDeposits: DepositRecord[] = [];
-          const seenHashes = new Set<string>();
-
-          if (Array.isArray(res.deposits)) {
-            for (const d of res.deposits) {
-              const isP2P = d.network === 'P2P Transfer' || d.token === 'P2P' || (d.vault_address && d.vault_address.startsWith('@'));
-              const cleanSender = isP2P ? (d.vault_address || '').replace(/^@/, '') : undefined;
-              const hashKey = (d.tx_hash || d.order_id || '').toLowerCase();
-              if (hashKey) seenHashes.add(hashKey);
-              allDeposits.push({
-                id: d.order_id || `dep_${d.id || Date.now()}`,
-                amount: normalizeToPlanTier(Number(d.amount) || 0),
-                timestamp: formatUsaDateTime(d.created_at || d.confirmed_at),
-                timestampMs: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
-                status: (d.status === 'confirmed' || d.status === 'completed') ? 'completed' : 'pending',
-                type: isP2P ? 'p2p_received' : 'bep20_deposit',
-                token: d.token || 'USDT',
-                network: isP2P ? 'P2P Transfer' : (d.network || 'BNB Smart Chain (BEP-20)'),
-                txHash: d.tx_hash,
-                senderId: cleanSender
-              });
-            }
-          }
-
-          if (Array.isArray(res.transactions)) {
-            const incomingTxs = res.transactions.filter(
-              (t: any) => Number(t.amount) > 0 && (
-                t.type?.toLowerCase().includes('deposit') || 
-                t.type?.toLowerCase().includes('p2p')
-              )
-            );
-            for (const t of incomingTxs) {
-              const hashKey = (t.tx_hash || t.id || '').toLowerCase();
-              if (hashKey && seenHashes.has(hashKey)) continue;
-              if (hashKey) seenHashes.add(hashKey);
-              const isP2P = t.type?.toLowerCase().includes('p2p');
-              const senderMatch = isP2P ? t.type.match(/@([a-zA-Z0-9_]+)/) : null;
-              allDeposits.push({
-                id: t.id || `DEP-${Math.random().toString(36).substring(2, 8)}`,
-                amount: normalizeToPlanTier(Number(t.amount) || 0),
-                timestamp: formatUsaDateTime(t.created_at),
-                timestampMs: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
-                status: 'completed',
-                type: isP2P ? 'p2p_received' : 'bep20_deposit',
-                token: 'USDT',
-                network: isP2P ? 'P2P Transfer' : 'BNB Smart Chain (BEP-20)',
-                txHash: t.tx_hash || t.id,
-                senderId: senderMatch ? senderMatch[1] : undefined
-              });
-            }
-          }
-
-          // Clean out any legacy demo / seeded records
-          const cleanDeposits = allDeposits.filter(
-            (r) => !r.id?.startsWith('dep_seed_') && !r.id?.startsWith('demo_') && !r.id?.startsWith('dep_demo_')
-          );
-          setDepositRecords(cleanDeposits);
-        }
-      }).catch(() => {});
-    };
-
     fetchWalletHistory();
 
     // Fast polling: check every 3.5 seconds so if someone else signs in or admin approves/rejects, views update immediately!
@@ -1756,13 +1761,12 @@ export const App: React.FC = () => {
 
           setReferredUsers(allMapped);
 
-          // Update referral stake commission (strictly tiers 1 to 3)
+          // Update referral stake commission (strictly cumulative lifetime tiers 1 to 3)
           const tier1to3Commission = allMapped
             .filter((d: ReferredUserItem) => (d.level || 1) <= 3)
             .reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
           if (tier1to3Commission > 0) {
             setReferralIncome((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
-            setReferralBalance((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
           }
 
           // Calculate Over-Ride Commission (ORC across all 10 tiers)
@@ -1771,7 +1775,6 @@ export const App: React.FC = () => {
           }, 0);
           if (orcDailyYield > 0) {
             setTotalOrcIncome((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
-            setOrcBalance((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
           }
         }
       }).catch(() => {});
@@ -2496,50 +2499,53 @@ export const App: React.FC = () => {
   };
 
   // Transfer referral income to main wallet (Withdrawable Balance for Instant Cashout)
-  const handleTransferReferralToMainWallet = () => {
+  const handleTransferReferralToMainWallet = async () => {
     if (referralBalance <= 0) {
       showToast('⚠️ No referral balance available to send to wallet!');
       return;
     }
     const transferAmt = referralBalance;
-    const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
-    const newTotal = +(totalBalance + transferAmt).toFixed(2);
 
-    setTotalBalance(newTotal);
-    setAvailableWithdrawal(newWithdrawable);
-    setReferralBalance(0.0);
+    const res = await nexoraApi.transferReferralToWallet(userName);
+    if (res && res.success) {
+      if (res.updatedWallet) {
+        const w = res.updatedWallet;
+        const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
+        const newRef = Number(w.referral_balance ?? w.referralBalance) || 0;
+        setAvailableWithdrawal(newWithdr);
+        setReferralBalance(newRef);
+        setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+      } else {
+        const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+        setAvailableWithdrawal(newWithdrawable);
+        setReferralBalance(0.0);
+        setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+      }
 
-    try {
-      localStorage.setItem('neon_referral_balance', '0');
-      localStorage.setItem('neon_available_withdrawal', String(newWithdrawable));
-      localStorage.setItem('neon_total_balance', String(newTotal));
-    } catch (e) {}
+      try {
+        localStorage.setItem('neon_referral_balance', '0');
+        localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
+      } catch (e) {}
 
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      saveUserSavedData(cleanId, {
-        referralBalance: 0,
-        availableWithdrawal: newWithdrawable,
-        totalBalance: newTotal
-      });
-      nexoraApi.transferReferralToWallet(userName).catch(() => {});
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_ref_transfer`,
+        type: 'Referral Balance Sent to Withdrawable Balance',
+        amount: transferAmt,
+        date: 'Just now',
+        status: 'Settled',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..trans'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
+      fetchWalletHistory();
+
+      showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from Referral Balance to Withdrawable Wallet!`);
+    } else {
+      showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
     }
-
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_ref_transfer`,
-      type: 'Referral Balance Sent to Withdrawable Balance',
-      amount: transferAmt,
-      date: 'Just now',
-      status: 'Settled',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..trans'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
-
-    showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from Referral Balance to Withdrawable Wallet!`);
   };
 
   // Re-invest Referral balance directly into current active plan / mining power
-  const handleReinvestReferralToPlan = () => {
+  const handleReinvestReferralToPlan = async () => {
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first to re-invest your referral earnings.');
       return;
@@ -2551,134 +2557,134 @@ export const App: React.FC = () => {
     }
 
     const amountToReinvest = referralBalance;
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
     const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    setActiveMiningPower(updatedPlanPower);
-    setReferralBalance(0.0);
-    try {
-      localStorage.setItem('neon_referral_balance', '0');
-      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
-    } catch (e) {}
-
-    // Immediately save user profile
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      saveUserSavedData(cleanId, {
-        activeMiningPower: updatedPlanPower,
-        referralBalance: 0
-      });
-    }
-
-    // Update personal stake in team turnover
-    setTeamTurnover((prev) => {
-      const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
-      const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-      const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-      return {
-        ...prev,
-        personalStaked: newPersonal,
-        totalVolume: newTotal,
-        boostedRate: newRate
-      };
+    const res = await nexoraApi.reinvestUpgradePlan({
+      userId: userName,
+      newPower: updatedPlanPower,
+      upgradedPlanName: newPlanName,
+      yieldAmount: amountToReinvest,
+      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+      source: 'referral'
     });
 
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_ref_reinvest`,
-      type: `Referral Commission Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-      amount: amountToReinvest,
-      date: 'Just now',
-      status: 'Compounded',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..ref_cmp'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
+    if (res && res.success) {
+      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+      const finalRef = res.updatedWallet ? (Number(res.updatedWallet.referral_balance ?? res.updatedWallet.referralBalance) || 0) : 0;
 
-    // Check for automatic tier upgrade on compounding
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      setActiveMiningPower(finalPower);
+      setReferralBalance(finalRef);
+      try {
+        localStorage.setItem('neon_referral_balance', String(finalRef));
+        localStorage.setItem('neon_mining_power', String(finalPower));
+      } catch (e) {}
 
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
-      setAdminUsers((prev) =>
-        prev.map((u) => {
-          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-            return {
-              ...u,
-              stakedAmount: updatedPlanPower,
-              currentPlanName: newPlanName,
-              status: 'active'
-            };
-          }
-          return u;
-        })
-      );
+      // Update personal stake in team turnover
+      setTeamTurnover((prev) => {
+        const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+        return {
+          ...prev,
+          personalStaked: newPersonal,
+          totalVolume: newTotal,
+          boostedRate: newRate
+        };
+      });
 
-      nexoraApi.reinvestUpgradePlan({
-        userId: userName,
-        newPower: updatedPlanPower,
-        upgradedPlanName: newPlanName,
-        yieldAmount: amountToReinvest,
-        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-        source: 'referral'
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(() => {});
-    }
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_ref_reinvest`,
+        type: `Referral Commission Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+        amount: amountToReinvest,
+        date: 'Just now',
+        status: 'Compounded',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..ref_cmp'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
 
-    if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-      showToast(
-        `🚀 AUTO-UPGRADE TRIGGERED! Reinvested referral earnings reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-      );
+      if (userName) {
+        const cleanId = userName.toUpperCase();
+        setAdminUsers((prev) =>
+          prev.map((u) => {
+            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+              return {
+                ...u,
+                stakedAmount: finalPower,
+                currentPlanName: newPlanName,
+                status: 'active'
+              };
+            }
+            return u;
+          })
+        );
+      }
+
+      fetchWalletHistory();
+      fetchLiveAdminUsers();
+
+      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+        showToast(
+          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested referral earnings reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+        );
+      } else {
+        showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from Referral Balance into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+      }
     } else {
-      showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from Referral Balance into plan! Active Plan Capital is now $${updatedPlanPower.toFixed(2)} USD.`);
+      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
     }
   };
 
   // Transfer ORC income to main wallet (Withdrawable Balance for Instant Cashout)
-  const handleTransferOrcToMainWallet = () => {
+  const handleTransferOrcToMainWallet = async () => {
     if (orcBalance <= 0) {
       showToast('⚠️ No ORC balance available to send to wallet!');
       return;
     }
     const transferAmt = orcBalance;
-    const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
-    const newTotal = +(totalBalance + transferAmt).toFixed(2);
 
-    setTotalBalance(newTotal);
-    setAvailableWithdrawal(newWithdrawable);
-    setOrcBalance(0.0);
+    const res = await nexoraApi.transferOrcToWallet(userName);
+    if (res && res.success) {
+      if (res.updatedWallet) {
+        const w = res.updatedWallet;
+        const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
+        const newOrc = Number(w.orc_balance ?? w.orcBalance) || 0;
+        setAvailableWithdrawal(newWithdr);
+        setOrcBalance(newOrc);
+        setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+      } else {
+        const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+        setAvailableWithdrawal(newWithdrawable);
+        setOrcBalance(0.0);
+        setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+      }
 
-    try {
-      localStorage.setItem('neon_orc_balance', '0');
-      localStorage.setItem('neon_available_withdrawal', String(newWithdrawable));
-      localStorage.setItem('neon_total_balance', String(newTotal));
-    } catch (e) {}
+      try {
+        localStorage.setItem('neon_orc_balance', '0');
+        localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
+      } catch (e) {}
 
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      saveUserSavedData(cleanId, {
-        orcBalance: 0,
-        availableWithdrawal: newWithdrawable,
-        totalBalance: newTotal
-      });
-      nexoraApi.transferOrcToWallet(userName).catch(() => {});
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_orc_transfer`,
+        type: '10-Tier ORC Balance Sent to Withdrawable Balance',
+        amount: transferAmt,
+        date: 'Just now',
+        status: 'Settled',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
+      fetchWalletHistory();
+
+      showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from ORC Balance to Withdrawable Wallet!`);
+    } else {
+      showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
     }
-
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_orc_transfer`,
-      type: '10-Tier ORC Balance Sent to Withdrawable Balance',
-      amount: transferAmt,
-      date: 'Just now',
-      status: 'Settled',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
-
-    showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from ORC Balance to Withdrawable Wallet!`);
   };
 
   // Re-invest ORC balance directly into current active plan / mining power
-  const handleReinvestOrcToPlan = () => {
+  const handleReinvestOrcToPlan = async () => {
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first to re-invest your ORC.');
       return;
@@ -2690,86 +2696,83 @@ export const App: React.FC = () => {
     }
 
     const amountToReinvest = orcBalance;
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
     const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    setActiveMiningPower(updatedPlanPower);
-    setOrcBalance(0.0);
-    try {
-      localStorage.setItem('neon_orc_balance', '0');
-      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
-    } catch (e) {}
-
-    // Immediately save user profile
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      saveUserSavedData(cleanId, {
-        activeMiningPower: updatedPlanPower,
-        orcBalance: 0
-      });
-    }
-
-    // Update personal stake in team turnover
-    setTeamTurnover((prev) => {
-      const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
-      const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-      const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-      return {
-        ...prev,
-        personalStaked: newPersonal,
-        totalVolume: newTotal,
-        boostedRate: newRate
-      };
+    const res = await nexoraApi.reinvestUpgradePlan({
+      userId: userName,
+      newPower: updatedPlanPower,
+      upgradedPlanName: newPlanName,
+      yieldAmount: amountToReinvest,
+      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+      source: 'orc'
     });
 
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_orc_reinvest`,
-      type: `ORC Royalty Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-      amount: amountToReinvest,
-      date: 'Just now',
-      status: 'Compounded',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc_cmp'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
+    if (res && res.success) {
+      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+      const finalOrc = res.updatedWallet ? (Number(res.updatedWallet.orc_balance ?? res.updatedWallet.orcBalance) || 0) : 0;
 
-    // Check for automatic tier upgrade on compounding
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      setActiveMiningPower(finalPower);
+      setOrcBalance(finalOrc);
+      try {
+        localStorage.setItem('neon_orc_balance', String(finalOrc));
+        localStorage.setItem('neon_mining_power', String(finalPower));
+      } catch (e) {}
 
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
-      setAdminUsers((prev) =>
-        prev.map((u) => {
-          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-            return {
-              ...u,
-              stakedAmount: updatedPlanPower,
-              currentPlanName: newPlanName,
-              status: 'active'
-            };
-          }
-          return u;
-        })
-      );
+      // Update personal stake in team turnover
+      setTeamTurnover((prev) => {
+        const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+        return {
+          ...prev,
+          personalStaked: newPersonal,
+          totalVolume: newTotal,
+          boostedRate: newRate
+        };
+      });
 
-      nexoraApi.reinvestUpgradePlan({
-        userId: userName,
-        newPower: updatedPlanPower,
-        upgradedPlanName: newPlanName,
-        yieldAmount: amountToReinvest,
-        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-        source: 'orc'
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(() => {});
-    }
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_orc_reinvest`,
+        type: `ORC Royalty Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+        amount: amountToReinvest,
+        date: 'Just now',
+        status: 'Compounded',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc_cmp'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
 
-    if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-      showToast(
-        `🚀 AUTO-UPGRADE TRIGGERED! Reinvested ORC reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-      );
+      if (userName) {
+        const cleanId = userName.toUpperCase();
+        setAdminUsers((prev) =>
+          prev.map((u) => {
+            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+              return {
+                ...u,
+                stakedAmount: finalPower,
+                currentPlanName: newPlanName,
+                status: 'active'
+              };
+            }
+            return u;
+          })
+        );
+      }
+
+      fetchWalletHistory();
+      fetchLiveAdminUsers();
+
+      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+        showToast(
+          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested ORC reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+        );
+      } else {
+        showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from ORC into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+      }
     } else {
-      showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from ORC into plan! Active Plan Capital is now $${updatedPlanPower.toFixed(2)} USD.`);
+      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
     }
   };
 
@@ -2790,7 +2793,7 @@ export const App: React.FC = () => {
   };
 
   // Daily Plan Interest Re-invest (Directly adds 1% daily interest to plan capital, e.g. $20 -> $20.20 USD, no fees)
-  const handleCompoundSingleDay = () => {
+  const handleCompoundSingleDay = async () => {
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first.');
       return;
@@ -2802,92 +2805,87 @@ export const App: React.FC = () => {
     }
 
     const yieldToReinvest = unclaimedYield;
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
     const updatedPlanPower = +(activeMiningPower + yieldToReinvest).toFixed(2);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    setActiveMiningPower(updatedPlanPower);
-    setUnclaimedYield(0);
-    try {
-      localStorage.setItem('neon_unclaimed_yield', '0');
-      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
-    } catch (e) {}
-
-    // Immediately save user profile to prevent stale watchdog overwrite
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      saveUserSavedData(cleanId, {
-        activeMiningPower: updatedPlanPower,
-        unclaimedYield: 0
-      });
-    }
-
-    setTeamTurnover((prev) => {
-      const newPersonal = +(prev.personalStaked + yieldToReinvest).toFixed(2);
-      const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-      const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-      return {
-        ...prev,
-        personalStaked: newPersonal,
-        totalVolume: newTotal,
-        boostedRate: newRate
-      };
+    const res = await nexoraApi.reinvestUpgradePlan({
+      userId: userName,
+      newPower: updatedPlanPower,
+      upgradedPlanName: newPlanName,
+      yieldAmount: yieldToReinvest,
+      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+      source: 'yield'
     });
 
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_cmp`,
-      type: `Plan Interest Re-invested (+${yieldToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-      amount: yieldToReinvest,
-      date: 'Just now',
-      status: 'Compounded',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..cmp'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
+    if (res && res.success) {
+      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+      const finalUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
 
-    // CHECK FOR AUTOMATIC TIER UPGRADE ON COMPOUNDING
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      setActiveMiningPower(finalPower);
+      setUnclaimedYield(finalUnclaimed);
+      try {
+        localStorage.setItem('neon_unclaimed_yield', String(finalUnclaimed));
+        localStorage.setItem('neon_mining_power', String(finalPower));
+      } catch (e) {}
 
-    // Sync admin users directory with updated power and upgraded plan name
-    if (userName) {
-      const cleanId = userName.toUpperCase();
-      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
-      setAdminUsers((prev) =>
-        prev.map((u) => {
-          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-            return {
-              ...u,
-              stakedAmount: updatedPlanPower,
-              currentPlanName: newPlanName,
-              status: 'active'
-            };
-          }
-          return u;
-        })
-      );
+      setTeamTurnover((prev) => {
+        const newPersonal = +(prev.personalStaked + yieldToReinvest).toFixed(2);
+        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+        return {
+          ...prev,
+          personalStaked: newPersonal,
+          totalVolume: newTotal,
+          boostedRate: newRate
+        };
+      });
 
-      // Persist upgraded plan name and new hashing power directly into Cloudflare D1 database
-      nexoraApi.reinvestUpgradePlan({
-        userId: userName,
-        newPower: updatedPlanPower,
-        upgradedPlanName: newPlanName,
-        yieldAmount: yieldToReinvest,
-        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-        source: 'yield'
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(() => {});
-    }
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_cmp`,
+        type: `Plan Interest Re-invested (+${yieldToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+        amount: yieldToReinvest,
+        date: 'Just now',
+        status: 'Compounded',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..cmp'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
 
-    if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-      showToast(
-        `🚀 AUTO-UPGRADE TRIGGERED! Reinvested balance reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-      );
+      if (userName) {
+        const cleanId = userName.toUpperCase();
+        setAdminUsers((prev) =>
+          prev.map((u) => {
+            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+              return {
+                ...u,
+                stakedAmount: finalPower,
+                currentPlanName: newPlanName,
+                status: 'active'
+              };
+            }
+            return u;
+          })
+        );
+      }
+
+      fetchWalletHistory();
+      fetchLiveAdminUsers();
+
+      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+        showToast(
+          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested balance reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+        );
+      } else {
+        showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${finalPower.toFixed(2)} USD (${previousPlan?.planName || 'Active Node'}).`);
+      }
     } else {
-      showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${updatedPlanPower.toFixed(2)} USD (${previousPlan?.planName || 'Active Node'}).`);
+      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
     }
   };
 
   // Send today's completed 24h interest to Wallet for Withdrawal
-  const handleClaimInterestToWallet = () => {
+  const handleClaimInterestToWallet = async () => {
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please purchase a plan first.');
       return;
@@ -2905,33 +2903,39 @@ export const App: React.FC = () => {
 
     const yieldToSend = unclaimedYield;
 
-    setAvailableWithdrawal((prev) => +(prev + yieldToSend).toFixed(2));
-    setTotalBalance((prev) => +(prev + yieldToSend).toFixed(2));
-    setUnclaimedYield(0);
-    try {
-      localStorage.setItem('neon_unclaimed_yield', '0');
-    } catch (e) {}
+    const res = await nexoraApi.claimYieldToWallet({
+      userId: userName,
+      yieldAmount: yieldToSend
+    });
 
-    const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_yield`,
-      type: `Daily Plan Interest Sent to Withdrawable Balance`,
-      amount: yieldToSend,
-      date: 'Just now',
-      status: 'Settled',
-      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..bep20'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
+    if (res && res.success) {
+      const newWithdr = res.updatedWallet ? (Number(res.updatedWallet.withdrawable_balance ?? res.updatedWallet.withdrawableBalance) || +(availableWithdrawal + yieldToSend).toFixed(2)) : +(availableWithdrawal + yieldToSend).toFixed(2);
+      const newUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
 
-    if (userName) {
-      nexoraApi.claimYieldToWallet({
-        userId: userName,
-        yieldAmount: yieldToSend
-      }).then(() => {
-        fetchLiveAdminUsers();
-      }).catch(console.error);
+      setAvailableWithdrawal(newWithdr);
+      setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+      setUnclaimedYield(newUnclaimed);
+      try {
+        localStorage.setItem('neon_unclaimed_yield', String(newUnclaimed));
+        localStorage.setItem('neon_available_withdrawal', String(newWithdr));
+      } catch (e) {}
+
+      const newTx: TransactionRecord = {
+        id: `tx_${Date.now()}_yield`,
+        type: `Daily Plan Interest Sent to Withdrawable Balance`,
+        amount: yieldToSend,
+        date: 'Just now',
+        status: 'Settled',
+        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..bep20'
+      };
+      setTransactions((prev) => [newTx, ...prev]);
+
+      fetchWalletHistory();
+      fetchLiveAdminUsers();
+      showToast(`💰 Sent +$${yieldToSend.toFixed(2)} USDT to Wallet! Now available in Wallet for immediate withdrawal.`);
+    } else {
+      showToast(`⚠️ Claim failed: ${res?.message || 'Please try again'}`);
     }
-
-    showToast(`💰 Sent +$${yieldToSend.toFixed(2)} USDT to Wallet! Now available in Wallet for immediate withdrawal.`);
   };
 
   // Fast-Forward 24H cycle (Immediately unlocks next day's interest for testing)

@@ -415,7 +415,11 @@ app.get('/api/auth/me', async (c) => {
       total_mined_yield: walletRecord.total_mined_yield,
       mining_cycle_started_at: miningStartedAt,
       unclaimedYield: Number(walletRecord.unclaimed_yield) || 0,
-      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0
+      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0,
+      orcBalance: Number(walletRecord.orc_balance) || 0,
+      orc_balance: Number(walletRecord.orc_balance) || 0,
+      totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
+      total_orc_income: Number(walletRecord.total_orc_income) || 0
     } : {
       depositBalance: 0,
       withdrawableBalance: 0,
@@ -432,7 +436,13 @@ app.get('/api/auth/me', async (c) => {
       active_mining_power: 0,
       total_withdrawn: 0,
       total_mined_yield: 0,
-      mining_cycle_started_at: 0
+      mining_cycle_started_at: 0,
+      unclaimedYield: 0,
+      unclaimed_yield: 0,
+      orcBalance: 0,
+      orc_balance: 0,
+      totalOrcIncome: 0,
+      total_orc_income: 0
     };
 
     return c.json({
@@ -1692,14 +1702,47 @@ app.post('/api/plans/subscribe', async (c) => {
 app.post('/api/plans/reinvest-upgrade', async (c) => {
   try {
     const { userId, newPower, upgradedPlanName, yieldAmount, dailyRatePercent = 1.0, source = 'yield' } = await c.req.json();
-    if (!userId || !newPower || Number(newPower) <= 0) {
-      return c.json({ success: false, message: 'Valid userId and newPower required' }, 400);
+    if (!userId) {
+      return c.json({ success: false, message: 'Valid userId required' }, 400);
     }
 
-    const numPower = Number(newPower);
-    const numYield = Number(yieldAmount) || 0;
-    const rate = Number(dailyRatePercent);
-    const dailyYieldUsdt = Number((numPower * (rate / 100)).toFixed(4));
+    const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
+    if (!wallet) {
+      return c.json({ success: false, message: 'Wallet not found' }, 404);
+    }
+
+    const currentPower = Number(wallet.active_mining_power || 0);
+    if (currentPower <= 0) {
+      return c.json({ success: false, message: 'No active mining plan found to re-invest into. Please purchase a plan first.' }, 400);
+    }
+
+    // Determine available balance for the specified source in D1
+    let availableToReinvest = 0;
+    if (source === 'referral') {
+      availableToReinvest = Number(wallet.referral_balance || 0);
+    } else if (source === 'orc') {
+      availableToReinvest = Number(wallet.orc_balance || 0);
+    } else {
+      availableToReinvest = Number(wallet.unclaimed_yield || 0);
+    }
+
+    const sourceName = source === 'referral' ? 'Referral' : source === 'orc' ? 'ORC' : 'Daily Yield';
+    if (availableToReinvest <= 0) {
+      return c.json({ success: false, message: `No ${sourceName} balance available to re-invest.` }, 400);
+    }
+
+    const requestedAmount = Number(yieldAmount);
+    const numReinvest = (requestedAmount > 0 && requestedAmount <= availableToReinvest)
+      ? requestedAmount
+      : availableToReinvest;
+
+    if (numReinvest <= 0) {
+      return c.json({ success: false, message: 'Invalid re-investment amount.' }, 400);
+    }
+
+    const finalPower = +(currentPower + numReinvest).toFixed(2);
+    const rate = Number(dailyRatePercent) || 1.0;
+    const dailyYieldUsdt = Number((finalPower * (rate / 100)).toFixed(4));
     const txId = `CMP-${Date.now().toString().slice(-6)}`;
 
     // Update wallet power and deduct from appropriate source
@@ -1707,39 +1750,38 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
       ? c.env.DB.prepare(
           `UPDATE wallets 
            SET active_mining_power = ?, 
-               referral_balance = 0,
+               referral_balance = MAX(0, referral_balance - ?),
                updated_at = CURRENT_TIMESTAMP 
            WHERE UPPER(user_id) = UPPER(?)`
-        ).bind(numPower, userId)
+        ).bind(finalPower, numReinvest, userId)
       : source === 'orc'
       ? c.env.DB.prepare(
           `UPDATE wallets 
            SET active_mining_power = ?, 
-               orc_balance = 0,
+               orc_balance = MAX(0, orc_balance - ?),
                updated_at = CURRENT_TIMESTAMP 
            WHERE UPPER(user_id) = UPPER(?)`
-        ).bind(numPower, userId)
+        ).bind(finalPower, numReinvest, userId)
       : c.env.DB.prepare(
           `UPDATE wallets 
            SET active_mining_power = ?, 
-               unclaimed_yield = 0,
+               unclaimed_yield = MAX(0, unclaimed_yield - ?),
                updated_at = CURRENT_TIMESTAMP 
            WHERE UPPER(user_id) = UPPER(?)`
-        ).bind(numPower, userId);
+        ).bind(finalPower, numReinvest, userId);
 
     const txType = source === 'referral'
-      ? `Referral Commission Re-invested (+${numYield.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName}`
+      ? `Referral Commission Re-invested (+${numReinvest.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName || 'Plan'}`
       : source === 'orc'
-      ? `10-Tier ORC Royalty Re-invested (+${numYield.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName}`
-      : `Plan Reinvestment (+${numYield.toFixed(2)} USDT) -> ${upgradedPlanName}`;
+      ? `10-Tier ORC Royalty Re-invested (+${numReinvest.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName || 'Plan'}`
+      : `Plan Reinvestment (+${numReinvest.toFixed(2)} USDT) -> ${upgradedPlanName || 'Plan'}`;
 
     const batchStatements: any[] = [
       walletQuery,
-
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status) 
          VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txId, userId, txType, numYield)
+      ).bind(txId, userId, txType, numReinvest)
     ];
 
     // Check if active contract exists
@@ -1753,7 +1795,7 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
           `UPDATE mining_contracts 
            SET plan_name = ?, amount = ?, daily_rate_percent = ?, daily_yield_usdt = ?, last_yield_accrual = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
            WHERE id = ?`
-        ).bind(upgradedPlanName, numPower, rate, dailyYieldUsdt, existingContract.id)
+        ).bind(upgradedPlanName || 'Active Plan', finalPower, rate, dailyYieldUsdt, existingContract.id)
       );
     } else {
       const contractId = `contract_${Date.now().toString().slice(-8)}`;
@@ -1762,7 +1804,7 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
           `INSERT INTO mining_contracts 
            (id, user_id, plan_id, plan_name, amount, daily_rate_percent, duration_days, compounding_enabled, daily_yield_usdt, expires_at, status, updated_at) 
            VALUES (?, ?, 'reinvested_plan', ?, ?, ?, 365, 1, ?, datetime('now', '+365 days'), 'active', CURRENT_TIMESTAMP)`
-        ).bind(contractId, userId, upgradedPlanName, numPower, rate, dailyYieldUsdt)
+        ).bind(contractId, userId, upgradedPlanName || 'Active Plan', finalPower, rate, dailyYieldUsdt)
       );
     }
 
@@ -1770,14 +1812,14 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
 
     // If reinvested from daily yield, distribute 10-Tier ORC on that earned yield to uplines
     if (source === 'yield') {
-      await distributeOrcCommission(c.env.DB, userId, numYield, 'Daily Mining Yield Compounded');
+      await distributeOrcCommission(c.env.DB, userId, numReinvest, 'Daily Mining Yield Compounded');
     }
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
 
     return c.json({
       success: true,
-      message: `Plan auto-upgraded to ${upgradedPlanName} with $${numPower.toFixed(2)} active hashing power!`,
+      message: `Plan auto-upgraded to ${upgradedPlanName} with $${finalPower.toFixed(2)} active hashing power!`,
       updatedWallet
     });
   } catch (err: any) {
@@ -1936,53 +1978,12 @@ app.post('/api/wallet/sync-user-data', async (c) => {
     if (!existingWallet) {
       await c.env.DB.prepare(
         `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, orc_balance, total_orc_income, total_withdrawn, total_mined_yield)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)`
-      ).bind(
-        userId,
-        Number(data.depositBalance || 0),
-        Number(data.availableWithdrawal ?? data.withdrawableBalance ?? 0),
-        Number(data.referralBalance || 0),
-        Number(data.activeMiningPower || 0),
-        Number(data.orcBalance || 0),
-        Number(data.totalOrcIncome || 0)
-      ).run();
-    } else {
-      const updates: string[] = [];
-      const bindings: any[] = [];
+         VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0)`
+      ).bind(userId).run();
+    }
 
-      if (data.depositBalance !== undefined) {
-        updates.push('deposit_balance = ?');
-        bindings.push(Number(data.depositBalance));
-      }
-      if (data.availableWithdrawal !== undefined || data.withdrawableBalance !== undefined) {
-        updates.push('withdrawable_balance = ?');
-        bindings.push(Number(data.availableWithdrawal ?? data.withdrawableBalance));
-      }
-      if (data.referralBalance !== undefined) {
-        updates.push('referral_balance = ?');
-        bindings.push(Number(data.referralBalance));
-      }
-      if (data.activeMiningPower !== undefined) {
-        updates.push('active_mining_power = ?');
-        bindings.push(Number(data.activeMiningPower));
-      }
-      if (data.orcBalance !== undefined) {
-        updates.push('orc_balance = ?');
-        bindings.push(Number(data.orcBalance));
-      }
-      if (data.totalOrcIncome !== undefined) {
-        updates.push('total_orc_income = ?');
-        bindings.push(Number(data.totalOrcIncome));
-      }
-      if (data.fundPin) {
-        await c.env.DB.prepare('UPDATE users SET fund_pin = ?, fund_pin_set = 1 WHERE UPPER(id) = UPPER(?)').bind(String(data.fundPin), userId).run();
-      }
-
-      if (updates.length > 0) {
-        updates.push('updated_at = CURRENT_TIMESTAMP');
-        bindings.push(userId);
-        await c.env.DB.prepare(`UPDATE wallets SET ${updates.join(', ')} WHERE UPPER(user_id) = UPPER(?)`).bind(...bindings).run();
-      }
+    if (data.fundPin) {
+      await c.env.DB.prepare('UPDATE users SET fund_pin = ?, fund_pin_set = 1 WHERE UPPER(id) = UPPER(?)').bind(String(data.fundPin), userId).run();
     }
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
