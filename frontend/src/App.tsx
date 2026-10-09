@@ -34,6 +34,7 @@ import { NeonAIChatAssistant } from './components/NeonAIChatAssistant';
 import { SupportInboxModal } from './components/SupportInboxModal';
 import { AdminSystemPortal } from './components/AdminSystemPortal';
 import { BottomNavBar, NavRoute } from './components/BottomNavBar';
+import { MaintenanceNoticeModal, MaintenanceTopBanner } from './components/MaintenanceNoticeModal';
 import { Smartphone, Download } from 'lucide-react';
 import { nexoraApi } from './services/api';
 import { formatUsaDateTime, parseUtcMs } from './utils/dateUtils';
@@ -541,6 +542,24 @@ export const App: React.FC = () => {
 
   // 3-Second Promotional Plans Showcase Popup Modal State
   const [showPromoPopup, setShowPromoPopup] = useState(false);
+
+  // Scheduled Infrastructure Maintenance Modal State (Valid until Oct 10, 06:00 AM IST)
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState<boolean>(() => {
+    try {
+      const dismissedAt = localStorage.getItem('neon_maintenance_dismissed_at');
+      if (dismissedAt && Date.now() - Number(dismissedAt) < 30 * 60 * 1000) {
+        return false;
+      }
+    } catch {}
+    return true;
+  });
+
+  const handleDismissMaintenance = () => {
+    setShowMaintenanceModal(false);
+    try {
+      localStorage.setItem('neon_maintenance_dismissed_at', String(Date.now()));
+    } catch {}
+  };
 
   // Globally Synchronized Active Users & Miners Counter
   // Base: 20437 users starting on 2026-09-17 13:00:00 UTC (1789650000000 ms)
@@ -1805,16 +1824,16 @@ export const App: React.FC = () => {
       };
   }, [isLoggedIn, userName, showAdminPortal, performLogout]);
 
-  // Automatically trigger promotional popup modal 2.5 seconds after opening (User side only)
+  // Automatically trigger promotional popup modal 3.5 seconds after opening (User side only, if not on maintenance notice)
   useEffect(() => {
-    if (showAdminPortal) return;
+    if (showAdminPortal || showMaintenanceModal) return;
     const promoTimer = setTimeout(() => {
-      if (!showAdminPortal) {
+      if (!showAdminPortal && !showMaintenanceModal) {
         setShowPromoPopup(true);
       }
-    }, 2500);
+    }, 3500);
     return () => clearTimeout(promoTimer);
-  }, [showAdminPortal]);
+  }, [showAdminPortal, showMaintenanceModal]);
 
   // Check URL query parameters (?ref=CODE, ?admin=portal) on mount
   useEffect(() => {
@@ -3954,6 +3973,11 @@ export const App: React.FC = () => {
 
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}
       <main className="w-full max-w-7xl mx-auto bg-[#030712] min-h-screen relative flex flex-col transition-all duration-300">
+        {/* Scheduled Infrastructure Maintenance Banner - USER SIDE ONLY */}
+        {!showAdminPortal && (
+          <MaintenanceTopBanner onOpenNotice={() => setShowMaintenanceModal(true)} />
+        )}
+
         {/* Top App Bar with Desktop Navigation & 25-Language Switcher */}
         <NeonTopAppBar
           activeRoute={activeRoute}
@@ -5113,6 +5137,14 @@ export const App: React.FC = () => {
           onAuthSuccess={handleAuthSuccess}
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
+
+        {/* Scheduled Infrastructure Maintenance Modal - USER SIDE ONLY */}
+        {!showAdminPortal && (
+          <MaintenanceNoticeModal
+            isOpen={showMaintenanceModal && !showAdminPortal}
+            onDismiss={handleDismissMaintenance}
+          />
+        )}
 
         {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal - USER SIDE ONLY */}
         {!showAdminPortal && (
