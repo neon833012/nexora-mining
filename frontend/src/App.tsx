@@ -4105,7 +4105,7 @@ export const App: React.FC = () => {
           <div className={activeRoute === 'wallet' ? 'space-y-5 animate-fadeIn px-3.5 lg:px-0' : 'hidden'}>
               {!isLoggedIn ? (
                 renderAuthBarrier(
-                  'BEP-20 Wallet & Treasury Locked',
+                  'BEP-20 Custody Wallet Locked',
                   'Please sign in to access your personal USDT balance, deposit crypto via BEP-20 network, or submit withdrawal requests to your external wallet.',
                   'Secured Wallet Access'
                 )

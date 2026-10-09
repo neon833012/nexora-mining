@@ -2792,7 +2792,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                         </span>
                       </h3>
                       <p className="text-[10.5px] text-[#94A3B8]">
-                        Immediate payable treasury outflow if all eligible miners (balance &ge; ${safeSettings.minWithdrawalAmount.toFixed(2)} USDT) request withdrawal right now.
+                        Immediate payable liability outflow if all eligible miners (balance &ge; ${safeSettings.minWithdrawalAmount.toFixed(2)} USDT) request withdrawal right now.
                       </p>
                     </div>
                   </div>
@@ -2848,7 +2848,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* Card 4: Immediate Treasury Payable Outflow */}
+                  {/* Card 4: Immediate Net Payable Outflow */}
                   <div className="p-3.5 rounded-xl bg-gradient-to-br from-[#1C1425] to-[#050A14] border-2 border-[#F59E0B]/40 shadow-lg shadow-[#F59E0B]/5 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-[#F59E0B] uppercase font-bold tracking-wider">
@@ -2872,7 +2872,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                 <div className="p-3 rounded-xl bg-[#040812] border border-[#14233C] space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2 text-[10.5px] font-mono">
                     <span className="text-[#94A3B8] font-bold uppercase tracking-wider text-[9.5px]">
-                      📐 TREASURY SOLVENCY AUDIT TRAIL:
+                      📐 PLATFORM SOLVENCY AUDIT TRAIL:
                     </span>
                     <span className="text-[#64748B]">
                       {liveLiabilityDesk.accumulatingCount} Miners accumulating (&lt; ${safeSettings.minWithdrawalAmount.toFixed(2)}) · Ineligible until threshold reached

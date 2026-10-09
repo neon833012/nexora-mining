@@ -444,7 +444,7 @@ export const AdminPortalModal: React.FC<Props> = ({
 
                   <div className="flex items-center gap-2 text-[#EF4444] text-[10.5px] font-bold pt-1">
                     <Lock className="w-3.5 h-3.5" />
-                    <span>Treasury Reserves & Smart Contract Parameters: BLOCKED ❌</span>
+                    <span>Protocol Reserves & Smart Contract Parameters: BLOCKED ❌</span>
                   </div>
                 </div>
 
@@ -483,7 +483,7 @@ export const AdminPortalModal: React.FC<Props> = ({
                   <div className="flex gap-3 text-[10px] text-[#10B981] pt-1">
                     <span>✓ Approvals &lt; ${adm.maxApprovalLimit}</span>
                     <span>✓ PIN Resets</span>
-                    <span className="text-[#EF4444]">✕ Treasury Locked</span>
+                    <span className="text-[#EF4444]">✕ Reserves Locked</span>
                   </div>
                 </div>
               ))}
