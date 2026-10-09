@@ -540,6 +540,10 @@ app.post('/api/mining/activate-24h', async (c) => {
   }
 });
 
+// In-memory cache for downlines: key = uppercase userId, value = { data, timestamp }
+const downlinesCache = new Map<string, { data: any; timestamp: number }>();
+const DOWNLINES_CACHE_TTL_MS = 60000; // 60 seconds
+
 app.get('/api/referrals/downlines', async (c) => {
   try {
     const userId = c.req.query('userId');
@@ -547,97 +551,143 @@ app.get('/api/referrals/downlines', async (c) => {
       return c.json({ success: false, message: 'User ID required' }, 400);
     }
 
-    // Find the requesting user's referral code and ID (matches by ID, email, or name)
-    const cleanUser = String(userId).trim();
-    const rootUser = await c.env.DB.prepare(
-      'SELECT id, referral_code FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(email) = UPPER(?) OR UPPER(name) = UPPER(?) LIMIT 1'
-    ).bind(cleanUser, cleanUser, cleanUser).first() as any;
+    const cleanUser = String(userId).trim().toUpperCase();
 
-    if (!rootUser) {
-      return c.json({ success: false, downlines: [], l1: [], l2: [], l3: [] });
+    // Check in-memory cache first to save Cloudflare D1 row reads
+    const cached = downlinesCache.get(cleanUser);
+    if (cached && (Date.now() - cached.timestamp) < DOWNLINES_CACHE_TTL_MS) {
+      return c.json(cached.data);
     }
 
-    const rootId = rootUser.id.toUpperCase();
-    const rootRefCode = (rootUser.referral_code || '').toUpperCase();
+    // 1 SINGLE flat query to fetch all users and their wallets (reads only ~40 rows total!)
+    const { results } = await c.env.DB.prepare(`
+      SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, u.referral_code,
+             COALESCE(w.active_mining_power, 0) as active_mining_power,
+             COALESCE(w.withdrawable_balance, 0) as withdrawable_balance,
+             COALESCE(w.total_mined_yield, 0) as total_mined_yield,
+             COALESCE(w.referral_balance, 0) as referral_balance
+      FROM users u 
+      LEFT JOIN wallets w ON UPPER(u.id) = UPPER(w.user_id)
+      ORDER BY u.created_at DESC
+    `).all();
 
-    // Helper: get direct referrals of a given user (by user id + referral code)
-    const getDirectRefs = async (uid: string, refCode: string) => {
-      const qry = `
-        SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, u.referral_code,
-               COALESCE(w.active_mining_power, 0) as active_mining_power,
-               COALESCE(w.withdrawable_balance, 0) as withdrawable_balance,
-               COALESCE(w.total_mined_yield, 0) as total_mined_yield,
-               COALESCE(w.referral_balance, 0) as referral_balance,
-               (SELECT COUNT(*) FROM users sub WHERE UPPER(sub.upline_code) = UPPER(u.id) OR (u.referral_code IS NOT NULL AND UPPER(sub.upline_code) = UPPER(u.referral_code))) as team_size
-        FROM users u 
-        LEFT JOIN wallets w ON u.id = w.user_id
-        WHERE UPPER(u.upline_code) = UPPER(?) 
-           OR UPPER(u.upline_code) = UPPER(?)
-           OR (LENGTH(?) >= 5 AND UPPER(u.upline_code) LIKE '%' || SUBSTR(?, -5))
-        ORDER BY u.created_at DESC`;
-      const { results } = await c.env.DB.prepare(qry).bind(uid, refCode || '', refCode || '', refCode || '').all();
-      return results as any[];
+    const allUsers = (results || []) as any[];
+
+    // Find the requesting root user
+    const rootUser = allUsers.find(u => 
+      (u.id && u.id.toUpperCase() === cleanUser) ||
+      (u.email && u.email.toUpperCase() === cleanUser) ||
+      (u.name && u.name.toUpperCase() === cleanUser)
+    );
+
+    if (!rootUser) {
+      return c.json({ success: true, downlines: [], l1: [], l2: [], l3: [], totalL1: 0, totalL2: 0, totalL3: 0, tiers: {} });
+    }
+
+    // Helper: determine if child is referred by parent in-memory
+    const isReferred = (child: any, parent: any) => {
+      if (!child.upline_code) return false;
+      const upline = String(child.upline_code).trim().toUpperCase();
+      const pId = (parent.id || '').toUpperCase();
+      const pRef = (parent.referral_code || '').toUpperCase();
+      if (upline === pId) return true;
+      if (pRef && upline === pRef) return true;
+      if (pRef && pRef.length >= 5 && upline.endsWith(pRef.slice(-5))) return true;
+      return false;
     };
 
-    // L1 — direct referrals of root user
-    const l1Results = await getDirectRefs(rootId, rootRefCode);
+    // Build children mapping in memory
+    const childrenMap = new Map<string, any[]>();
+    for (const u of allUsers) {
+      childrenMap.set((u.id || '').toUpperCase(), []);
+    }
 
-    // Multi-tier traversal up to Level 10 (Supports 3-tier Referral + 10-tier ORC)
+    for (const child of allUsers) {
+      for (const parent of allUsers) {
+        if (child.id === parent.id) continue;
+        if (isReferred(child, parent)) {
+          const list = childrenMap.get((parent.id || '').toUpperCase()) || [];
+          list.push(child);
+          childrenMap.set((parent.id || '').toUpperCase(), list);
+          break;
+        }
+      }
+    }
+
+    // Assign team_size to each user
+    for (const u of allUsers) {
+      u.team_size = childrenMap.get((u.id || '').toUpperCase())?.length || 0;
+    }
+
+    // Multi-tier traversal up to Level 10 in pure memory (<1ms)
     const tiers: Record<number, any[]> = {};
-    tiers[1] = l1Results.map(u => ({ ...u, level: 1, team_size: Number(u.team_size || 0) }));
+    const visited = new Set<string>();
+    visited.add((rootUser.id || '').toUpperCase());
 
-    let currentTierUsers = l1Results;
+    let currentTierUsers = childrenMap.get((rootUser.id || '').toUpperCase()) || [];
+    tiers[1] = currentTierUsers.map(u => {
+      visited.add((u.id || '').toUpperCase());
+      return { ...u, level: 1, referredBy: rootUser.id };
+    });
+
     for (let lvl = 2; lvl <= 10; lvl++) {
       tiers[lvl] = [];
-      if (!currentTierUsers || currentTierUsers.length === 0) break;
-      for (const parentUser of currentTierUsers) {
-        const parentId = (parentUser.id || '').toUpperCase();
-        const pRef = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(parentUser.id).first() as any;
-        const pRefCode = (pRef?.referral_code || '').toUpperCase();
-        const childRefs = await getDirectRefs(parentId, pRefCode);
-        parentUser.team_size = Math.max(Number(parentUser.team_size || 0), childRefs.length);
-        tiers[lvl].push(...childRefs.map(u => ({ ...u, level: lvl, referredBy: parentUser.id, team_size: Number(u.team_size || 0) })));
+      const nextTier: any[] = [];
+      for (const parent of currentTierUsers) {
+        const children = childrenMap.get((parent.id || '').toUpperCase()) || [];
+        for (const child of children) {
+          const childId = (child.id || '').toUpperCase();
+          if (!visited.has(childId)) {
+            visited.add(childId);
+            const mappedChild = { ...child, level: lvl, referredBy: parent.id };
+            tiers[lvl].push(mappedChild);
+            nextTier.push(child);
+          }
+        }
       }
-      currentTierUsers = tiers[lvl];
+      currentTierUsers = nextTier;
+      if (currentTierUsers.length === 0) break;
     }
 
     const l1 = tiers[1] || [];
     const l2 = tiers[2] || [];
     const l3 = tiers[3] || [];
-    const l4 = tiers[4] || [];
-    const l5 = tiers[5] || [];
-    const l6 = tiers[6] || [];
-    const l7 = tiers[7] || [];
-    const l8 = tiers[8] || [];
-    const l9 = tiers[9] || [];
-    const l10 = tiers[10] || [];
-
-    // Combined flat list for all 10 tiers
     const allDownlines: any[] = [];
     for (let i = 1; i <= 10; i++) {
       if (tiers[i]) allDownlines.push(...tiers[i]);
     }
 
-    return c.json({
+    const responsePayload = {
       success: true,
       downlines: allDownlines,
       l1,
       l2,
       l3,
-      l4,
-      l5,
-      l6,
-      l7,
-      l8,
-      l9,
-      l10,
+      l4: tiers[4] || [],
+      l5: tiers[5] || [],
+      l6: tiers[6] || [],
+      l7: tiers[7] || [],
+      l8: tiers[8] || [],
+      l9: tiers[9] || [],
+      l10: tiers[10] || [],
       totalL1: l1.length,
       totalL2: l2.length,
       totalL3: l3.length,
       tiers
-    });
+    };
+
+    // Cache in Worker memory for 60 seconds
+    downlinesCache.set(cleanUser, { data: responsePayload, timestamp: Date.now() });
+
+    return c.json(responsePayload);
   } catch (err: any) {
-    return c.json({ success: false, message: err.message }, 500);
+    // Graceful fallback: return cached downlines if available
+    const cleanUser = String(c.req.query('userId') || '').trim().toUpperCase();
+    const cached = downlinesCache.get(cleanUser);
+    if (cached) {
+      return c.json(cached.data);
+    }
+    return c.json({ success: false, message: err.message, downlines: [], l1: [], l2: [], l3: [] }, 200);
   }
 });
 

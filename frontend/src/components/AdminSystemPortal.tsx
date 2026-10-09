@@ -490,9 +490,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
           // Network error — ignore, will retry in next heartbeat
         }
       }
-    }, 3500);
+    }, 30000);
 
-    // Run immediate verification on mount / state restore without waiting 3.5s
+    // Run immediate verification on mount / state restore without waiting 30s
     const initAdminId = localStorage.getItem('neon_admin_id') || sessionStorage.getItem('neon_admin_id') || '';
     const initSessionToken = localStorage.getItem('neon_admin_session_token') || sessionStorage.getItem('neon_admin_session_token') || '';
     if (initAdminId && initSessionToken) {
@@ -1330,7 +1330,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     fetchAdminTickets();
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchAdminTickets();
-    }, 15000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1350,7 +1350,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     fetchBroadcastsFromD1();
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchBroadcastsFromD1();
-    }, 15000);
+    }, 30000);
 
     const syncBroadcasts = () => {
       fetchBroadcastsFromD1();
@@ -1504,7 +1504,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
     };
 
     fetchChatsFromD1();
-    const interval = setInterval(fetchChatsFromD1, 3000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchChatsFromD1();
+    }, 15000);
     return () => clearInterval(interval);
   }, []);
 

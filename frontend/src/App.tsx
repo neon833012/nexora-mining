@@ -631,7 +631,14 @@ export const App: React.FC = () => {
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'mining' | 'deposit' | 'referral' | 'orc' | 'withdraw'>('all');
-  const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>([]);
+  const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('neon_cached_downlines');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
   // Team Turnover Volume Milestones ($1,000 -> 1.5%, $2,500 -> 2%) - Clean 0
   const [teamTurnover, setTeamTurnover] = useState<TeamTurnover>(() => ({
@@ -1689,12 +1696,12 @@ export const App: React.FC = () => {
 
     fetchWalletHistory();
 
-    // Periodic sync every 12 seconds when tab is active (pauses when minimized to save D1 reads)
+    // Periodic sync every 30 seconds when tab is active (pauses when minimized to save D1 reads)
     const sessionInterval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       verifyAndSyncSession();
       fetchWalletHistory();
-    }, 12000);
+    }, 30000);
 
       // 4. Fetch real referred downlines (L1 + L2 + L3) from Cloudflare D1
       nexoraApi.getDownlines(userName).then((res) => {
@@ -1733,46 +1740,63 @@ export const App: React.FC = () => {
             allMapped = [...l1Mapped, ...l2Mapped, ...l3Mapped];
           }
 
-          // Update team turnover & Milestone 1 calculation ($1,000 Total Team + $250 Self+L1)
-          const l1Mapped = allMapped.filter((d) => d.level === 1);
-          const l2Mapped = allMapped.filter((d) => d.level === 2);
-          const l3Mapped = allMapped.filter((d) => d.level === 3);
-          const l1Vol = l1Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-          const l2Vol = l2Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-          const l3Vol = l3Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-          const totalAllDownlineVol = allMapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-          const totalMilestoneVol = activeMiningPower + totalAllDownlineVol;
-          const directEligible = activeMiningPower + l1Vol;
-          const isMilestone1 = totalMilestoneVol >= 1000 && directEligible >= 250;
+          if (allMapped.length > 0) {
+            // Update team turnover & Milestone 1 calculation ($1,000 Total Team + $250 Self+L1)
+            const l1Mapped = allMapped.filter((d) => d.level === 1);
+            const l2Mapped = allMapped.filter((d) => d.level === 2);
+            const l3Mapped = allMapped.filter((d) => d.level === 3);
+            const l1Vol = l1Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l2Vol = l2Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const l3Vol = l3Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const totalAllDownlineVol = allMapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+            const totalMilestoneVol = activeMiningPower + totalAllDownlineVol;
+            const directEligible = activeMiningPower + l1Vol;
+            const isMilestone1 = totalMilestoneVol >= 1000 && directEligible >= 250;
 
-          setTeamTurnover({
-            personalStaked: activeMiningPower,
-            downlineL1: l1Vol,
-            downlineL2: l2Vol,
-            downlineL3: l3Vol,
-            totalVolume: totalMilestoneVol,
-            boostedRate: isMilestone1 ? 1.5 : 1.0
-          });
+            setTeamTurnover({
+              personalStaked: activeMiningPower,
+              downlineL1: l1Vol,
+              downlineL2: l2Vol,
+              downlineL3: l3Vol,
+              totalVolume: totalMilestoneVol,
+              boostedRate: isMilestone1 ? 1.5 : 1.0
+            });
 
-          setReferredUsers(allMapped);
+            setReferredUsers(allMapped);
+            try {
+              localStorage.setItem('neon_cached_downlines', JSON.stringify(allMapped));
+              localStorage.setItem('neon_cached_downlines_' + userName.toUpperCase(), JSON.stringify(allMapped));
+            } catch (e) {}
 
-          // Update referral stake commission (strictly cumulative lifetime tiers 1 to 3)
-          const tier1to3Commission = allMapped
-            .filter((d: ReferredUserItem) => (d.level || 1) <= 3)
-            .reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
-          if (tier1to3Commission > 0) {
-            setReferralIncome((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
-          }
+            // Update referral stake commission (strictly cumulative lifetime tiers 1 to 3)
+            const tier1to3Commission = allMapped
+              .filter((d: ReferredUserItem) => (d.level || 1) <= 3)
+              .reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
+            if (tier1to3Commission > 0) {
+              setReferralIncome((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
+            }
 
-          // Calculate Over-Ride Commission (ORC across all 10 tiers)
-          const orcDailyYield = allMapped.reduce((s: number, d: ReferredUserItem) => {
-            return s + getMemberOrcDailyYield(d);
-          }, 0);
-          if (orcDailyYield > 0) {
-            setTotalOrcIncome((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
+            // Calculate Over-Ride Commission (ORC across all 10 tiers)
+            const orcDailyYield = allMapped.reduce((s: number, d: ReferredUserItem) => {
+              return s + getMemberOrcDailyYield(d);
+            }, 0);
+            if (orcDailyYield > 0) {
+              setTotalOrcIncome((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
+            }
           }
         }
-      }).catch(() => {});
+      }).catch(() => {
+        // Fall back to cached downlines on temporary network/database limits
+        const cached = localStorage.getItem('neon_cached_downlines_' + userName.toUpperCase()) || localStorage.getItem('neon_cached_downlines');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setReferredUsers(parsed);
+            }
+          } catch (e) {}
+        }
+      });
 
       return () => {
         clearInterval(sessionInterval);
