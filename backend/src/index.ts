@@ -14,6 +14,30 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 
+// Auto-migrate schema to guarantee orc_balance and total_orc_income exist in Cloudflare D1
+let schemaMigrated = false;
+async function ensureDatabaseSchema(db: D1Database) {
+  if (schemaMigrated) return;
+  try {
+    await db.exec(`
+      ALTER TABLE wallets ADD COLUMN orc_balance REAL DEFAULT 0.0;
+    `);
+  } catch {}
+  try {
+    await db.exec(`
+      ALTER TABLE wallets ADD COLUMN total_orc_income REAL DEFAULT 0.0;
+    `);
+  } catch {}
+  schemaMigrated = true;
+}
+
+app.use('*', async (c, next) => {
+  if (c.env?.DB) {
+    await ensureDatabaseSchema(c.env.DB);
+  }
+  await next();
+});
+
 // ============================================================================
 // 1. Root & Health Check Endpoints
 // ============================================================================
@@ -269,7 +293,11 @@ app.post('/api/auth/login', async (c) => {
       total_mined_yield: walletRecord.total_mined_yield,
       mining_cycle_started_at: miningStartedAt,
       unclaimedYield: Number(walletRecord.unclaimed_yield) || 0,
-      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0
+      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0,
+      orcBalance: Number(walletRecord.orc_balance) || 0,
+      orc_balance: Number(walletRecord.orc_balance) || 0,
+      totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
+      total_orc_income: Number(walletRecord.total_orc_income) || 0
     } : {
       depositBalance: 0,
       withdrawableBalance: 0,
@@ -286,7 +314,13 @@ app.post('/api/auth/login', async (c) => {
       active_mining_power: 0,
       total_withdrawn: 0,
       total_mined_yield: 0,
-      mining_cycle_started_at: 0
+      mining_cycle_started_at: 0,
+      unclaimedYield: 0,
+      unclaimed_yield: 0,
+      orcBalance: 0,
+      orc_balance: 0,
+      totalOrcIncome: 0,
+      total_orc_income: 0
     };
 
     // Generate new unique session token to enforce SINGLE ACTIVE SESSION
@@ -519,8 +553,9 @@ app.get('/api/referrals/downlines', async (c) => {
     // Helper: get direct referrals of a given user (by user id + referral code)
     const getDirectRefs = async (uid: string, refCode: string) => {
       const qry = `
-        SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, 
-               COALESCE(w.active_mining_power, 0) as active_mining_power
+        SELECT u.id, u.name, u.mobile, u.email, u.created_at, u.status, u.upline_code, u.referral_code,
+               COALESCE(w.active_mining_power, 0) as active_mining_power,
+               (SELECT COUNT(*) FROM users sub WHERE UPPER(sub.upline_code) = UPPER(u.id) OR (u.referral_code IS NOT NULL AND UPPER(sub.upline_code) = UPPER(u.referral_code))) as team_size
         FROM users u 
         LEFT JOIN wallets w ON u.id = w.user_id
         WHERE UPPER(u.upline_code) = UPPER(?) 
@@ -533,30 +568,42 @@ app.get('/api/referrals/downlines', async (c) => {
 
     // L1 — direct referrals of root user
     const l1Results = await getDirectRefs(rootId, rootRefCode);
-    const l1 = l1Results.map(u => ({ ...u, level: 1 }));
 
-    // L2 — referrals of each L1 user
-    const l2: any[] = [];
-    for (const l1user of l1Results) {
-      const l1uid = (l1user.id || '').toUpperCase();
-      const l1ref = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(l1user.id).first() as any;
-      const l1refCode = (l1ref?.referral_code || '').toUpperCase();
-      const l2refs = await getDirectRefs(l1uid, l1refCode);
-      l2.push(...l2refs.map(u => ({ ...u, level: 2, referredBy: l1user.id })));
+    // Multi-tier traversal up to Level 10 (Supports 3-tier Referral + 10-tier ORC)
+    const tiers: Record<number, any[]> = {};
+    tiers[1] = l1Results.map(u => ({ ...u, level: 1, team_size: Number(u.team_size || 0) }));
+
+    let currentTierUsers = l1Results;
+    for (let lvl = 2; lvl <= 10; lvl++) {
+      tiers[lvl] = [];
+      if (!currentTierUsers || currentTierUsers.length === 0) break;
+      for (const parentUser of currentTierUsers) {
+        const parentId = (parentUser.id || '').toUpperCase();
+        const pRef = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(parentUser.id).first() as any;
+        const pRefCode = (pRef?.referral_code || '').toUpperCase();
+        const childRefs = await getDirectRefs(parentId, pRefCode);
+        parentUser.team_size = Math.max(Number(parentUser.team_size || 0), childRefs.length);
+        tiers[lvl].push(...childRefs.map(u => ({ ...u, level: lvl, referredBy: parentUser.id, team_size: Number(u.team_size || 0) })));
+      }
+      currentTierUsers = tiers[lvl];
     }
 
-    // L3 — referrals of each L2 user
-    const l3: any[] = [];
-    for (const l2user of l2) {
-      const l2uid = (l2user.id || '').toUpperCase();
-      const l2ref = await c.env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(l2user.id).first() as any;
-      const l2refCode = (l2ref?.referral_code || '').toUpperCase();
-      const l3refs = await getDirectRefs(l2uid, l2refCode);
-      l3.push(...l3refs.map(u => ({ ...u, level: 3, referredBy: l2user.id })));
-    }
+    const l1 = tiers[1] || [];
+    const l2 = tiers[2] || [];
+    const l3 = tiers[3] || [];
+    const l4 = tiers[4] || [];
+    const l5 = tiers[5] || [];
+    const l6 = tiers[6] || [];
+    const l7 = tiers[7] || [];
+    const l8 = tiers[8] || [];
+    const l9 = tiers[9] || [];
+    const l10 = tiers[10] || [];
 
-    // Combined flat list for backward compatibility
-    const allDownlines = [...l1, ...l2, ...l3];
+    // Combined flat list for all 10 tiers
+    const allDownlines: any[] = [];
+    for (let i = 1; i <= 10; i++) {
+      if (tiers[i]) allDownlines.push(...tiers[i]);
+    }
 
     return c.json({
       success: true,
@@ -564,9 +611,17 @@ app.get('/api/referrals/downlines', async (c) => {
       l1,
       l2,
       l3,
+      l4,
+      l5,
+      l6,
+      l7,
+      l8,
+      l9,
+      l10,
       totalL1: l1.length,
       totalL2: l2.length,
-      totalL3: l3.length
+      totalL3: l3.length,
+      tiers
     });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -1230,10 +1285,9 @@ app.post('/api/deposit/verify-tx', async (c) => {
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
-                   withdrawable_balance = withdrawable_balance + ?, 
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(commission, commission, uplineUser.id),
+            ).bind(commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
@@ -1487,10 +1541,9 @@ app.post('/api/plans/subscribe', async (c) => {
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
-                   withdrawable_balance = withdrawable_balance + ?, 
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(commission, commission, uplineUser.id),
+            ).bind(commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
@@ -1531,7 +1584,7 @@ app.post('/api/plans/subscribe', async (c) => {
 // Reinvestment & Auto-Upgrade Plan Endpoint (Saves upgraded plan name in database)
 app.post('/api/plans/reinvest-upgrade', async (c) => {
   try {
-    const { userId, newPower, upgradedPlanName, yieldAmount, dailyRatePercent = 1.0 } = await c.req.json();
+    const { userId, newPower, upgradedPlanName, yieldAmount, dailyRatePercent = 1.0, source = 'yield' } = await c.req.json();
     if (!userId || !newPower || Number(newPower) <= 0) {
       return c.json({ success: false, message: 'Valid userId and newPower required' }, 400);
     }
@@ -1542,20 +1595,44 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
     const dailyYieldUsdt = Number((numPower * (rate / 100)).toFixed(4));
     const txId = `CMP-${Date.now().toString().slice(-6)}`;
 
-    // Update wallet power
+    // Update wallet power and deduct from appropriate source
+    const walletQuery = source === 'referral'
+      ? c.env.DB.prepare(
+          `UPDATE wallets 
+           SET active_mining_power = ?, 
+               referral_balance = 0,
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE UPPER(user_id) = UPPER(?)`
+        ).bind(numPower, userId)
+      : source === 'orc'
+      ? c.env.DB.prepare(
+          `UPDATE wallets 
+           SET active_mining_power = ?, 
+               orc_balance = 0,
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE UPPER(user_id) = UPPER(?)`
+        ).bind(numPower, userId)
+      : c.env.DB.prepare(
+          `UPDATE wallets 
+           SET active_mining_power = ?, 
+               unclaimed_yield = 0,
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE UPPER(user_id) = UPPER(?)`
+        ).bind(numPower, userId);
+
+    const txType = source === 'referral'
+      ? `Referral Commission Re-invested (+${numYield.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName}`
+      : source === 'orc'
+      ? `10-Tier ORC Royalty Re-invested (+${numYield.toFixed(2)} USDT Added to Plan Capital) -> ${upgradedPlanName}`
+      : `Plan Reinvestment (+${numYield.toFixed(2)} USDT) -> ${upgradedPlanName}`;
+
     const batchStatements: any[] = [
-      c.env.DB.prepare(
-        `UPDATE wallets 
-         SET active_mining_power = ?, 
-             unclaimed_yield = 0,
-             updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?)`
-      ).bind(numPower, userId),
+      walletQuery,
 
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status) 
          VALUES (?, ?, ?, ?, 'Settled')`
-      ).bind(txId, userId, `Plan Reinvestment (+${numYield.toFixed(2)} USDT) -> ${upgradedPlanName}`, numYield)
+      ).bind(txId, userId, txType, numYield)
     ];
 
     // Check if active contract exists
@@ -1659,6 +1736,141 @@ app.post('/api/wallet/claim-yield-to-wallet', async (c) => {
     ]);
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
     return c.json({ success: true, message: `Transferred +$${numYield.toFixed(2)} USDT to Withdrawable Balance`, updatedWallet });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Transfer Referral Balance to Main Withdrawable Wallet (Cloudflare D1-Backed)
+app.post('/api/wallet/transfer-referral-to-wallet', async (c) => {
+  try {
+    const { userId } = await c.req.json();
+    if (!userId) return c.json({ success: false, message: 'Invalid userId' }, 400);
+
+    const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
+    const refBal = Number(wallet?.referral_balance || 0);
+    if (!wallet || refBal <= 0) {
+      return c.json({ success: false, message: 'No referral balance available to send to wallet.' }, 400);
+    }
+
+    const txId = `REF-TRF-${Date.now().toString().slice(-6)}`;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE wallets 
+         SET withdrawable_balance = withdrawable_balance + ?, 
+             referral_balance = 0, 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE UPPER(user_id) = UPPER(?)`
+      ).bind(refBal, userId),
+      c.env.DB.prepare(
+        `INSERT INTO transactions (id, user_id, type, amount, status) 
+         VALUES (?, ?, 'Referral Balance Sent to Withdrawable Balance', ?, 'Settled')`
+      ).bind(txId, userId, refBal)
+    ]);
+
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
+    return c.json({ success: true, message: `Transferred +$${refBal.toFixed(2)} USDT from Referral Balance to Withdrawable Balance`, updatedWallet });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Transfer 10-Tier ORC Balance to Main Withdrawable Wallet (Cloudflare D1-Backed)
+app.post('/api/wallet/transfer-orc-to-wallet', async (c) => {
+  try {
+    const { userId } = await c.req.json();
+    if (!userId) return c.json({ success: false, message: 'Invalid userId' }, 400);
+
+    const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
+    const orcBal = Number(wallet?.orc_balance || 0);
+    if (!wallet || orcBal <= 0) {
+      return c.json({ success: false, message: 'No ORC balance available to send to wallet.' }, 400);
+    }
+
+    const txId = `ORC-TRF-${Date.now().toString().slice(-6)}`;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE wallets 
+         SET withdrawable_balance = withdrawable_balance + ?, 
+             orc_balance = 0, 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE UPPER(user_id) = UPPER(?)`
+      ).bind(orcBal, userId),
+      c.env.DB.prepare(
+        `INSERT INTO transactions (id, user_id, type, amount, status) 
+         VALUES (?, ?, '10-Tier ORC Balance Sent to Withdrawable Balance', ?, 'Settled')`
+      ).bind(txId, userId, orcBal)
+    ]);
+
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
+    return c.json({ success: true, message: `Transferred +$${orcBal.toFixed(2)} USDT from ORC Balance to Withdrawable Balance`, updatedWallet });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Comprehensive User State & Balances Synchronization Endpoint (Cloudflare D1-Backed)
+app.post('/api/wallet/sync-user-data', async (c) => {
+  try {
+    const { userId, data } = await c.req.json();
+    if (!userId || !data) return c.json({ success: false, message: 'userId and data required' }, 400);
+
+    const existingWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
+
+    if (!existingWallet) {
+      await c.env.DB.prepare(
+        `INSERT OR IGNORE INTO wallets (user_id, deposit_balance, withdrawable_balance, referral_balance, active_mining_power, orc_balance, total_orc_income, total_withdrawn, total_mined_yield)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)`
+      ).bind(
+        userId,
+        Number(data.depositBalance || 0),
+        Number(data.availableWithdrawal ?? data.withdrawableBalance ?? 0),
+        Number(data.referralBalance || 0),
+        Number(data.activeMiningPower || 0),
+        Number(data.orcBalance || 0),
+        Number(data.totalOrcIncome || 0)
+      ).run();
+    } else {
+      const updates: string[] = [];
+      const bindings: any[] = [];
+
+      if (data.depositBalance !== undefined) {
+        updates.push('deposit_balance = ?');
+        bindings.push(Number(data.depositBalance));
+      }
+      if (data.availableWithdrawal !== undefined || data.withdrawableBalance !== undefined) {
+        updates.push('withdrawable_balance = ?');
+        bindings.push(Number(data.availableWithdrawal ?? data.withdrawableBalance));
+      }
+      if (data.referralBalance !== undefined) {
+        updates.push('referral_balance = ?');
+        bindings.push(Number(data.referralBalance));
+      }
+      if (data.activeMiningPower !== undefined) {
+        updates.push('active_mining_power = ?');
+        bindings.push(Number(data.activeMiningPower));
+      }
+      if (data.orcBalance !== undefined) {
+        updates.push('orc_balance = ?');
+        bindings.push(Number(data.orcBalance));
+      }
+      if (data.totalOrcIncome !== undefined) {
+        updates.push('total_orc_income = ?');
+        bindings.push(Number(data.totalOrcIncome));
+      }
+      if (data.fundPin) {
+        await c.env.DB.prepare('UPDATE users SET fund_pin = ?, fund_pin_set = 1 WHERE UPPER(id) = UPPER(?)').bind(String(data.fundPin), userId).run();
+      }
+
+      if (updates.length > 0) {
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        bindings.push(userId);
+        await c.env.DB.prepare(`UPDATE wallets SET ${updates.join(', ')} WHERE UPPER(user_id) = UPPER(?)`).bind(...bindings).run();
+      }
+    }
+
+    const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
+    return c.json({ success: true, updatedWallet });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

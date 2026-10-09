@@ -155,13 +155,6 @@ export const DashboardPreviewSection: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Milestone progress calculations ($1,000 -> 1.5%, $2,500 -> 2%)
-  const isTier2Reached = teamTurnover.totalVolume >= 2500;
-  const isTier1Reached = teamTurnover.totalVolume >= 1000;
-  const nextTarget = isTier1Reached ? 2500 : 1000;
-  const currentBoostRate = isTier2Reached ? 2.0 : isTier1Reached ? 1.5 : 1.0;
-  const progressPercent = Math.min(100, Math.floor((teamTurnover.totalVolume / nextTarget) * 100));
-
   const pureMinedYield = +(totalIncome - totalReferralIncome).toFixed(2);
 
   // Fallback and robust active plan resolution (Strictly ensures plan name is never "No Active Plan" when money is staked)
@@ -546,68 +539,6 @@ export const DashboardPreviewSection: React.FC<Props> = ({
                 </div>
               );
             })()}
-          </div>
-
-          {/* TEAM TURNOVER VOLUME MILESTONES */}
-          <div className="rounded-2xl bg-[#0C1526] border border-[#1E304E] p-4 lg:p-5 shadow-lg space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#FBBF24]/15 border border-[#FBBF24]/40 flex items-center justify-center text-[#FBBF24]">
-                  <Trophy className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-[13px] font-bold text-[#F8FAFC] block leading-tight">
-                    Team Turnover Volume Milestone
-                  </span>
-                  <span className="text-[11px] text-[#94A3B8]">
-                    Combined: Personal Staked + 3-Level Downline Volume
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[10px] text-[#94A3B8] block">Current Boost</span>
-                <span className="text-[15px] font-black text-[#10B981]">
-                  {currentBoostRate.toFixed(1)}% / day
-                </span>
-              </div>
-            </div>
-
-            {/* Breakdown */}
-            <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-[#060C16] border border-[#132034] text-[11.5px]">
-              <div className="text-center">
-                <span className="text-[9.5px] text-[#64748B] block uppercase">Own Staked</span>
-                <strong className="text-white font-mono text-[13px]">${teamTurnover.personalStaked.toFixed(0)}</strong>
-              </div>
-              <div className="text-center border-x border-[#142338]">
-                <span className="text-[9.5px] text-[#64748B] block uppercase">Team Staked</span>
-                <strong className="text-[#38BDF8] font-mono text-[13px]">
-                  ${(teamTurnover.downlineL1 + teamTurnover.downlineL2 + teamTurnover.downlineL3).toFixed(0)}
-                </strong>
-              </div>
-              <div className="text-center">
-                <span className="text-[9.5px] text-[#64748B] block uppercase">Combined Total</span>
-                <strong className="text-[#FBBF24] font-mono text-[13px]">${teamTurnover.totalVolume.toFixed(0)}</strong>
-              </div>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-[11.5px]">
-                <span className="text-[#94A3B8]">
-                  Progress to {isTier1Reached ? '$2,500 VIP Milestone (2% Rate)' : '$1,000 Milestone (1.5% Rate)'}:
-                </span>
-                <span className="font-bold text-[#F8FAFC]">
-                  ${teamTurnover.totalVolume.toFixed(0)} / ${nextTarget} USD ({progressPercent}%)
-                </span>
-              </div>
-              <div className="w-full bg-[#060C16] h-2.5 rounded-full overflow-hidden border border-[#16253C]">
-                <div
-                  className="h-full bg-gradient-to-r from-[#0284C7] via-[#FBBF24] to-[#10B981] transition-all duration-500 rounded-full"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
           </div>
         </div>
 

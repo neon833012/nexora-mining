@@ -9,6 +9,7 @@ import { MiningPlanCards } from './components/MiningPlanCards';
 import { InteractiveMiningCalculator } from './components/InteractiveMiningCalculator';
 import { HowItWorksSection } from './components/HowItWorksSection';
 import { ReferralNetworkSection } from './components/ReferralNetworkSection';
+import { OrcCommissionSection, getMemberOrcDailyYield } from './components/OrcCommissionSection';
 import { DashboardPreviewSection } from './components/DashboardPreviewSection';
 import { WithdrawalSection } from './components/WithdrawalSection';
 import { SecurityAndFaqSection } from './components/SecurityAndFaqSection';
@@ -76,6 +77,7 @@ import {
 } from './data/mockAdminData';
 import {
   ArrowRight,
+  ArrowLeft,
   ArrowDown,
   ArrowUp,
   Layers,
@@ -89,11 +91,13 @@ import {
   FileText,
   Gift,
   Users,
+  Zap,
   TrendingUp,
   Send,
   History,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Coins
 } from 'lucide-react';
 
 // Known development/testing user accounts to exclude from production admin directories
@@ -160,6 +164,8 @@ export interface UserPersistentData {
   totalRewards?: number;
   referralIncome?: number;
   referralBalance?: number;
+  totalOrcIncome?: number;
+  orcBalance?: number;
   yesterdaysIncome?: number;
   isMiningActive?: boolean;
   miningStartTime?: number;
@@ -184,6 +190,9 @@ export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>
     const key = getUserStorageKey(uid);
     const existing = loadStorage<UserPersistentData | null>(key, null) || {};
     localStorage.setItem(key, JSON.stringify({ ...existing, ...data }));
+  } catch (e) {}
+  try {
+    nexoraApi.syncUserData(uid, data).catch(() => {});
   } catch (e) {}
 };
 
@@ -230,10 +239,34 @@ export const App: React.FC = () => {
 
   // Navigation & Multi-Page View
   const [activeRoute, setActiveRoute] = useState<NavRoute>('home');
+  const [activeTeamTab, setActiveTeamTab] = useState<'select' | 'referral' | 'orc'>('select');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Centralized Navigation with Browser History Stack (Enables step-by-step phone back button)
   const navigateTo = (route: NavRoute, replace: boolean = false) => {
+    if (route === 'referral') {
+      if (activeRoute === 'referral') {
+        if (activeTeamTab !== 'select') {
+          setActiveTeamTab('select');
+          window.history.pushState({ route: 'referral', teamTab: 'select' }, '', '#referral');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        return;
+      }
+      setActiveTeamTab('select');
+      if (replace) {
+        window.history.replaceState({ route: 'referral', teamTab: 'select' }, '', '#referral');
+      } else {
+        window.history.pushState({ route: 'referral', teamTab: 'select' }, '', '#referral');
+      }
+      setActiveRoute('referral');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => {
+        retriggerGoogleTranslate();
+      }, 60);
+      return;
+    }
+
     if (route === activeRoute) return;
     if (replace) {
       window.history.replaceState({ route }, '', `#${route}`);
@@ -253,6 +286,33 @@ export const App: React.FC = () => {
     setTimeout(() => {
       retriggerGoogleTranslate();
     }, 60);
+  };
+
+  // Open Team Sub-view with History Stack Push (Step-by-step flow)
+  const openTeamSubTab = (tab: 'referral' | 'orc') => {
+    setActiveTeamTab(tab);
+    window.history.pushState({ route: 'referral', teamTab: tab }, '', `#referral/${tab}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Step-by-Step Back Navigation from Team Sub-view
+  const handleBackFromTeamSubTab = () => {
+    if (window.history.state?.teamTab === 'orc' || window.history.state?.teamTab === 'referral') {
+      window.history.back();
+    } else {
+      setActiveTeamTab('select');
+      window.history.replaceState({ route: 'referral', teamTab: 'select' }, '', '#referral');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Back Navigation from Team Select (2-cards) screen to Previous screen
+  const handleBackFromTeamSelect = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigateTo('plans');
+    }
   };
 
   // Listen for browser popstate & hashchange (phone back button & direct #hash changes)
@@ -275,18 +335,19 @@ export const App: React.FC = () => {
     } catch {}
 
     const urlParams = new URLSearchParams(window.location.search);
-    const hash = window.location.hash.replace('#', '') as NavRoute;
+    const rawHash = window.location.hash.replace('#', '');
+    const cleanHash = rawHash.split('/')[0] as NavRoute;
     const adminParam = urlParams.get('admin');
     const hasAdminAuth = !isStandaloneApp && (
       localStorage.getItem('neon_admin_auth') === 'true' ||
       sessionStorage.getItem('neon_admin_auth') === 'true'
     );
     const isAdminRequested = !isStandaloneApp && (
-      (hash as any) === 'admin' ||
+      (cleanHash as any) === 'admin' ||
       adminParam === 'portal' ||
       adminParam === 'true' ||
       adminParam === '1' ||
-      (hasAdminAuth && ((hash as string) === 'admin' || !hash || hash === 'home'))
+      (hasAdminAuth && ((cleanHash as string) === 'admin' || !cleanHash || cleanHash === 'home'))
     );
 
     if (isAdminRequested) {
@@ -294,9 +355,15 @@ export const App: React.FC = () => {
       setShowAdminPortal(true);
       window.history.replaceState({ route: 'admin' }, '', '#admin');
     } else {
-      const initialRoute = validRoutes.includes(hash) ? hash : 'home';
+      const initialRoute = validRoutes.includes(cleanHash) ? cleanHash : 'home';
       setActiveRoute(initialRoute);
-      window.history.replaceState({ route: initialRoute }, '', `#${initialRoute}`);
+      if (initialRoute === 'referral') {
+        const sub = rawHash.includes('/orc') ? 'orc' : rawHash.includes('/referral') ? 'referral' : 'select';
+        setActiveTeamTab(sub);
+        window.history.replaceState({ route: 'referral', teamTab: sub }, '', `#${rawHash || 'referral'}`);
+      } else {
+        window.history.replaceState({ route: initialRoute }, '', `#${initialRoute}`);
+      }
     }
     setTimeout(() => {
       retriggerGoogleTranslate();
@@ -312,11 +379,12 @@ export const App: React.FC = () => {
       } catch {}
 
       const currentHash = window.location.hash.replace('#', '');
+      const rootHash = currentHash.split('/')[0];
       const hasCurrentAdminAuth = !isStandaloneApp && (
         localStorage.getItem('neon_admin_auth') === 'true' ||
         sessionStorage.getItem('neon_admin_auth') === 'true'
       );
-      if (currentHash === 'admin' || (hasCurrentAdminAuth && (event.state?.route === 'admin' || currentHash === 'admin'))) {
+      if (rootHash === 'admin' || (hasCurrentAdminAuth && (event.state?.route === 'admin' || rootHash === 'admin'))) {
         if (isStandaloneApp) {
           setActiveRoute('home');
           window.history.replaceState({ route: 'home' }, '', '#home');
@@ -327,15 +395,16 @@ export const App: React.FC = () => {
         return;
       }
       setShowAdminPortal(false);
-      const poppedRoute = event.state?.route as NavRoute;
+
+      const poppedRoute = (event.state?.route as NavRoute) || (validRoutes.includes(rootHash as NavRoute) ? (rootHash as NavRoute) : undefined);
       if (poppedRoute && validRoutes.includes(poppedRoute)) {
         setActiveRoute(poppedRoute);
-      } else {
-        if (validRoutes.includes(currentHash as NavRoute)) {
-          setActiveRoute(currentHash as NavRoute);
-        } else {
-          setActiveRoute('home');
+        if (poppedRoute === 'referral') {
+          const targetTeamTab = event.state?.teamTab || (currentHash.includes('/orc') ? 'orc' : currentHash.includes('/referral') ? 'referral' : 'select');
+          setActiveTeamTab(targetTeamTab);
         }
+      } else {
+        setActiveRoute('home');
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => {
@@ -353,7 +422,8 @@ export const App: React.FC = () => {
       } catch {}
 
       const currentHash = window.location.hash.replace('#', '');
-      if (currentHash === 'admin') {
+      const rootHash = currentHash.split('/')[0];
+      if (rootHash === 'admin') {
         if (isStandaloneApp) {
           setActiveRoute('home');
           window.history.replaceState({ route: 'home' }, '', '#home');
@@ -364,8 +434,12 @@ export const App: React.FC = () => {
         return;
       }
       setShowAdminPortal(false);
-      if (validRoutes.includes(currentHash as NavRoute)) {
-        setActiveRoute(currentHash as NavRoute);
+      if (validRoutes.includes(rootHash as NavRoute)) {
+        setActiveRoute(rootHash as NavRoute);
+        if (rootHash === 'referral') {
+          const sub = currentHash.includes('/orc') ? 'orc' : currentHash.includes('/referral') ? 'referral' : 'select';
+          setActiveTeamTab(sub);
+        }
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setTimeout(() => {
           retriggerGoogleTranslate();
@@ -533,12 +607,30 @@ export const App: React.FC = () => {
   const [totalRewards, setTotalRewards] = useState<number>(0.0);
   const [referralIncome, setReferralIncome] = useState<number>(0.0);
   const [referralBalance, setReferralBalance] = useState<number>(0.0);
+  const [totalOrcIncome, setTotalOrcIncome] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.totalOrcIncome ?? loadStorageNum('neon_total_orc_income', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
+  const [orcBalance, setOrcBalance] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.orcBalance ?? loadStorageNum('neon_orc_balance', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
   const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(0.0);
   const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(0.0);
   const [serverTotalWithdrawn, setServerTotalWithdrawn] = useState<number>(0.0);
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
-  const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'mining' | 'deposit' | 'referral' | 'withdraw'>('all');
+  const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'mining' | 'deposit' | 'referral' | 'orc' | 'withdraw'>('all');
   const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>([]);
 
   // Team Turnover Volume Milestones ($1,000 -> 1.5%, $2,500 -> 2%) - Clean 0
@@ -552,7 +644,10 @@ export const App: React.FC = () => {
   }));
 
   // Dynamic calculation of daily reward based on active plan rate (e.g. 1.0% for $20, 1.1% for $50)
-  const activePlanRate = getPlanForAmount(activeMiningPower, miningPlans)?.dailyRatePercent || 1.0;
+  // Milestone 1 ($1,000 Total Team Volume + 25% Self & L1 Rule ($250 min)): Boosts personal daily reward to 1.5%!
+  const basePlanRate = getPlanForAmount(activeMiningPower, miningPlans)?.dailyRatePercent || 1.0;
+  const isMilestone1Achieved = (teamTurnover.totalVolume >= 1000) && ((teamTurnover.personalStaked + teamTurnover.downlineL1) >= 250);
+  const activePlanRate = isMilestone1Achieved ? Math.max(basePlanRate, 1.5) : basePlanRate;
   const todaysReward = +(activeMiningPower * (activePlanRate / 100)).toFixed(2);
 
   // 24-Hour Proof-of-Activity Mining Engine
@@ -717,6 +812,8 @@ export const App: React.FC = () => {
       totalRewards,
       referralIncome,
       referralBalance,
+      totalOrcIncome,
+      orcBalance,
       yesterdaysIncome,
       isMiningActive,
       miningStartTime: loadStorageNum('neon_mining_start_time', 0),
@@ -741,6 +838,8 @@ export const App: React.FC = () => {
       localStorage.setItem('neon_total_rewards', String(totalRewards));
       localStorage.setItem('neon_referral_income', String(referralIncome));
       localStorage.setItem('neon_referral_balance', String(referralBalance));
+      localStorage.setItem('neon_total_orc_income', String(totalOrcIncome));
+      localStorage.setItem('neon_orc_balance', String(orcBalance));
       localStorage.setItem('neon_yesterdays_income', String(yesterdaysIncome));
       localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal));
       localStorage.setItem('neon_mining_active', String(isMiningActive));
@@ -762,6 +861,8 @@ export const App: React.FC = () => {
     totalRewards,
     referralIncome,
     referralBalance,
+    totalOrcIncome,
+    orcBalance,
     yesterdaysIncome,
     availableWithdrawal,
     isMiningActive,
@@ -1208,7 +1309,7 @@ export const App: React.FC = () => {
       'neon_is_logged_in', 'neon_user_name', 'neon_user_mobile', 'neon_user_email',
       'neon_fund_password', 'neon_upline_code', 'neon_referral_code', 'neon_session_token',
       'neon_total_balance', 'neon_deposit_balance', 'neon_mining_power', 'neon_total_rewards',
-      'neon_referral_income', 'neon_referral_balance', 'neon_yesterdays_income',
+      'neon_referral_income', 'neon_referral_balance', 'neon_total_orc_income', 'neon_orc_balance', 'neon_yesterdays_income',
       'neon_available_withdrawal', 'neon_mining_active', 'neon_seconds_remaining',
       'neon_unclaimed_yield', 'neon_transactions', 'neon_withdrawal_requests',
       'neon_referred_users', 'neon_total_withdrawn'
@@ -1237,6 +1338,8 @@ export const App: React.FC = () => {
     setServerTotalWithdrawn(0);
     setReferralIncome(0);
     setReferralBalance(0);
+    setTotalOrcIncome(0);
+    setOrcBalance(0);
     setYesterdaysIncome(0);
     setTransactions([]);
     setWithdrawalRequests([]);
@@ -1403,6 +1506,10 @@ export const App: React.FC = () => {
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
           setReferralIncome(ref);
+          const orcInc = Number((w as any).totalOrcIncome ?? (w as any).total_orc_income) || 0;
+          const orcBal = Number((w as any).orcBalance ?? (w as any).orc_balance) || 0;
+          if (orcInc > 0) setTotalOrcIncome(orcInc);
+          if (orcBal > 0) setOrcBalance(orcBal);
           if (mined > 0) setTotalRewards(mined);
           const settled = Number(w.totalWithdrawn ?? w.total_withdrawn) || 0;
           setServerTotalWithdrawn(settled);
@@ -1593,9 +1700,9 @@ export const App: React.FC = () => {
       nexoraApi.getDownlines(userName).then((res) => {
         if (res && res.success) {
           // Helper to map a downline record with correct level info
-          const mapDownline = (d: any, lvl: 1 | 2 | 3): ReferredUserItem => {
+          const mapDownline = (d: any, lvl: number): ReferredUserItem => {
             const power = Number(d.active_mining_power) || 0;
-            const commissionRate = lvl === 1 ? 0.10 : lvl === 2 ? 0.05 : 0.02;
+            const commissionRate = lvl === 1 ? 0.10 : lvl === 2 ? 0.05 : lvl === 3 ? 0.02 : 0;
             return {
               id: d.id,
               name: d.name || d.id,
@@ -1606,54 +1713,61 @@ export const App: React.FC = () => {
               commissionEarned: +(power * commissionRate).toFixed(2),
               status: d.status === 'active' ? 'active' : 'inactive',
               level: lvl,
-              invitedBy: lvl === 1 ? 'Direct (You)' : lvl === 2 ? 'Your L1 Referral' : 'Your L2 Referral'
+              invitedBy: lvl === 1 ? 'Direct (You)' : lvl === 2 ? 'Your L1 Referral' : lvl === 3 ? 'Your L2 Referral' : `Your L${lvl - 1} Referral`,
+              teamSize: Number(d.team_size ?? d.teamSize ?? 0)
             };
           };
 
-          // Use structured l1/l2/l3 from API if available, else fall back to flat list
+          // Use structured downlines (10 tiers) from API
           let allMapped: ReferredUserItem[] = [];
-          if (Array.isArray(res.l1) || Array.isArray(res.l2) || Array.isArray(res.l3)) {
+          if (Array.isArray(res.downlines) && res.downlines.length > 0) {
+            allMapped = res.downlines.map((d: any) => mapDownline(d, d.level || 1));
+          } else if (Array.isArray(res.l1) || Array.isArray(res.l2) || Array.isArray(res.l3)) {
             const l1Mapped = (res.l1 || []).map((d: any) => mapDownline(d, 1));
             const l2Mapped = (res.l2 || []).map((d: any) => mapDownline(d, 2));
             const l3Mapped = (res.l3 || []).map((d: any) => mapDownline(d, 3));
             allMapped = [...l1Mapped, ...l2Mapped, ...l3Mapped];
-
-            // Update team turnover for all 3 levels
-            const l1Vol = l1Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            const l2Vol = l2Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            const l3Vol = l3Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            setTeamTurnover((prev) => ({
-              ...prev,
-              downlineL1: l1Vol,
-              downlineL2: l2Vol,
-              downlineL3: l3Vol,
-              totalVolume: prev.personalStaked + l1Vol + l2Vol + l3Vol,
-              boostedRate: (prev.personalStaked + l1Vol) >= 2500 ? 2.5 : (prev.personalStaked + l1Vol) >= 1000 ? 1.5 : 1.0
-            }));
-          } else if (Array.isArray(res.downlines)) {
-            // Fallback: use level field from API if present, else default L1
-            allMapped = res.downlines.map((d: any) => mapDownline(d, (d.level === 2 ? 2 : d.level === 3 ? 3 : 1) as 1 | 2 | 3));
-            const l1Vol = allMapped.filter((d: ReferredUserItem) => d.level === 1).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            const l2Vol = allMapped.filter((d: ReferredUserItem) => d.level === 2).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            const l3Vol = allMapped.filter((d: ReferredUserItem) => d.level === 3).reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
-            setTeamTurnover((prev) => ({
-              ...prev,
-              downlineL1: l1Vol,
-              downlineL2: l2Vol,
-              downlineL3: l3Vol,
-              totalVolume: prev.personalStaked + l1Vol + l2Vol + l3Vol,
-              boostedRate: (prev.personalStaked + l1Vol) >= 2500 ? 2.5 : (prev.personalStaked + l1Vol) >= 1000 ? 1.5 : 1.0
-            }));
           }
+
+          // Update team turnover & Milestone 1 calculation ($1,000 Total Team + $250 Self+L1)
+          const l1Mapped = allMapped.filter((d) => d.level === 1);
+          const l2Mapped = allMapped.filter((d) => d.level === 2);
+          const l3Mapped = allMapped.filter((d) => d.level === 3);
+          const l1Vol = l1Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+          const l2Vol = l2Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+          const l3Vol = l3Mapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+          const totalAllDownlineVol = allMapped.reduce((s: number, d: ReferredUserItem) => s + d.planAmount, 0);
+          const totalMilestoneVol = activeMiningPower + totalAllDownlineVol;
+          const directEligible = activeMiningPower + l1Vol;
+          const isMilestone1 = totalMilestoneVol >= 1000 && directEligible >= 250;
+
+          setTeamTurnover({
+            personalStaked: activeMiningPower,
+            downlineL1: l1Vol,
+            downlineL2: l2Vol,
+            downlineL3: l3Vol,
+            totalVolume: totalMilestoneVol,
+            boostedRate: isMilestone1 ? 1.5 : 1.0
+          });
 
           setReferredUsers(allMapped);
 
-          // Update referral income based on commission earned across all levels
-          const totalCommission = allMapped.reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
-          if (totalCommission > 0) {
-            setReferralIncome((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
-            setReferralBalance((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
-            setAvailableWithdrawal((prev) => +(Math.max(prev, totalCommission)).toFixed(2));
+          // Update referral stake commission (strictly tiers 1 to 3)
+          const tier1to3Commission = allMapped
+            .filter((d: ReferredUserItem) => (d.level || 1) <= 3)
+            .reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
+          if (tier1to3Commission > 0) {
+            setReferralIncome((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
+            setReferralBalance((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
+          }
+
+          // Calculate Over-Ride Commission (ORC across all 10 tiers)
+          const orcDailyYield = allMapped.reduce((s: number, d: ReferredUserItem) => {
+            return s + getMemberOrcDailyYield(d);
+          }, 0);
+          if (orcDailyYield > 0) {
+            setTotalOrcIncome((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
+            setOrcBalance((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
           }
         }
       }).catch(() => {});
@@ -2340,9 +2454,15 @@ export const App: React.FC = () => {
           planName: plan.planNumber,
           planAmount: plan.amount,
           commissionEarned: planCommission,
-          status: 'active'
+          status: 'active',
+          level: 1
         };
         setReferredUsers((prev) => [newRefUser, ...prev]);
+        const orcEarn = getMemberOrcDailyYield(newRefUser);
+        if (orcEarn > 0) {
+          setTotalOrcIncome((prev) => +(prev + orcEarn).toFixed(2));
+          setOrcBalance((prev) => +(prev + orcEarn).toFixed(2));
+        }
       }
 
       showToast(`💰 10% Direct Referral Commission (+$${planCommission.toFixed(2)}) credited to upline (${upline})!`);
@@ -2371,20 +2491,39 @@ export const App: React.FC = () => {
     );
   };
 
-  // Transfer referral income to main wallet
+  // Transfer referral income to main wallet (Withdrawable Balance for Instant Cashout)
   const handleTransferReferralToMainWallet = () => {
     if (referralBalance <= 0) {
-      showToast('⚠️ No referral balance available to transfer!');
+      showToast('⚠️ No referral balance available to send to wallet!');
       return;
     }
     const transferAmt = referralBalance;
-    setTotalBalance((prev) => +(prev + transferAmt).toFixed(2));
-    setAvailableWithdrawal((prev) => +(prev + transferAmt).toFixed(2));
+    const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+    const newTotal = +(totalBalance + transferAmt).toFixed(2);
+
+    setTotalBalance(newTotal);
+    setAvailableWithdrawal(newWithdrawable);
     setReferralBalance(0.0);
 
+    try {
+      localStorage.setItem('neon_referral_balance', '0');
+      localStorage.setItem('neon_available_withdrawal', String(newWithdrawable));
+      localStorage.setItem('neon_total_balance', String(newTotal));
+    } catch (e) {}
+
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, {
+        referralBalance: 0,
+        availableWithdrawal: newWithdrawable,
+        totalBalance: newTotal
+      });
+      nexoraApi.transferReferralToWallet(userName).catch(() => {});
+    }
+
     const newTx: TransactionRecord = {
-      id: `tx_${Date.now()}_transfer`,
-      type: 'Referral Balance Transferred to Main Wallet',
+      id: `tx_${Date.now()}_ref_transfer`,
+      type: 'Referral Balance Sent to Withdrawable Balance',
       amount: transferAmt,
       date: 'Just now',
       status: 'Settled',
@@ -2392,7 +2531,242 @@ export const App: React.FC = () => {
     };
     setTransactions((prev) => [newTx, ...prev]);
 
-    showToast(`🎉 Transferred $${transferAmt.toFixed(2)} USDT from Referral Wallet to Main Wallet!`);
+    showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from Referral Balance to Withdrawable Wallet!`);
+  };
+
+  // Re-invest Referral balance directly into current active plan / mining power
+  const handleReinvestReferralToPlan = () => {
+    if (activeMiningPower <= 0) {
+      showToast('⚠️ No active plan found! Please buy a plan first to re-invest your referral earnings.');
+      return;
+    }
+
+    if (referralBalance <= 0) {
+      showToast('⚠️ No referral balance available to re-invest!');
+      return;
+    }
+
+    const amountToReinvest = referralBalance;
+    const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+
+    setActiveMiningPower(updatedPlanPower);
+    setReferralBalance(0.0);
+    try {
+      localStorage.setItem('neon_referral_balance', '0');
+      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
+    } catch (e) {}
+
+    // Immediately save user profile
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, {
+        activeMiningPower: updatedPlanPower,
+        referralBalance: 0
+      });
+    }
+
+    // Update personal stake in team turnover
+    setTeamTurnover((prev) => {
+      const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+      const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+      const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+      return {
+        ...prev,
+        personalStaked: newPersonal,
+        totalVolume: newTotal,
+        boostedRate: newRate
+      };
+    });
+
+    const newTx: TransactionRecord = {
+      id: `tx_${Date.now()}_ref_reinvest`,
+      type: `Referral Commission Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+      amount: amountToReinvest,
+      date: 'Just now',
+      status: 'Compounded',
+      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..ref_cmp'
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+
+    // Check for automatic tier upgrade on compounding
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+      setAdminUsers((prev) =>
+        prev.map((u) => {
+          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+            return {
+              ...u,
+              stakedAmount: updatedPlanPower,
+              currentPlanName: newPlanName,
+              status: 'active'
+            };
+          }
+          return u;
+        })
+      );
+
+      nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: amountToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'referral'
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(() => {});
+    }
+
+    if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+      showToast(
+        `🚀 AUTO-UPGRADE TRIGGERED! Reinvested referral earnings reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+      );
+    } else {
+      showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from Referral Balance into plan! Active Plan Capital is now $${updatedPlanPower.toFixed(2)} USD.`);
+    }
+  };
+
+  // Transfer ORC income to main wallet (Withdrawable Balance for Instant Cashout)
+  const handleTransferOrcToMainWallet = () => {
+    if (orcBalance <= 0) {
+      showToast('⚠️ No ORC balance available to send to wallet!');
+      return;
+    }
+    const transferAmt = orcBalance;
+    const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+    const newTotal = +(totalBalance + transferAmt).toFixed(2);
+
+    setTotalBalance(newTotal);
+    setAvailableWithdrawal(newWithdrawable);
+    setOrcBalance(0.0);
+
+    try {
+      localStorage.setItem('neon_orc_balance', '0');
+      localStorage.setItem('neon_available_withdrawal', String(newWithdrawable));
+      localStorage.setItem('neon_total_balance', String(newTotal));
+    } catch (e) {}
+
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, {
+        orcBalance: 0,
+        availableWithdrawal: newWithdrawable,
+        totalBalance: newTotal
+      });
+      nexoraApi.transferOrcToWallet(userName).catch(() => {});
+    }
+
+    const newTx: TransactionRecord = {
+      id: `tx_${Date.now()}_orc_transfer`,
+      type: '10-Tier ORC Balance Sent to Withdrawable Balance',
+      amount: transferAmt,
+      date: 'Just now',
+      status: 'Settled',
+      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc'
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+
+    showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from ORC Balance to Withdrawable Wallet!`);
+  };
+
+  // Re-invest ORC balance directly into current active plan / mining power
+  const handleReinvestOrcToPlan = () => {
+    if (activeMiningPower <= 0) {
+      showToast('⚠️ No active plan found! Please buy a plan first to re-invest your ORC.');
+      return;
+    }
+
+    if (orcBalance <= 0) {
+      showToast('⚠️ No ORC balance available to re-invest!');
+      return;
+    }
+
+    const amountToReinvest = orcBalance;
+    const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+
+    setActiveMiningPower(updatedPlanPower);
+    setOrcBalance(0.0);
+    try {
+      localStorage.setItem('neon_orc_balance', '0');
+      localStorage.setItem('neon_mining_power', String(updatedPlanPower));
+    } catch (e) {}
+
+    // Immediately save user profile
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      saveUserSavedData(cleanId, {
+        activeMiningPower: updatedPlanPower,
+        orcBalance: 0
+      });
+    }
+
+    // Update personal stake in team turnover
+    setTeamTurnover((prev) => {
+      const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+      const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+      const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+      return {
+        ...prev,
+        personalStaked: newPersonal,
+        totalVolume: newTotal,
+        boostedRate: newRate
+      };
+    });
+
+    const newTx: TransactionRecord = {
+      id: `tx_${Date.now()}_orc_reinvest`,
+      type: `ORC Royalty Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+      amount: amountToReinvest,
+      date: 'Just now',
+      status: 'Compounded',
+      txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc_cmp'
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+
+    // Check for automatic tier upgrade on compounding
+    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+
+    if (userName) {
+      const cleanId = userName.toUpperCase();
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+      setAdminUsers((prev) =>
+        prev.map((u) => {
+          if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+            return {
+              ...u,
+              stakedAmount: updatedPlanPower,
+              currentPlanName: newPlanName,
+              status: 'active'
+            };
+          }
+          return u;
+        })
+      );
+
+      nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: amountToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'orc'
+      }).then(() => {
+        fetchLiveAdminUsers();
+      }).catch(() => {});
+    }
+
+    if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+      showToast(
+        `🚀 AUTO-UPGRADE TRIGGERED! Reinvested ORC reached $${updatedPlanPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+      );
+    } else {
+      showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from ORC into plan! Active Plan Capital is now $${updatedPlanPower.toFixed(2)} USD.`);
+    }
   };
 
   // Dashboard Upgrade Plan Click Handler
@@ -2492,7 +2866,8 @@ export const App: React.FC = () => {
         newPower: updatedPlanPower,
         upgradedPlanName: newPlanName,
         yieldAmount: yieldToReinvest,
-        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'yield'
       }).then(() => {
         fetchLiveAdminUsers();
       }).catch(() => {});
@@ -3267,21 +3642,42 @@ export const App: React.FC = () => {
       0
     );
 
+    const orcInc = Number(
+      (walletData as any)?.totalOrcIncome ??
+      (walletData as any)?.total_orc_income ??
+      savedData?.totalOrcIncome ??
+      0
+    );
+
+    const orcBal = Number(
+      (walletData as any)?.orcBalance ??
+      (walletData as any)?.orc_balance ??
+      savedData?.orcBalance ??
+      0
+    );
+
     if (activePower > 0) {
       setActiveMiningPower(activePower);
       try {
         localStorage.setItem('neon_mining_power', String(activePower));
       } catch (e) {}
     }
-    if (depBal > 0) {
+    if (walletData) {
       setDepositBalance(depBal);
-    }
-    if (withBal > 0) {
       setAvailableWithdrawal(withBal);
-    }
-    if (refBal > 0) {
       setReferralBalance(refBal);
       setReferralIncome(refBal);
+      setTotalOrcIncome(orcInc);
+      setOrcBalance(orcBal);
+    } else {
+      if (depBal > 0) setDepositBalance(depBal);
+      if (withBal > 0) setAvailableWithdrawal(withBal);
+      if (refBal > 0) {
+        setReferralBalance(refBal);
+        setReferralIncome(refBal);
+      }
+      if (orcInc > 0) setTotalOrcIncome(orcInc);
+      if (orcBal > 0) setOrcBalance(orcBal);
     }
     if (minedYield > 0) {
       setTotalRewards(minedYield);
@@ -3618,7 +4014,7 @@ export const App: React.FC = () => {
                 onNavigate={(sec) => {
                   if (sec === 'Mining Plans') navigateTo('plans');
                   else if (sec === 'Calculator') navigateTo('calculator');
-                  else if (sec === 'Referral') navigateTo('referral');
+                  else if (sec === 'Referral' || sec === 'Team') navigateTo('referral');
                   else if (sec === 'Dashboard') navigateTo('dashboard');
                   else if (sec === 'FAQ') navigateTo('faq');
                   else if (sec === 'Contact') navigateTo('contact');
@@ -3867,11 +4263,11 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Box 4: Total Referral Income / Affiliate Downline Commissions */}
+                    {/* Box 4: Total Referral Income / Available Balance */}
                     <div className="p-4 rounded-2xl bg-[#081220] border border-[#10B981]/40 shadow-md hover:border-[#10B981]/70 transition-all">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#94A3B8]">
-                          Referral Income
+                          Referral Balance
                         </span>
                         <div className="w-7 h-7 rounded-lg bg-[#10B981]/15 flex items-center justify-center text-[#10B981]">
                           <Gift className="w-3.5 h-3.5" />
@@ -3879,13 +4275,13 @@ export const App: React.FC = () => {
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-[20px] lg:text-[22px] font-black text-[#10B981] font-mono">
-                          ${referralIncome.toFixed(2)}
+                          ${referralBalance.toFixed(2)}
                         </span>
                         <span className="text-[11px] font-bold text-[#10B981]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">3 Levels</span>
-                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Commission</span>
+                        <span className="text-[10px] text-[#94A3B8]">Tier 1-3</span>
+                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Earned</span>
                       </div>
                     </div>
 
@@ -3934,6 +4330,70 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* 3. 2-Card ORC Metric Boxes (Total ORC and ORC Balance) */}
+                  <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                    {/* Box 1: Total ORC */}
+                    <div className="p-4 rounded-2xl bg-[#081220] border border-[#00F0FF]/30 shadow-md hover:border-[#00F0FF]/60 transition-all">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#00F0FF] truncate">
+                            Total ORC
+                          </span>
+                          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/25">
+                            10 Levels
+                          </span>
+                        </div>
+                        <div className="w-7 h-7 rounded-lg bg-[#00F0FF]/10 flex items-center justify-center text-[#00F0FF] shrink-0">
+                          <Zap className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-[20px] lg:text-[22px] font-black text-[#00F0FF] font-mono">
+                          ${totalOrcIncome.toFixed(2)}
+                        </span>
+                        <span className="text-[11px] font-bold text-[#00F0FF]">USDT</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
+                        <span className="text-[10px] text-[#94A3B8] truncate">Lifetime Yield</span>
+                        <button
+                          type="button"
+                          onClick={() => openTeamSubTab('orc')}
+                          className="text-[10px] text-[#00F0FF] hover:underline font-mono font-bold flex items-center gap-0.5 cursor-pointer shrink-0"
+                        >
+                          <span>10 Tiers</span>
+                          <span>→</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Box 2: ORC Balance */}
+                    <div className="p-4 rounded-2xl bg-[#081220] border border-[#10B981]/30 shadow-md hover:border-[#10B981]/60 transition-all">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#10B981] truncate">
+                            ORC Balance
+                          </span>
+                          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/25">
+                            Claimable
+                          </span>
+                        </div>
+                        <div className="w-7 h-7 rounded-lg bg-[#10B981]/10 flex items-center justify-center text-[#10B981] shrink-0">
+                          <Coins className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-[20px] lg:text-[22px] font-black text-[#10B981] font-mono">
+                          ${orcBalance.toFixed(2)}
+                        </span>
+                        <span className="text-[11px] font-bold text-[#10B981]">USDT</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
+                        <span className="text-[10px] text-[#94A3B8]">10 Tiers</span>
+                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Earned</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* 5. Complete On-Chain Transaction Statement (The Ledger!) */}
                   <div className="p-4 lg:p-6 rounded-2xl bg-[#08101E] border border-[#182C48] shadow-xl space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#142338]">
@@ -3959,6 +4419,7 @@ export const App: React.FC = () => {
                             { id: 'mining', label: 'Mining Yields' },
                             { id: 'deposit', label: 'Deposits' },
                             { id: 'referral', label: 'Referrals' },
+                            { id: 'orc', label: 'ORC Royalty' },
                             { id: 'withdraw', label: 'Withdrawals' }
                           ] as const
                         ).map((tab) => {
@@ -3987,6 +4448,7 @@ export const App: React.FC = () => {
                         if (walletTxFilter === 'mining') return tx.type.toLowerCase().includes('mining') || tx.type.toLowerCase().includes('compound') || tx.type.toLowerCase().includes('reinvest');
                         if (walletTxFilter === 'deposit') return tx.type.toLowerCase().includes('deposit') || tx.type.toLowerCase().includes('bep-20');
                         if (walletTxFilter === 'referral') return tx.type.toLowerCase().includes('referral');
+                        if (walletTxFilter === 'orc') return tx.type.toLowerCase().includes('orc');
                         if (walletTxFilter === 'withdraw') return tx.type.toLowerCase().includes('withdraw') || tx.type.toLowerCase().includes('payout');
                         return true;
                       });
@@ -4094,32 +4556,158 @@ export const App: React.FC = () => {
               )}
           </div>
 
-          {/* SCREEN 6: REFERRAL NETWORK */}
-          <div className={activeRoute === 'referral' ? 'space-y-4 animate-fadeIn' : 'hidden'}>
+          {/* SCREEN 6: TEAM & DOWNLINE NETWORK */}
+          <div className={activeRoute === 'referral' ? 'space-y-6 animate-fadeIn' : 'hidden'}>
             {!isLoggedIn ? (
               renderAuthBarrier(
-                'Referral Network Locked',
-                'Please sign in to generate your affiliate link, view multi-tier downline structure, track team turnover, and collect referral rewards.',
-                'Affiliate Portal'
+                'Team Network Locked',
+                'Please sign in to generate your affiliate link, view multi-tier downline structure, track team turnover, and collect team rewards.',
+                'Team Portal'
               )
+            ) : activeTeamTab === 'select' ? (
+              <div className="py-2 animate-fadeIn space-y-3">
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleBackFromTeamSelect}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0B1424] hover:bg-[#0F1D33] border border-[#192A44] hover:border-[#00F0FF]/50 text-[#CBD5E1] hover:text-[#00F0FF] text-[12px] font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 text-[#00F0FF]" />
+                    <span>← Back</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
+                  {/* Card 1: Referral */}
+                  <button
+                    type="button"
+                    onClick={() => openTeamSubTab('referral')}
+                    className="relative p-5 sm:p-6 rounded-2xl bg-[#0B1424] hover:bg-[#0E1A2E] border border-[#192A44] hover:border-[#00F0FF]/80 shadow-xl hover:shadow-[0_0_25px_rgba(0,240,255,0.2)] transition-all cursor-pointer group flex flex-col justify-between text-left active:scale-[0.98]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-[#00F0FF]/10 border border-[#00F0FF]/25 flex items-center justify-center text-[#00F0FF] group-hover:scale-105 group-hover:bg-[#00F0FF]/20 transition-all shadow-[0_0_12px_rgba(0,240,255,0.2)]">
+                          <Users className="w-6 h-6" />
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30">
+                          3 Tiers
+                        </span>
+                      </div>
+
+                      <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-[#00F0FF] transition-colors">
+                        Referral
+                      </h3>
+                      <p className="text-[12px] font-bold text-[#00F0FF] tracking-wide mt-1">
+                        Direct Stake Bonus · 10% · 5% · 2%
+                      </p>
+                      <p className="text-[12.5px] text-[#94A3B8] leading-relaxed mt-2.5">
+                        Earn instant affiliate commissions whenever your 3-tier downline activates or upgrades mining rigs.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 mt-5 border-t border-[#152438] flex items-center justify-between">
+                      <span className="text-[11.5px] font-mono text-[#64748B]">
+                        Sponsor Network
+                      </span>
+                      <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021020] font-black text-[11.5px] flex items-center gap-1.5 shadow-[0_0_12px_rgba(0,240,255,0.25)] group-hover:brightness-110 transition-all">
+                        <span>Open Referral</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Card 2: ORC */}
+                  <button
+                    type="button"
+                    onClick={() => openTeamSubTab('orc')}
+                    className="relative p-5 sm:p-6 rounded-2xl bg-[#0B1424] hover:bg-[#0E1A2E] border border-[#192A44] hover:border-[#00F0FF]/80 shadow-xl hover:shadow-[0_0_25px_rgba(0,240,255,0.2)] transition-all cursor-pointer group flex flex-col justify-between text-left active:scale-[0.98]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-[#00F0FF]/10 border border-[#00F0FF]/25 flex items-center justify-center text-[#00F0FF] group-hover:scale-105 group-hover:bg-[#00F0FF]/20 transition-all shadow-[0_0_12px_rgba(0,240,255,0.2)]">
+                          <Zap className="w-6 h-6" />
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30">
+                          10 Levels
+                        </span>
+                      </div>
+
+                      <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-[#00F0FF] transition-colors">
+                        ORC
+                      </h3>
+                      <p className="text-[12px] font-bold text-[#00F0FF] tracking-wide mt-1">
+                        Daily Yield Royalty · 5% · 3% · 2% · 1%
+                      </p>
+                      <p className="text-[12.5px] text-[#94A3B8] leading-relaxed mt-2.5">
+                        Earn passive daily royalties calculated directly from your 10-tier team's mined yield every 24 hours.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 mt-5 border-t border-[#152438] flex items-center justify-between">
+                      <span className="text-[11.5px] font-mono text-[#64748B]">
+                        Royalty Engine
+                      </span>
+                      <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021020] font-black text-[11.5px] flex items-center gap-1.5 shadow-[0_0_12px_rgba(0,240,255,0.25)] group-hover:brightness-110 transition-all">
+                        <span>Open ORC</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            ) : activeTeamTab === 'referral' ? (
+              <div className="space-y-4 animate-fadeIn">
+                <button
+                  type="button"
+                  onClick={handleBackFromTeamSubTab}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0B1424] hover:bg-[#0F1D33] border border-[#192A44] hover:border-[#00F0FF]/50 text-[#CBD5E1] hover:text-[#00F0FF] text-[12px] font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <ArrowLeft className="w-4 h-4 text-[#00F0FF]" />
+                  <span>← Back to Team</span>
+                </button>
+
+                <ReferralNetworkSection
+                  referralLink={activeMiningPower > 0 ? `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}` : ''}
+                  isAccountActive={activeMiningPower > 0}
+                  onCopyReferral={() => {
+                    if (activeMiningPower <= 0) {
+                      showToast('⚠️ Referral link locked! Please activate any mining plan ($20+) to unlock sharing.');
+                      return;
+                    }
+                    const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`;
+                    navigator.clipboard?.writeText(link);
+                    showToast('✓ Referral link copied to clipboard!');
+                  }}
+                  referralIncome={referralIncome}
+                  referralBalance={referralBalance}
+                  onSendReferralToWallet={handleTransferReferralToMainWallet}
+                  onReinvestReferralToPlan={handleReinvestReferralToPlan}
+                  referredUsers={referredUsers}
+                  myStake={activeMiningPower}
+                  teamTurnover={teamTurnover}
+                />
+              </div>
             ) : (
-              <ReferralNetworkSection
-                referralLink={activeMiningPower > 0 ? `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}` : ''}
-                isAccountActive={activeMiningPower > 0}
-                onCopyReferral={() => {
-                  if (activeMiningPower <= 0) {
-                    showToast('⚠️ Referral link locked! Please activate any mining plan ($20+) to unlock sharing.');
-                    return;
-                  }
-                  const link = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.neoncryptomining.com'}?ref=${(userReferralCode || userName).toUpperCase()}`;
-                  navigator.clipboard?.writeText(link);
-                  showToast('✓ Referral link copied to clipboard!');
-                }}
-                referralIncome={referralIncome}
-                referredUsers={referredUsers}
-                myStake={activeMiningPower}
-                teamTurnover={teamTurnover}
-              />
+              <div className="space-y-4 animate-fadeIn">
+                <button
+                  type="button"
+                  onClick={handleBackFromTeamSubTab}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0B1424] hover:bg-[#0F1D33] border border-[#192A44] hover:border-[#00F0FF]/50 text-[#CBD5E1] hover:text-[#00F0FF] text-[12px] font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <ArrowLeft className="w-4 h-4 text-[#00F0FF]" />
+                  <span>← Back to Team</span>
+                </button>
+
+                <OrcCommissionSection
+                  referredUsers={referredUsers}
+                  myStake={activeMiningPower}
+                  userName={userName}
+                  orcBalance={orcBalance}
+                  totalOrcIncome={totalOrcIncome}
+                  onSendOrcToWallet={handleTransferOrcToMainWallet}
+                  onReinvestOrcToPlan={handleReinvestOrcToPlan}
+                />
+              </div>
             )}
           </div>
 
@@ -4390,6 +4978,8 @@ export const App: React.FC = () => {
               setTotalRewards(0);
               setReferralIncome(0);
               setReferralBalance(0);
+              setTotalOrcIncome(0);
+              setOrcBalance(0);
               setYesterdaysIncome(0);
               setAvailableWithdrawal(0);
               setIsMiningActive(false);

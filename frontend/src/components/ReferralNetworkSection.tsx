@@ -5,7 +5,10 @@ import {
   Users,
   Clock,
   Layers,
-  Lock
+  Lock,
+  Gift,
+  ArrowUpRight,
+  Repeat
 } from 'lucide-react';
 import { ReferredUserItem, TeamTurnover } from '../types/mining';
 
@@ -14,6 +17,9 @@ interface Props {
   isAccountActive?: boolean;
   onCopyReferral: () => void;
   referralIncome?: number;
+  referralBalance?: number;
+  onSendReferralToWallet?: () => void;
+  onReinvestReferralToPlan?: () => void;
   referredUsers?: ReferredUserItem[];
   myStake?: number;
   teamTurnover?: TeamTurnover;
@@ -24,6 +30,9 @@ export const ReferralNetworkSection: React.FC<Props> = ({
   isAccountActive = true,
   onCopyReferral,
   referralIncome = 0.0,
+  referralBalance = 0.0,
+  onSendReferralToWallet,
+  onReinvestReferralToPlan,
   referredUsers = [],
   myStake = 0,
   teamTurnover
@@ -73,6 +82,24 @@ export const ReferralNetworkSection: React.FC<Props> = ({
     return true;
   });
 
+  // Calculate each member's own team size (downline count)
+  const getMemberTeamSize = (user: ReferredUserItem): number => {
+    if (typeof user.teamSize === 'number' && user.teamSize > 0) {
+      return user.teamSize;
+    }
+    const directSubs = referredUsers.filter((u) => {
+      if (!u.invitedBy) return false;
+      const inv = u.invitedBy.toUpperCase();
+      return (
+        inv === user.id.toUpperCase() ||
+        (user.name && inv === user.name.toUpperCase()) ||
+        (user.level === 1 && u.level === 2 && inv.includes('L1')) ||
+        (user.level === 2 && u.level === 3 && inv.includes('L2'))
+      );
+    }).length;
+    return Math.max(user.teamSize || 0, directSubs);
+  };
+
   return (
     <section className="w-full px-3.5 lg:px-0 space-y-6">
       {/* Header with Referral Balance KPI Badge */}
@@ -80,16 +107,97 @@ export const ReferralNetworkSection: React.FC<Props> = ({
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-[10.5px] font-bold text-[#00F0FF] uppercase tracking-wider mb-2">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Affiliate Protocol · 3 Tiers</span>
+            <span>Team Protocol · 3 Tiers</span>
           </div>
           <h2 className="text-[22px] lg:text-[28px] font-bold text-[#F8FAFC]">
-            Referral Network & Downline Hub
+            Team Network & Downline Hub
           </h2>
           <p className="mt-0.5 text-[12px] lg:text-[14px] text-[#94A3B8] max-w-2xl leading-relaxed">
             Share your unique referral link to unlock 3-tier perpetual commission: 10% on direct sponsors, 5% on team referrals, and 2% on network expansion.
           </p>
         </div>
 
+      </div>
+
+      {/* ── REFERRAL BALANCE & FINANCIAL ACTIONS (SEND TO WALLET / RE-INVEST) ── */}
+      <div className="rounded-2xl bg-gradient-to-br from-[#081324] via-[#0B1A30] to-[#081220] border border-[#10B981]/35 p-4 sm:p-5 shadow-xl relative overflow-hidden">
+        <div className="absolute -top-10 -right-10 w-44 h-44 bg-[#10B981]/10 rounded-full blur-2xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Balance Block */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 border border-[#10B981]/30 flex items-center justify-center text-[#10B981]">
+                <Gift className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#94A3B8] block">
+                  Available Referral Commission
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[26px] sm:text-[30px] font-black font-mono text-white tracking-tight">
+                    ${referralBalance.toFixed(2)}
+                  </span>
+                  <span className="text-[12px] font-bold text-[#10B981]">USDT</span>
+                  <span className="ml-2 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 font-bold">
+                    Claimable
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1 text-[11px] text-[#94A3B8]">
+              <span>
+                Lifetime Earned: <strong className="text-white font-mono">${referralIncome.toFixed(2)}</strong>
+              </span>
+              <span>•</span>
+              <span>
+                3-Tier Team: <strong className="text-[#00F0FF] font-mono">{referredUsers.length} Miners</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons (Send to Wallet & Re-invest) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0">
+            {/* Button 1: Send to Wallet */}
+            <button
+              type="button"
+              onClick={onSendReferralToWallet}
+              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 ${
+                referralBalance > 0
+                  ? 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#021020] shadow-[0_0_20px_rgba(0,240,255,0.35)] border border-[#00F0FF]'
+                  : 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] hover:text-[#94A3B8]'
+              }`}
+            >
+              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+              <span>Send to Wallet</span>
+            </button>
+
+            {/* Button 2: Re-invest into Plan */}
+            <button
+              type="button"
+              onClick={onReinvestReferralToPlan}
+              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 ${
+                referralBalance > 0 && myStake > 0
+                  ? 'bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-110 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-[#10B981]'
+                  : 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] hover:text-[#94A3B8]'
+              }`}
+            >
+              <Repeat className="w-4 h-4 stroke-[2.5]" />
+              <span>Re-invest in Plan</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Explanatory Footer */}
+        <div className="mt-3 pt-2.5 border-t border-[#122338] flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10.5px] text-[#64748B]">
+          <span>
+            💡 <strong className="text-[#94A3B8]">Send to Wallet</strong> credits your Withdrawable Balance for instant payout.
+          </span>
+          <span>
+            ⚡ <strong className="text-[#94A3B8]">Re-invest</strong> adds to your active plan capital (${myStake.toFixed(2)}) to compound daily hashing returns!
+          </span>
+        </div>
       </div>
 
       {/* ── CARD 1: AFFILIATE LINK & ONE-TAP SHARING ── */}
@@ -324,9 +432,6 @@ export const ReferralNetworkSection: React.FC<Props> = ({
         const effectiveMyStake = Number(myStake) || (teamTurnover?.personalStaked ? Number(teamTurnover.personalStaked) : 0);
         const effectiveTeamStake = l1Turnover + l2Turnover + l3Turnover;
         const combinedTotalTurnover = effectiveMyStake + effectiveTeamStake;
-        const currentBoostRate = (effectiveMyStake + l1Turnover) >= 2500 ? 2.5 : (effectiveMyStake + l1Turnover) >= 1000 ? 1.5 : 1.0;
-        const nextTarget = (effectiveMyStake + l1Turnover) >= 1000 ? 2500 : 1000;
-        const progressPercent = Math.min(100, Math.floor(((effectiveMyStake + l1Turnover) / nextTarget) * 100));
 
         return (
           <div className="rounded-2xl bg-gradient-to-r from-[#071324] via-[#0B1C33] to-[#08152A] border border-[#00F0FF]/30 p-4 lg:p-6 shadow-xl space-y-4">
@@ -345,8 +450,8 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10.5px] font-mono text-[#10B981] bg-[#10B981]/15 px-3 py-1 rounded-full border border-[#10B981]/30 font-bold">
-                  Boost Rate: {currentBoostRate.toFixed(1)}% Daily
+                <span className="text-[10.5px] font-mono text-[#00F0FF] bg-[#00F0FF]/15 px-3 py-1 rounded-full border border-[#00F0FF]/30 font-bold">
+                  3-Tier Team Volume
                 </span>
               </div>
             </div>
@@ -389,28 +494,12 @@ export const ReferralNetworkSection: React.FC<Props> = ({
               {/* Card 4: Total Referral Income Earned */}
               <div className="p-3.5 rounded-xl bg-[#050C18] border border-[#142338]">
                 <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider block">
-                  Referral Income
+                  Team Income
                 </span>
                 <div className="text-[20px] font-black text-[#10B981] font-mono mt-1">
                   +${(referralIncome || totalCommissionEarned).toFixed(2)}
                 </div>
                 <span className="text-[9.5px] text-[#94A3B8]">Paid to Wallet</span>
-              </div>
-            </div>
-
-            {/* Turnover Boost Progress Bar */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[#94A3B8]">Turnover Boost Progress:</span>
-                <span className="font-mono font-bold text-[#00F0FF]">
-                  ${(effectiveMyStake + l1Turnover).toFixed(0)} / ${nextTarget} USD ({progressPercent}%)
-                </span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-[#050B14] border border-[#142338] overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-[#0284C7] via-[#00F0FF] to-[#10B981] transition-all duration-500 rounded-full"
-                  style={{ width: `${progressPercent}%` }}
-                />
               </div>
             </div>
           </div>
@@ -561,7 +650,7 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                       <th className="py-3 px-4">Invited By (Sponsor)</th>
                       <th className="py-3 px-4">Mining Plan</th>
                       <th className="py-3 px-4 text-right">Your Commission</th>
-                      <th className="py-3 px-4">Joined Date</th>
+                      <th className="py-3 px-4">Team Size</th>
                       <th className="py-3 px-4 text-center">Status</th>
                     </tr>
                   </thead>
@@ -609,8 +698,11 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                             </span>
                             <div className="text-[9.5px] text-[#64748B]">USDT</div>
                           </td>
-                          <td className="py-3 px-4 text-[#94A3B8] font-mono text-[11px]">
-                            {user.registeredAt ? user.registeredAt.split(' ')[0] : '—'}
+                          <td className="py-3 px-4 text-[#00F0FF] font-mono text-[11px] font-bold">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#00F0FF]/10 border border-[#00F0FF]/25">
+                              <Users className="w-3 h-3 text-[#00F0FF]" />
+                              {getMemberTeamSize(user)} {getMemberTeamSize(user) === 1 ? 'Member' : 'Members'}
+                            </span>
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
@@ -670,9 +762,12 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1 border-t border-[#132238]">
+                      <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1.5 border-t border-[#132238]">
                         <span>Sponsor: <strong className="text-[#94A3B8]">{user.invitedBy || 'Direct'}</strong></span>
-                        <span>Date: {user.registeredAt ? user.registeredAt.split(' ')[0] : '—'}</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#00F0FF]/10 border border-[#00F0FF]/25 text-[#00F0FF] font-mono font-bold text-[10px]">
+                          <Users className="w-3 h-3 text-[#00F0FF]" />
+                          Team: {getMemberTeamSize(user)} {getMemberTeamSize(user) === 1 ? 'Member' : 'Members'}
+                        </span>
                       </div>
                     </div>
                   );

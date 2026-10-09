@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS wallets (
   total_withdrawn REAL DEFAULT 0.0,          -- Total historical settled payouts
   total_mined_yield REAL DEFAULT 0.0,        -- Total historical mined rewards
   unclaimed_yield REAL DEFAULT 0.0,          -- Unlocked 24H cycle yield pending claim/reinvest
+  orc_balance REAL DEFAULT 0.0,              -- Available 10-tier Over-Ride Commission balance
+  total_orc_income REAL DEFAULT 0.0,         -- Lifetime 10-tier Over-Ride Commission earnings
   mining_cycle_started_at INTEGER DEFAULT 0, -- Unix ms timestamp when current 24H cycle started
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

@@ -15,7 +15,11 @@ import {
   Sparkles,
   Building2,
   UserCheck,
-  TrendingUp
+  TrendingUp,
+  Crown,
+  Layers,
+  Coins,
+  Repeat
 } from 'lucide-react';
 
 export const AboutNeonSection: React.FC = () => {
@@ -289,40 +293,60 @@ export const AboutNeonSection: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Campus 1: Reykjavik, Iceland */}
           <div className="p-3.5 rounded-xl bg-[#040812] border border-[#122033] space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">Reykjavik Campus</span>
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🇮🇸</span>
+                <span>Reykjavik Campus</span>
+              </span>
               <span className="text-[10px] text-cyan-400 font-mono font-bold">Iceland</span>
             </div>
             <span className="text-[10.5px] text-emerald-400 font-semibold block">100% Geothermal Energy</span>
-            <p className="text-[11px] text-gray-400">Sub-arctic ambient air cooling. PUE 1.02. Zero carbon emission baseline.</p>
+            <div className="text-[10.5px] font-mono text-cyan-300">3,840 Units · 24.2 EH/s</div>
+            <p className="text-[11px] text-gray-400">Sub-Zero Liquid Immersion (18.4°C). Zero-carbon baseload geothermal power.</p>
           </div>
 
+          {/* Campus 2: Stavanger, Norway */}
           <div className="p-3.5 rounded-xl bg-[#040812] border border-[#122033] space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">Luleå Hydro Farm</span>
-              <span className="text-[10px] text-cyan-400 font-mono font-bold">Sweden</span>
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🇳🇴</span>
+                <span>Stavanger Campus</span>
+              </span>
+              <span className="text-[10px] text-cyan-400 font-mono font-bold">Norway</span>
             </div>
-            <span className="text-[10.5px] text-emerald-400 font-semibold block">Lule River Hydroelectric</span>
-            <p className="text-[11px] text-gray-400">High-density liquid immersion containers with 99.99% substation uptime.</p>
+            <span className="text-[10.5px] text-emerald-400 font-semibold block">Hydro-Electric Alpine</span>
+            <div className="text-[10.5px] font-mono text-cyan-300">4,120 Units · 28.6 EH/s</div>
+            <p className="text-[11px] text-gray-400">Hydro-Loop Radiator (19.1°C). Alpine hydroelectric with 99.99% substation uptime.</p>
           </div>
 
+          {/* Campus 3: Austin, Texas, USA */}
           <div className="p-3.5 rounded-xl bg-[#040812] border border-[#122033] space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">Permian Energy Hub</span>
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🇺🇸</span>
+                <span>Austin Campus</span>
+              </span>
               <span className="text-[10px] text-cyan-400 font-mono font-bold">Texas, USA</span>
             </div>
-            <span className="text-[10.5px] text-emerald-400 font-semibold block">Solar + Wind Hybrid</span>
-            <p className="text-[11px] text-gray-400">350MW direct grid substation with intelligent ERCOT curtailment automation.</p>
+            <span className="text-[10.5px] text-emerald-400 font-semibold block">Direct Solar Microgrid</span>
+            <div className="text-[10.5px] font-mono text-cyan-300">4,650 Units · 31.4 EH/s</div>
+            <p className="text-[11px] text-gray-400">Two-Phase Immersion Tank (21.5°C). 350MW substation with intelligent ERCOT automation.</p>
           </div>
 
+          {/* Campus 4: Quebec Hydro Hub, Canada */}
           <div className="p-3.5 rounded-xl bg-[#040812] border border-[#122033] space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">St. Lawrence Cluster</span>
-              <span className="text-[10px] text-cyan-400 font-mono font-bold">Quebec, CA</span>
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🇨🇦</span>
+                <span>Quebec Hydro Hub</span>
+              </span>
+              <span className="text-[10px] text-cyan-400 font-mono font-bold">Canada</span>
             </div>
-            <span className="text-[10.5px] text-emerald-400 font-semibold block">Hydro-Québec Renewable</span>
-            <p className="text-[11px] text-gray-400">Ultra-low industrial electricity tariff locking maximum long-term miner yield.</p>
+            <span className="text-[10.5px] text-emerald-400 font-semibold block">James Bay Hydroelectric</span>
+            <div className="text-[10.5px] font-mono text-cyan-300">2,940 Units · 19.4 EH/s</div>
+            <p className="text-[11px] text-gray-400">Sub-Zero Ambient Air Exchanger (14.2°C). Low-cost industrial clean hydro power.</p>
           </div>
         </div>
       </div>
@@ -389,6 +413,142 @@ export const AboutNeonSection: React.FC = () => {
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] block mb-1">Level 3</span>
             <span className="text-xl sm:text-2xl font-black text-purple-400 font-mono leading-none">2%</span>
             <span className="text-[10px] text-purple-200 block mt-1 font-medium">Network Community</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ===================== 7. 10-TIER OVER-RIDE COMMISSION (ORC) & ROYALTY PROTOCOL ===================== */}
+      <div className="rounded-2xl bg-[#070E1B] border border-[#14233C] p-4 sm:p-5 space-y-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#14233C]/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#0E1A2E] border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Crown className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>10-Tier Over-Ride Commission (ORC) & Royalty Protocol</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9.5px] font-black uppercase tracking-wider hidden xs:inline-block">
+                  Daily Yield Royalty
+                </span>
+              </h4>
+              <p className="text-[10.5px] text-[#64748B]">Earn passive daily royalties directly from downline mining yields across 10 affiliate tiers</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 text-[10px] font-mono font-bold self-start sm:self-auto">
+            10 Deep Tiers
+          </span>
+        </div>
+
+        {/* 10-Tier Grid Breakdown */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+              Daily Mining Yield Override Distribution
+            </span>
+            <span className="text-[10px] text-[#64748B]">Recurring every 24h</span>
+          </div>
+
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 sm:gap-2">
+            {[
+              { level: 'L1', rate: '5%', color: 'amber', desc: 'Direct' },
+              { level: 'L2', rate: '3%', color: 'cyan', desc: 'Tier 2' },
+              { level: 'L3', rate: '2%', color: 'blue', desc: 'Tier 3' },
+              { level: 'L4', rate: '1%', color: 'purple', desc: 'Tier 4' },
+              { level: 'L5', rate: '1%', color: 'purple', desc: 'Tier 5' },
+              { level: 'L6', rate: '1%', color: 'purple', desc: 'Tier 6' },
+              { level: 'L7', rate: '1%', color: 'purple', desc: 'Tier 7' },
+              { level: 'L8', rate: '1%', color: 'purple', desc: 'Tier 8' },
+              { level: 'L9', rate: '1%', color: 'purple', desc: 'Tier 9' },
+              { level: 'L10', rate: '1%', color: 'purple', desc: 'Tier 10' },
+            ].map((item, idx) => (
+              <div
+                key={idx}
+                className={`rounded-xl bg-[#040812] border p-2 text-center transition-all ${
+                  item.color === 'amber'
+                    ? 'border-amber-500/40 bg-amber-500/5'
+                    : item.color === 'cyan'
+                    ? 'border-cyan-500/35 bg-cyan-500/5'
+                    : item.color === 'blue'
+                    ? 'border-blue-500/35 bg-blue-500/5'
+                    : 'border-[#14233C] hover:border-purple-500/30'
+                }`}
+              >
+                <span className="text-[9.5px] font-bold text-[#64748B] block uppercase tracking-wider">{item.level}</span>
+                <span className={`text-base sm:text-lg font-black font-mono leading-tight block my-0.5 ${
+                  item.color === 'amber'
+                    ? 'text-amber-400'
+                    : item.color === 'cyan'
+                    ? 'text-cyan-400'
+                    : item.color === 'blue'
+                    ? 'text-blue-400'
+                    : 'text-purple-300'
+                }`}>
+                  {item.rate}
+                </span>
+                <span className="text-[8.5px] text-[#94A3B8] block truncate">{item.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 2 Feature Cards: Profit-Sharing Milestones & Dual Liquid Flow */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+          {/* Card 1: Company Net Profit Royalty Milestones */}
+          <div className="p-3.5 rounded-xl bg-[#040812] border border-amber-500/20 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-md bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                <Coins className="w-3.5 h-3.5" />
+              </div>
+              <h5 className="text-xs font-bold text-white">Company Net Profit Royalty Pools</h5>
+            </div>
+            <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+              Achieve total team turnover milestones to unlock platform-level revenue sharing distributed equally among qualifying community leaders:
+            </p>
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#070E1B] border border-[#14233C] text-[10.5px]">
+                <span className="text-[#94A3B8] font-medium">$50,000 Team Turnover</span>
+                <span className="text-emerald-400 font-bold font-mono">5% Profit Pool</span>
+              </div>
+              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#070E1B] border border-[#14233C] text-[10.5px]">
+                <span className="text-[#94A3B8] font-medium">$100,000 Team Turnover</span>
+                <span className="text-amber-300 font-bold font-mono">3% Profit Pool</span>
+              </div>
+              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#070E1B] border border-[#14233C] text-[10.5px]">
+                <span className="text-[#94A3B8] font-medium">$200,000 Team Turnover</span>
+                <span className="text-amber-400 font-bold font-mono">2% Profit Pool</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Send to Wallet vs Re-invest Choice */}
+          <div className="p-3.5 rounded-xl bg-[#040812] border border-cyan-500/20 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-md bg-cyan-500/15 text-cyan-400 flex items-center justify-center">
+                <Repeat className="w-3.5 h-3.5" />
+              </div>
+              <h5 className="text-xs font-bold text-white">Dual Action Flexibility: Wallet or Re-invest</h5>
+            </div>
+            <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+              All earned Over-Ride Commissions (ORC) are kept in your dedicated ORC balance. You have full autonomous control with zero lock-in:
+            </p>
+            <div className="space-y-1.5 pt-1">
+              <div className="p-2 rounded-lg bg-[#070E1B] border border-cyan-500/25 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0" />
+                <div className="text-[10.5px]">
+                  <strong className="text-cyan-300 font-semibold">Send to Wallet:</strong>
+                  <span className="text-[#94A3B8] ml-1">Instantly transfers 100% of ORC funds to your withdrawable balance with $0 fees for immediate crypto cashout.</span>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-[#070E1B] border border-emerald-500/25 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                <div className="text-[10.5px]">
+                  <strong className="text-emerald-300 font-semibold">Re-invest in Plan:</strong>
+                  <span className="text-[#94A3B8] ml-1">Compounds your mining power directly into your active contract, auto-upgrading your plan tier and boosting daily yield.</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

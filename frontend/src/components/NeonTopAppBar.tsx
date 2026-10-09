@@ -28,7 +28,7 @@ const DESKTOP_NAV_ITEMS: { route: NavRoute; key: string; label: string }[] = [
   { route: 'calculator', key: 'calculator', label: 'Calculator' },
   { route: 'dashboard', key: 'dashboard', label: 'Dashboard' },
   { route: 'wallet', key: 'wallet', label: 'Wallet' },
-  { route: 'referral', key: 'referral', label: 'Referral' },
+  { route: 'referral', key: 'team', label: 'Team' },
   { route: 'about', key: 'about', label: 'Protocol' },
   { route: 'faq', key: 'faq', label: 'FAQ' },
   { route: 'contact', key: 'contact', label: 'Support' }

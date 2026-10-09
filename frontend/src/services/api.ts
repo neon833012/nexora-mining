@@ -305,6 +305,7 @@ class NeonApiService {
     upgradedPlanName: string;
     yieldAmount: number;
     dailyRatePercent?: number;
+    source?: 'yield' | 'referral' | 'orc';
   }) {
     try {
       const res = await fetch(`${this.baseUrl}/api/plans/reinvest-upgrade`, {
@@ -324,6 +325,45 @@ class NeonApiService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params)
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async transferReferralToWallet(userId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/wallet/transfer-referral-to-wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async transferOrcToWallet(userId: string) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/wallet/transfer-orc-to-wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async syncUserData(userId: string, data: any) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/wallet/sync-user-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, data })
       });
       return await res.json();
     } catch (err: any) {

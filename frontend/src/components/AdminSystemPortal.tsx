@@ -120,7 +120,6 @@ type AdminTab =
   | 'deposits'
   | 'p2p'
   | 'withdrawals'
-  | 'treasury'
   | 'support'
   | 'subadmins'
   | 'settings';
@@ -2003,7 +2002,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
     { id: 'deposits', label: 'Deposits', icon: ArrowDownCircle, badge: newDepositsCount > 0 ? newDepositsCount : null, alert: newDepositsCount > 0, category: 'Finance' },
     { id: 'p2p', label: 'P2P Transfers', icon: ArrowLeftRight, badge: newP2pCount > 0 ? newP2pCount : null, alert: newP2pCount > 0, category: 'Finance' },
     { id: 'withdrawals', label: 'Withdrawals', icon: ArrowUpRight, badge: newWithdrawalsCount > 0 ? newWithdrawalsCount : null, alert: newWithdrawalsCount > 0, category: 'Finance' },
-    { id: 'treasury', label: 'Treasury', icon: Landmark, badge: null, category: 'Finance' },
     {
       id: 'support',
       label: 'Support Tickets',
@@ -2418,7 +2416,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             return (
               <div key={`cat-${cat}`} className="space-y-1">
                 <span className="px-3 text-[9.5px] font-bold text-[#475569] uppercase tracking-wider block">
-                  {cat === 'Core' ? 'Platform Operations' : cat === 'Finance' ? 'Finance & Treasury' : 'Administration & Rules'}
+                  {cat === 'Core' ? 'Platform Operations' : cat === 'Finance' ? 'Finance & Settlements' : 'Administration & Rules'}
                 </span>
                 {items.map((item) => {
                   const Icon = item.icon;
@@ -2485,7 +2483,6 @@ export const AdminSystemPortal: React.FC<Props> = ({
               {activeTab === 'deposits' && 'Direct Deposits & Plan Purchases Ledger'}
               {activeTab === 'p2p' && 'Autonomous P2P Member Transfers'}
               {activeTab === 'withdrawals' && 'Withdrawal Settlement & Compliance Desk'}
-              {activeTab === 'treasury' && 'Platform Treasury & Cold Vault Reserves'}
               {activeTab === 'support' && 'Support Tickets & Global Announcements Desk'}
               {activeTab === 'subadmins' && 'Sub-Admin Role Delegation (RBAC)'}
               {activeTab === 'settings' && 'Platform Rules, Economic Parameters & Popup'}
@@ -4267,50 +4264,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* ==================== 7. TREASURY BALANCE SHEET ==================== */}
-          {activeTab === 'treasury' && (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-[#070E1B] border border-[#14233C] flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                    <Landmark className="w-4 h-4 text-purple-400" />
-                    <span>Treasury Balance Sheet & Reserve</span>
-                  </h3>
-                  <p className="text-[10.5px] text-[#64748B]">
-                    Multi-sig vault cashflow, collected fees, and network solvency
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 font-bold text-xs">
-                  Solvency: {dynamicInflow > 0 ? `${((dynamicReserves / dynamicInflow) * 100).toFixed(1)}%` : '100.0%'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL DEPOSITS</span>
-                  <span className="text-xl font-black text-white font-mono">${dynamicInflow.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-gray-400 block font-mono">Plans + Direct Crypto Deposits</span>
-                </div>
-                <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">TOTAL WITHDRAWN</span>
-                  <span className="text-xl font-black text-emerald-400 font-mono">${dynamicApprovedGrossAmount.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-emerald-400 block font-mono">Gross Total (Net Payout: ${dynamicApprovedNetPayout.toFixed(2)})</span>
-                </div>
-                <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">WITHDRAWAL FEES (5% PROFIT)</span>
-                  <span className="text-xl font-black text-cyan-400 font-mono">${dynamicFees.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-cyan-400 block font-mono">Company Profit Retained</span>
-                </div>
-                <div className="p-4 rounded-xl bg-[#070E1B] border border-[#14233C] space-y-1">
-                  <span className="text-[10px] text-gray-500 block uppercase font-bold">NET VAULT BALANCE</span>
-                  <span className="text-xl font-black text-purple-400 font-mono">${dynamicReserves.toFixed(2)}</span>
-                  <span className="text-[9.5px] text-purple-400 block font-mono">Total Deposits - Total Withdrawals</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ==================== 8. SUPPORT TICKETS DESK & GLOBAL BROADCAST DESK ==================== */}
+          {/* ==================== 7. SUPPORT TICKETS DESK & GLOBAL BROADCAST DESK ==================== */}
           {activeTab === 'support' && (
             <div className="space-y-4 animate-fadeIn">
               {/* Top Banner with Real-Time Badges */}

@@ -40,8 +40,9 @@ export interface ReferredUserItem {
   planAmount: number;
   commissionEarned: number;
   status: 'active' | 'inactive';
-  level?: 1 | 2 | 3;
+  level?: number;
   invitedBy?: string;
+  teamSize?: number;
 }
 
 export interface CountryCode {
