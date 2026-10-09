@@ -69,6 +69,15 @@ class NeonApiService {
   // Authentication
   // ==========================================================================
   public sanitizeApiErrorMessage(msg: any): string {
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.startsWith('192.168.') ||
+      window.location.hostname.includes('.local') ||
+      Boolean((import.meta as any).env?.DEV)
+    );
+    if (isLocal) return String(msg || '');
+
     const str = String(msg || '');
     const lower = str.toLowerCase();
     if (

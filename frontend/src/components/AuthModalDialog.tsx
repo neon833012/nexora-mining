@@ -81,6 +81,15 @@ export const AuthModalDialog: React.FC<Props> = ({
   const [apiError, setApiError] = useState('');
 
   const cleanAuthError = (msg: string): string => {
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.startsWith('192.168.') ||
+      window.location.hostname.includes('.local') ||
+      Boolean((import.meta as any).env?.DEV)
+    );
+    if (isLocal) return msg;
+
     const lower = (msg || '').toLowerCase();
     if (
       lower.includes('7500') ||

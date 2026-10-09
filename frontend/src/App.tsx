@@ -543,8 +543,20 @@ export const App: React.FC = () => {
   // 3-Second Promotional Plans Showcase Popup Modal State
   const [showPromoPopup, setShowPromoPopup] = useState(false);
 
-  // Scheduled Infrastructure Maintenance Modal State (Valid until Oct 10, 06:00 AM IST)
+  const isLocalHostEnv = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.') || h.includes('.local') || Boolean((import.meta as any).env?.DEV);
+  }, []);
+
+  // Scheduled Infrastructure Maintenance Modal State (Valid until Oct 10, 06:00 AM IST) - DISABLED ON LOCALHOST
   const [showMaintenanceModal, setShowMaintenanceModal] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname;
+      if (h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.') || h.includes('.local') || Boolean((import.meta as any).env?.DEV)) {
+        return false;
+      }
+    }
     try {
       const dismissedAt = localStorage.getItem('neon_maintenance_dismissed_at');
       if (dismissedAt && Date.now() - Number(dismissedAt) < 30 * 60 * 1000) {
@@ -3973,8 +3985,8 @@ export const App: React.FC = () => {
 
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}
       <main className="w-full max-w-7xl mx-auto bg-[#030712] min-h-screen relative flex flex-col transition-all duration-300">
-        {/* Scheduled Infrastructure Maintenance Banner - USER SIDE ONLY */}
-        {!showAdminPortal && (
+        {/* Scheduled Infrastructure Maintenance Banner - USER SIDE ONLY & DISABLED ON LOCALHOST */}
+        {!showAdminPortal && !isLocalHostEnv && (
           <MaintenanceTopBanner onOpenNotice={() => setShowMaintenanceModal(true)} />
         )}
 
@@ -5138,10 +5150,10 @@ export const App: React.FC = () => {
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
 
-        {/* Scheduled Infrastructure Maintenance Modal - USER SIDE ONLY */}
-        {!showAdminPortal && (
+        {/* Scheduled Infrastructure Maintenance Modal - USER SIDE ONLY & DISABLED ON LOCALHOST */}
+        {!showAdminPortal && !isLocalHostEnv && (
           <MaintenanceNoticeModal
-            isOpen={showMaintenanceModal && !showAdminPortal}
+            isOpen={showMaintenanceModal && !showAdminPortal && !isLocalHostEnv}
             onDismiss={handleDismissMaintenance}
           />
         )}
