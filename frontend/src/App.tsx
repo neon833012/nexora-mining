@@ -1812,13 +1812,10 @@ export const App: React.FC = () => {
               setReferralIncome((prev) => (prev > 0 ? prev : +(tier1to3Commission).toFixed(2)));
             }
 
-            // Calculate Over-Ride Commission (ORC across all 10 tiers)
+            // Calculate Over-Ride Commission (ORC daily estimate across all 10 tiers for telemetry)
             const orcDailyYield = allMapped.reduce((s: number, d: ReferredUserItem) => {
               return s + getMemberOrcDailyYield(d);
             }, 0);
-            if (orcDailyYield > 0) {
-              setTotalOrcIncome((prev) => +(Math.max(prev, orcDailyYield)).toFixed(2));
-            }
           }
         }
       }).catch(() => {

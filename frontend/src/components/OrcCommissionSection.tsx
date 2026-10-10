@@ -275,10 +275,10 @@ export const OrcCommissionSection: React.FC<Props> = ({
         {/* Explanatory Footer */}
         <div className="mt-3 pt-2.5 border-t border-[#122338] flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10.5px] text-[#64748B]">
           <span>
-            💡 <strong className="text-[#94A3B8]">Send to Wallet</strong> credits your Withdrawable Balance for instant payout.
+            💡 <strong className="text-[#94A3B8]">Send to Wallet</strong>: Minimum $0.01 USDT (0% Fee). Instantly transfers to Withdrawable Balance.
           </span>
           <span>
-            ⚡ <strong className="text-[#94A3B8]">Re-invest</strong> adds to your active plan capital (${myStake.toFixed(2)}) to compound daily hashing returns!
+            ⚡ <strong className="text-[#94A3B8]">Re-invest in Plan</strong>: Minimum $0.01 USDT. Adds directly to your active plan capital (${myStake.toFixed(2)})!
           </span>
         </div>
       </div>
