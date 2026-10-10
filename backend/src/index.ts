@@ -1877,9 +1877,10 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
         `UPDATE wallets 
          SET active_mining_power = ?, 
              unclaimed_yield = MAX(0, unclaimed_yield - ?),
+             total_mined_yield = total_mined_yield + ?,
              updated_at = CURRENT_TIMESTAMP 
          WHERE UPPER(user_id) = UPPER(?) AND unclaimed_yield >= ?`
-      ).bind(finalPower, numReinvest, userId, numReinvest);
+      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
     }
 
     const txType = source === 'referral'
@@ -2564,7 +2565,7 @@ app.get('/api/admin/users', async (c) => {
     const search = c.req.query('search') || '';
     let query = `
       SELECT u.id, u.name, u.mobile, u.email, u.role, u.status, u.referral_code, u.upline_code, u.created_at, u.fund_pin, u.fund_pin_set,
-             w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield,
+             w.deposit_balance, w.withdrawable_balance, w.referral_balance, w.active_mining_power, w.total_withdrawn, w.total_mined_yield, w.total_referral_income, w.total_orc_income,
              mc.plan_name as active_contract_plan, mc.daily_yield_usdt, mc.daily_rate_percent,
              CASE WHEN (mc.status = 'active' OR w.active_mining_power > 0) AND (u.status = 'active' OR u.status IS NULL) THEN 1 ELSE 0 END as is_mining_active,
              (

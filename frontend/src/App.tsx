@@ -1174,7 +1174,7 @@ export const App: React.FC = () => {
             referralCode: u.referral_code || '',
             invitedBy: u.upline_code || 'DIRECT',
             directReferralsCount: getDirectRefsCount(u),
-            referralEarnings: Number(u.referral_balance) || 0,
+            referralEarnings: Number(u.total_referral_income ?? u.totalReferralIncome ?? u.referral_balance) || 0,
             dailyYieldUsdt: Number(u.daily_yield_usdt) || 0,
             dailyRatePercent: Number(u.daily_rate_percent) || 0,
             lastLogin: 'Active',
@@ -2911,12 +2911,15 @@ export const App: React.FC = () => {
       if (res && res.success) {
         const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
         const finalUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
+        const finalTotalYield = res.updatedWallet ? (Number(res.updatedWallet.total_mined_yield ?? res.updatedWallet.totalMinedYield) || +(totalRewards + yieldToReinvest).toFixed(2)) : +(totalRewards + yieldToReinvest).toFixed(2);
 
         setActiveMiningPower(finalPower);
         setUnclaimedYield(finalUnclaimed);
+        setTotalRewards(finalTotalYield);
         try {
           localStorage.setItem('neon_unclaimed_yield', String(finalUnclaimed));
           localStorage.setItem('neon_mining_power', String(finalPower));
+          localStorage.setItem('neon_total_rewards', String(finalTotalYield));
         } catch (e) {}
 
         setTeamTurnover((prev) => {
@@ -3005,13 +3008,16 @@ export const App: React.FC = () => {
     if (res && res.success) {
       const newWithdr = res.updatedWallet ? (Number(res.updatedWallet.withdrawable_balance ?? res.updatedWallet.withdrawableBalance) || +(availableWithdrawal + yieldToSend).toFixed(2)) : +(availableWithdrawal + yieldToSend).toFixed(2);
       const newUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
+      const newTotalYield = res.updatedWallet ? (Number(res.updatedWallet.total_mined_yield ?? res.updatedWallet.totalMinedYield) || +(totalRewards + yieldToSend).toFixed(2)) : +(totalRewards + yieldToSend).toFixed(2);
 
       setAvailableWithdrawal(newWithdr);
       setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
       setUnclaimedYield(newUnclaimed);
+      setTotalRewards(newTotalYield);
       try {
         localStorage.setItem('neon_unclaimed_yield', String(newUnclaimed));
         localStorage.setItem('neon_available_withdrawal', String(newWithdr));
+        localStorage.setItem('neon_total_rewards', String(newTotalYield));
       } catch (e) {}
 
       const newTx: TransactionRecord = {
