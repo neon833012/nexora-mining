@@ -34,7 +34,6 @@ import { NeonAIChatAssistant } from './components/NeonAIChatAssistant';
 import { SupportInboxModal } from './components/SupportInboxModal';
 import { AdminSystemPortal } from './components/AdminSystemPortal';
 import { BottomNavBar, NavRoute } from './components/BottomNavBar';
-import { MaintenanceNoticeModal, MaintenanceTopBanner } from './components/MaintenanceNoticeModal';
 import { Smartphone, Download } from 'lucide-react';
 import { nexoraApi } from './services/api';
 import { formatUsaDateTime, parseUtcMs } from './utils/dateUtils';
@@ -182,7 +181,33 @@ export const getUserStorageKey = (uid: string) => `neon_user_${uid.toUpperCase()
 
 export const loadUserSavedData = (uid?: string): UserPersistentData | null => {
   if (!uid) return null;
-  return loadStorage<UserPersistentData | null>(getUserStorageKey(uid), null);
+  const clean = uid.toUpperCase();
+  const data = loadStorage<UserPersistentData | null>(getUserStorageKey(clean), null);
+  if (clean === 'NEON10770' || clean.includes('10770')) {
+    return {
+      ...(data || {}),
+      activeMiningPower: 21.87,
+      totalWithdrawn: 4.6,
+      totalRewards: 2.62,
+      orcBalance: 0.07,
+      totalOrcIncome: 0.07,
+      unclaimedYield: 0.22,
+      isMiningActive: true
+    };
+  }
+  if (clean === 'NEON17255' || clean.includes('17255')) {
+    return {
+      ...(data || {}),
+      activeMiningPower: 21.23,
+      totalWithdrawn: 7.4,
+      totalRewards: 2.66,
+      orcBalance: 0.0,
+      totalOrcIncome: 0.09,
+      unclaimedYield: 0.21,
+      isMiningActive: true
+    };
+  }
+  return data;
 };
 
 export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>) => {
@@ -549,29 +574,9 @@ export const App: React.FC = () => {
     return h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.') || h.includes('.local') || Boolean((import.meta as any).env?.DEV);
   }, []);
 
-  // Scheduled Infrastructure Maintenance Modal State (Valid until Oct 10, 06:00 AM IST) - DISABLED ON LOCALHOST
-  const [showMaintenanceModal, setShowMaintenanceModal] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const h = window.location.hostname;
-      if (h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.') || h.includes('.local') || Boolean((import.meta as any).env?.DEV)) {
-        return false;
-      }
-    }
-    try {
-      const dismissedAt = localStorage.getItem('neon_maintenance_dismissed_at');
-      if (dismissedAt && Date.now() - Number(dismissedAt) < 30 * 60 * 1000) {
-        return false;
-      }
-    } catch {}
-    return true;
-  });
-
-  const handleDismissMaintenance = () => {
-    setShowMaintenanceModal(false);
-    try {
-      localStorage.setItem('neon_maintenance_dismissed_at', String(Date.now()));
-    } catch {}
-  };
+  // Maintenance mode completely disabled - System live on production database
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState<boolean>(false);
+  const handleDismissMaintenance = () => setShowMaintenanceModal(false);
 
   // Globally Synchronized Active Users & Miners Counter
   // Base: 20437 users starting on 2026-09-17 13:00:00 UTC (1789650000000 ms)
@@ -972,7 +977,7 @@ export const App: React.FC = () => {
       } catch (e) {}
     };
     fetchBroadcastsFromD1();
-    const interval = setInterval(fetchBroadcastsFromD1, 8000);
+    const interval = setInterval(fetchBroadcastsFromD1, 60000);
 
     const handleBroadcastSync = () => {
       setBroadcastVersion((v) => v + 1);
@@ -1042,7 +1047,7 @@ export const App: React.FC = () => {
     };
 
     fetchLiveTickets();
-    const interval = setInterval(fetchLiveTickets, 5000);
+    const interval = setInterval(fetchLiveTickets, 45000);
     return () => clearInterval(interval);
   }, [isLoggedIn, userName, userEmail, userMobile]);
 
@@ -3759,7 +3764,13 @@ export const App: React.FC = () => {
     } catch (e) {}
 
     if (savedData?.transactions && savedData.transactions.length > 0) {
-      setTransactions(savedData.transactions);
+      const duplicateIds = new Set([
+        'CMP-653645', 'CMP-696166', 'CMP-849280', 'CMP-852312', 'CMP-853564',
+        'REF-TRF-613641', 'REF-TRF-10770',
+        'CMP-915383', 'CMP-924304', 'CMP-589666', 'CMP-605974',
+        'ORC-TRF-877279', 'ORC-TRF-887869'
+      ]);
+      setTransactions(savedData.transactions.filter((tx: any) => !duplicateIds.has(tx.id)));
     }
     if (savedData?.depositRecords && savedData.depositRecords.length > 0) {
       const cleanSavedDeps = savedData.depositRecords.filter(
@@ -3985,10 +3996,6 @@ export const App: React.FC = () => {
 
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}
       <main className="w-full max-w-7xl mx-auto bg-[#030712] min-h-screen relative flex flex-col transition-all duration-300">
-        {/* Scheduled Infrastructure Maintenance Banner - USER SIDE ONLY & DISABLED ON LOCALHOST */}
-        {!showAdminPortal && !isLocalHostEnv && (
-          <MaintenanceTopBanner onOpenNotice={() => setShowMaintenanceModal(true)} />
-        )}
 
         {/* Top App Bar with Desktop Navigation & 25-Language Switcher */}
         <NeonTopAppBar
@@ -5150,13 +5157,6 @@ export const App: React.FC = () => {
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
 
-        {/* Scheduled Infrastructure Maintenance Modal - USER SIDE ONLY & DISABLED ON LOCALHOST */}
-        {!showAdminPortal && !isLocalHostEnv && (
-          <MaintenanceNoticeModal
-            isOpen={showMaintenanceModal && !showAdminPortal && !isLocalHostEnv}
-            onDismiss={handleDismissMaintenance}
-          />
-        )}
 
         {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal - USER SIDE ONLY */}
         {!showAdminPortal && (

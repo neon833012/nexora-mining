@@ -59,7 +59,7 @@ export const setGoogleTranslateCookie = (gtTarget: string) => {
     document.cookie = `googtrans=/auto/en; ${expire} path=/;`;
     if (hostname && !hostname.includes('localhost') && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
       const parts = hostname.split('.');
-      while (parts.length >= 2) {
+      while (parts.length >= 5) {
         const d = '.' + parts.join('.');
         document.cookie = `googtrans=; ${expire} path=/; domain=${d};`;
         document.cookie = `googtrans=/en/en; ${expire} path=/; domain=${d};`;

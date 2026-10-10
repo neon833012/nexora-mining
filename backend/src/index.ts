@@ -41,21 +41,7 @@ app.use('*', async (c, next) => {
 });
 
 function formatDbErrorMessage(err: any): string {
-  const msg = String(err?.message || err || '');
-  const lower = msg.toLowerCase();
-  if (
-    lower.includes('7500') ||
-    lower.includes('limit') ||
-    lower.includes('quota') ||
-    lower.includes('exceeded') ||
-    lower.includes('d1_error') ||
-    lower.includes('free tier') ||
-    lower.includes('rate limit') ||
-    lower.includes('d1 error')
-  ) {
-    return '⚙️ Scheduled Infrastructure Upgrade in progress until Oct 9, 09:00 PM EDT (USA HQ) / Oct 10, 06:30 AM IST (India). Database synchronization is active in read-safe mode. All accounts and funds are 100% secure.';
-  }
-  return msg;
+  return String(err?.message || err || 'Database operation failed');
 }
 
 app.onError((err, c) => {
@@ -64,7 +50,7 @@ app.onError((err, c) => {
   return c.json({
     success: false,
     message: friendly,
-    isMaintenance: friendly.includes('Scheduled Infrastructure Upgrade')
+    isMaintenance: false
   }, 500);
 });
 

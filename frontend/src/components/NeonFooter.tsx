@@ -11,7 +11,7 @@ const PLATFORM_LINKS = [
   'About Neon',
   'Mining Plans',
   'Calculator',
-  'Referral',
+  'Team',
   'Dashboard',
   'FAQ',
   'Contact'

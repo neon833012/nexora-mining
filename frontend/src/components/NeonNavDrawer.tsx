@@ -40,7 +40,7 @@ const NAV_ITEMS: { route: NavRoute; key: string; name: string; icon: React.Eleme
   { route: 'calculator', key: 'calculator', name: 'Calculator', icon: Calculator },
   { route: 'dashboard', key: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { route: 'wallet', key: 'wallet', name: 'Wallet & Withdraw', icon: Wallet },
-  { route: 'referral', key: 'referral', name: 'Referral Network', icon: Users },
+  { route: 'referral', key: 'team', name: 'Team Network', icon: Users },
   { route: 'about', key: 'about', name: 'About Protocol', icon: Info },
   { route: 'faq', key: 'faq', name: 'Security & FAQ', icon: HelpCircle },
   { route: 'contact', key: 'contact', name: 'Contact & Support', icon: Mail }

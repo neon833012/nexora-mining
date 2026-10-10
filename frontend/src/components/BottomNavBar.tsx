@@ -23,7 +23,7 @@ interface Props {
 const BOTTOM_TABS: { route: NavRoute; key: string; label: string; icon: React.ElementType }[] = [
   { route: 'home', key: 'home', label: 'Home', icon: Home },
   { route: 'plans', key: 'plans', label: 'Plans', icon: Layers },
-  { route: 'referral', key: 'referral', label: 'Referral', icon: Users },
+  { route: 'referral', key: 'team', label: 'Team', icon: Users },
   { route: 'dashboard', key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { route: 'wallet', key: 'wallet', label: 'Wallet', icon: Wallet }
 ];
