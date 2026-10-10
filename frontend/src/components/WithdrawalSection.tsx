@@ -57,6 +57,7 @@ export const WithdrawalSection: React.FC<Props> = ({
   const [localFundPassword, setLocalFundPassword] = useState<string>(userFundPassword || '');
   const [isPinError, setIsPinError] = useState(false);
   const [pinErrorMessage, setPinErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setLocalFundPassword(userFundPassword || '');
@@ -250,18 +251,24 @@ export const WithdrawalSection: React.FC<Props> = ({
     setIsPinError(false);
     setPinErrorMessage('');
 
-    // Success -> Submit to Queue
-    onWithdrawSubmit(amount, walletAddress.trim(), cleanPin);
-    setFeedback({
-      text: `✓ Withdrawal request for ${netAmount.toFixed(2)} USDT submitted! Sent for on-chain dispatch & settlement.`,
-      isError: false
-    });
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      // Success -> Submit to Queue
+      onWithdrawSubmit(amount, walletAddress.trim(), cleanPin);
+      setFeedback({
+        text: `✓ Withdrawal request for ${netAmount.toFixed(2)} USDT submitted! Sent for on-chain dispatch & settlement.`,
+        isError: false
+      });
 
-    setAmountText('');
-    setWalletAddress('');
-    setFundPin('');
-    setPinDigits(['', '', '', '', '', '']);
-    setConfirmFundPin('');
+      setAmountText('');
+      setWalletAddress('');
+      setFundPin('');
+      setPinDigits(['', '', '', '', '', '']);
+      setConfirmFundPin('');
+    } finally {
+      setTimeout(() => setIsSubmitting(false), 2500);
+    }
   };
 
   const handleSendQuery = (e: React.FormEvent) => {
@@ -575,16 +582,18 @@ export const WithdrawalSection: React.FC<Props> = ({
           {/* Submit Action */}
           <button
             type="submit"
-            disabled={isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2}
+            disabled={isSubmitting || isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2}
             className={`w-full h-[46px] rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2
-                ? 'bg-[#152236] text-[#64748B] border border-[#1F304B] cursor-not-allowed'
+              isSubmitting || isWithdrawalLocked || isInsufficient || amount < 2 || effectiveBalance < 2
+                ? 'bg-[#152236] text-[#64748B] border border-[#1F304B] cursor-not-allowed opacity-60'
                 : 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] text-[#021426] shadow-[0_0_15px_rgba(0,240,255,0.3)] hover:brightness-110'
             }`}
           >
             <Lock className="w-4 h-4" />
             <span>
-              {hasPendingWithdrawal
+              {isSubmitting
+                ? 'Submitting Withdrawal...'
+                : hasPendingWithdrawal
                 ? 'Withdrawal Locked (Active Request in Queue)'
                 : is24hCooldown
                 ? `Withdrawal Locked (${cooldownHoursLeft}h ${cooldownMinsLeft}m Cooldown)`

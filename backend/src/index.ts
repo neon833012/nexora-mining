@@ -1519,6 +1519,11 @@ app.post('/api/plans/subscribe', async (c) => {
       return c.json({ success: false, message: 'Valid userId and plan amount are required' }, 400);
     }
 
+    const lockKey = `sub_plan_${String(userId).toUpperCase()}`;
+    if (!acquireUserActionLock(lockKey, 3000)) {
+      return c.json({ success: false, message: 'Plan purchase already in progress. Please wait a moment.' }, 429);
+    }
+
     // Verify User Fund PIN
     const user = await c.env.DB.prepare('SELECT fund_pin FROM users WHERE id = ?').bind(userId).first() as any;
     if (!user) {
@@ -1613,15 +1618,15 @@ app.post('/api/plans/subscribe', async (c) => {
           `UPDATE wallets 
            SET active_mining_power = ?, 
                updated_at = CURRENT_TIMESTAMP 
-           WHERE user_id = ?`
+           WHERE UPPER(user_id) = UPPER(?)`
         ).bind(planCost, userId)
       : c.env.DB.prepare(
           `UPDATE wallets 
            SET deposit_balance = MAX(0, deposit_balance - ?), 
                active_mining_power = ?, 
                updated_at = CURRENT_TIMESTAMP 
-           WHERE user_id = ?`
-        ).bind(chargedAmount, planCost, userId);
+           WHERE UPPER(user_id) = UPPER(?) AND deposit_balance >= ?`
+        ).bind(chargedAmount, planCost, userId, chargedAmount);
 
     const batchStatements: any[] = [
       // Permanent immutable anti-replay record
@@ -2220,6 +2225,11 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
       return c.json({ success: false, message: 'Sender account not found.' }, 404);
     }
 
+    const lockKey = `p2p_${String(sender.id).toUpperCase()}`;
+    if (!acquireUserActionLock(lockKey, 3000)) {
+      return c.json({ success: false, message: 'P2P transfer already in progress. Please wait a moment.' }, 429);
+    }
+
     // Verify fund PIN if sender has configured one
     if (fundPin && sender.fund_pin && sender.fund_pin !== fundPin) {
       return c.json({ success: false, message: 'Incorrect 6-digit Fund Security PIN.' }, 403);
@@ -2263,8 +2273,8 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
         }, 400);
       }
       senderDeductQuery = c.env.DB.prepare(
-        'UPDATE wallets SET deposit_balance = MAX(0, deposit_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-      ).bind(transferAmt, sender.id);
+        'UPDATE wallets SET deposit_balance = MAX(0, deposit_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE UPPER(user_id) = UPPER(?) AND deposit_balance >= ?'
+      ).bind(transferAmt, sender.id, transferAmt);
     } else {
       // Withdrawable balance deduction
       const availableWithdrawable = Number(senderWallet.withdrawable_balance || 0);
@@ -2276,8 +2286,8 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
       }
 
       senderDeductQuery = c.env.DB.prepare(
-        'UPDATE wallets SET withdrawable_balance = MAX(0, withdrawable_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-      ).bind(transferAmt, sender.id);
+        'UPDATE wallets SET withdrawable_balance = MAX(0, withdrawable_balance - ?), updated_at = CURRENT_TIMESTAMP WHERE UPPER(user_id) = UPPER(?) AND withdrawable_balance >= ?'
+      ).bind(transferAmt, sender.id, transferAmt);
     }
 
     // 4. Ensure Recipient Wallet exists
@@ -2300,7 +2310,7 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
     const sourceLabel = sourceWallet === 'deposit' ? 'Deposit Balance' : 'Withdrawable Balance';
 
     // 5. Execute Atomic SQL Batch in Cloudflare D1
-    await c.env.DB.batch([
+    const p2pBatchRes = await c.env.DB.batch([
       // Deduct sender
       senderDeductQuery,
       // Credit recipient deposit balance
@@ -2323,6 +2333,10 @@ app.post('/api/wallet/p2p-transfer', async (c) => {
         'INSERT INTO withdrawal_requests (id, user_id, amount, fee, net_amount, wallet_address, tx_hash, status) VALUES (?, ?, ?, 0, ?, ?, ?, "approved")'
       ).bind(wdIdSender, sender.id, transferAmt, transferAmt, `P2P Transfer to @${recipient.id}`, p2pHash)
     ]);
+
+    if (!p2pBatchRes || !p2pBatchRes[0] || (p2pBatchRes[0].meta && p2pBatchRes[0].meta.changes === 0)) {
+      return c.json({ success: false, message: 'Transfer failed: Balance already transferred or insufficient.' }, 400);
+    }
 
     const updatedSenderWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(sender.id).first();
 
@@ -2366,6 +2380,12 @@ app.post('/api/wallet/withdraw-request', async (c) => {
     if (!user) {
       return c.json({ success: false, message: 'User not found' }, 404);
     }
+
+    const lockKey = `wd_${String(user.id).toUpperCase()}`;
+    if (!acquireUserActionLock(lockKey, 4000)) {
+      return c.json({ success: false, message: 'Withdrawal request already in progress. Please wait a moment.' }, 429);
+    }
+
     if (fundPin && user.fund_pin && user.fund_pin !== fundPin) {
       return c.json({ success: false, message: 'Incorrect 6-digit Fund PIN' }, 403);
     }
@@ -2421,17 +2441,17 @@ app.post('/api/wallet/withdraw-request', async (c) => {
     const reqId = `wd_${Date.now().toString().slice(-6)}`;
     const txId = `WD-${Date.now().toString().slice(-6)}`;
 
-    // Deduct directly from withdrawable balance
+    // Deduct directly from withdrawable balance with atomic precondition
     const deductQuery = c.env.DB.prepare(
       `UPDATE wallets 
        SET withdrawable_balance = MAX(0, withdrawable_balance - ?), 
            total_withdrawn = total_withdrawn + ?, 
            updated_at = CURRENT_TIMESTAMP 
-       WHERE user_id = ?`
-    ).bind(withdrawAmount, withdrawAmount, user.id);
+       WHERE UPPER(user_id) = UPPER(?) AND withdrawable_balance >= ?`
+    ).bind(withdrawAmount, withdrawAmount, user.id, withdrawAmount);
 
     // Execute atomic batch
-    await c.env.DB.batch([
+    const wdBatchRes = await c.env.DB.batch([
       deductQuery,
 
       // Create withdrawal request (pending)
@@ -2446,6 +2466,10 @@ app.post('/api/wallet/withdraw-request', async (c) => {
          VALUES (?, ?, 'Payout Request', ?, 'Pending')`
       ).bind(txId, user.id, -withdrawAmount)
     ]);
+
+    if (!wdBatchRes || !wdBatchRes[0] || (wdBatchRes[0].meta && wdBatchRes[0].meta.changes === 0)) {
+      return c.json({ success: false, message: 'Withdrawal failed: Balance already utilized or insufficient.' }, 400);
+    }
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(user.id).first();
 

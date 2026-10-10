@@ -45,6 +45,7 @@ export const P2PTransferModal: React.FC<Props> = ({
   const [amount, setAmount] = useState('');
   const [fundPin, setFundPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -118,8 +119,14 @@ export const P2PTransferModal: React.FC<Props> = ({
       return;
     }
 
-    onConfirmTransfer(cleanRecipientId, numAmount, fundPin, sourceWallet);
-    onDismiss();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      onConfirmTransfer(cleanRecipientId, numAmount, fundPin, sourceWallet);
+      onDismiss();
+    } finally {
+      setTimeout(() => setIsSubmitting(false), 2000);
+    }
   };
 
   return (
@@ -388,11 +395,11 @@ export const P2PTransferModal: React.FC<Props> = ({
             </button>
             <button
               type="submit"
-              disabled={numAmount <= 0 || !cleanRecipientId || !matchedUser}
+              disabled={isSubmitting || numAmount <= 0 || !cleanRecipientId || !matchedUser}
               className="flex-[1.5] py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-[12.5px] flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Confirm & Transfer {numAmount > 0 ? `($${numAmount.toFixed(2)})` : ''}</span>
+              <span>{isSubmitting ? 'Transferring...' : `Confirm & Transfer ${numAmount > 0 ? `($${numAmount.toFixed(2)})` : ''}`}</span>
             </button>
           </div>
         </form>

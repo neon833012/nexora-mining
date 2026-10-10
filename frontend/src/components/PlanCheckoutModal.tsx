@@ -106,6 +106,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
   };
 
   const startVerificationProcess = async () => {
+    if (isVerifying) return;
     setVerificationError(null);
 
     if (paymentMethod === 'internal') {
@@ -113,6 +114,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
         setVerificationError(`Insufficient deposit balance ($${availableBalance.toFixed(2)}). You need $${payableCost.toFixed(2)} USDT.`);
         return;
       }
+      setIsVerifying(true);
       setCurrentStep(4);
       const generatedHash = `int_${Date.now().toString(16)}`;
       setVerifiedTxHash(generatedHash);
@@ -669,6 +671,7 @@ export const PlanCheckoutModal: React.FC<Props> = ({
                 <button
                   type="button"
                   disabled={
+                    isVerifying ||
                     (paymentMethod === 'internal' && !hasEnoughInternalBalance) ||
                     (paymentMethod === 'bep20_chain' && !enteredTxHash.trim())
                   }

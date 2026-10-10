@@ -3182,61 +3182,67 @@ export const App: React.FC = () => {
 
   // User submits withdrawal request -> enters Pending Admin Queue
   const handleWithdrawSubmit = (amount: number, wallet: string, fundPin: string) => {
-    if (!userFundPassword && fundPin) {
-      setUserFundPassword(fundPin);
-      try {
-        localStorage.setItem('neon_fund_password', fundPin);
-      } catch (e) {}
-    }
-    // Deduct from combined available balance (first from availableWithdrawal, then referralBalance)
-    if (amount <= availableWithdrawal) {
-      setAvailableWithdrawal((prev) => Math.max(0, +(prev - amount).toFixed(2)));
-    } else {
-      const fromAvailable = availableWithdrawal;
-      const fromReferral = +(amount - fromAvailable).toFixed(2);
-      setAvailableWithdrawal(0);
-      setReferralBalance((prev) => Math.max(0, +(prev - fromReferral).toFixed(2)));
-    }
+    if (isProcessingWalletAction) return;
+    setIsProcessingWalletAction(true);
+    try {
+      if (!userFundPassword && fundPin) {
+        setUserFundPassword(fundPin);
+        try {
+          localStorage.setItem('neon_fund_password', fundPin);
+        } catch (e) {}
+      }
+      // Deduct from combined available balance (first from availableWithdrawal, then referralBalance)
+      if (amount <= availableWithdrawal) {
+        setAvailableWithdrawal((prev) => Math.max(0, +(prev - amount).toFixed(2)));
+      } else {
+        const fromAvailable = availableWithdrawal;
+        const fromReferral = +(amount - fromAvailable).toFixed(2);
+        setAvailableWithdrawal(0);
+        setReferralBalance((prev) => Math.max(0, +(prev - fromReferral).toFixed(2)));
+      }
 
-    const fee = +(amount * 0.05).toFixed(2);
-    const netAmount = +(amount - fee).toFixed(2);
+      const fee = +(amount * 0.05).toFixed(2);
+      const netAmount = +(amount - fee).toFixed(2);
 
-    const formattedTimestamp = getFormattedTimestamp();
+      const formattedTimestamp = getFormattedTimestamp();
 
-    const newRequest: WithdrawalRequest = {
-      id: `wd_${Date.now()}`,
-      userId: userName || 'usr_8824',
-      userName: userName,
-      userMobile: userMobile,
-      amount,
-      fee,
-      netAmount,
-      walletAddress: wallet,
-      status: 'pending',
-      timestamp: formattedTimestamp,
-      timestampMs: Date.now(),
-      type: 'withdrawal'
-    };
-
-    setWithdrawalRequests((prev) => [newRequest, ...prev]);
-    setAdminWithdrawals((prev) => [newRequest, ...prev]);
-    setAdminTelemetry((prev) => ({
-      ...prev,
-      totalPendingWithdrawals: +(prev.totalPendingWithdrawals + amount).toFixed(2)
-    }));
-
-    // Synchronize withdrawal with Cloudflare D1 database
-    if (userName && !isTestAccount(userName, userName, userEmail)) {
-      nexoraApi.requestWithdrawal({
-        userId: userName,
+      const newRequest: WithdrawalRequest = {
+        id: `wd_${Date.now()}`,
+        userId: userName || 'usr_8824',
+        userName: userName,
+        userMobile: userMobile,
         amount,
+        fee,
+        netAmount,
         walletAddress: wallet,
-        fundPin: fundPin || userFundPassword || '123456'
-      }).then(() => {
-        fetchLiveAdminWithdrawals();
-      }).catch(() => {});
+        status: 'pending',
+        timestamp: formattedTimestamp,
+        timestampMs: Date.now(),
+        type: 'withdrawal'
+      };
+
+      setWithdrawalRequests((prev) => [newRequest, ...prev]);
+      setAdminWithdrawals((prev) => [newRequest, ...prev]);
+      setAdminTelemetry((prev) => ({
+        ...prev,
+        totalPendingWithdrawals: +(prev.totalPendingWithdrawals + amount).toFixed(2)
+      }));
+
+      // Synchronize withdrawal with Cloudflare D1 database
+      if (userName && !isTestAccount(userName, userName, userEmail)) {
+        nexoraApi.requestWithdrawal({
+          userId: userName,
+          amount,
+          walletAddress: wallet,
+          fundPin: fundPin || userFundPassword || '123456'
+        }).then(() => {
+          fetchLiveAdminWithdrawals();
+        }).catch(() => {});
+      }
+      showToast(`Withdrawal of ${amount.toFixed(2)} USDT submitted! Sent to Admin queue for on-chain release.`);
+    } finally {
+      setTimeout(() => setIsProcessingWalletAction(false), 2500);
     }
-    showToast(`Withdrawal of ${amount.toFixed(2)} USDT submitted! Sent to Admin queue for on-chain release.`);
   };
 
   // Admin approves withdrawal
