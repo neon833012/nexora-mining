@@ -4355,8 +4355,8 @@ export const App: React.FC = () => {
                         <span className="text-[11px] font-bold text-[#C084FC]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">Yield + Ref + ORC</span>
-                        <span className="text-[10px] text-[#C084FC] font-mono font-bold">Lifetime Total</span>
+                        <span className="text-[10px] text-[#94A3B8]">Lifetime</span>
+                        <span className="text-[10px] text-[#C084FC] font-mono font-bold">Accumulated</span>
                       </div>
                     </div>
 
