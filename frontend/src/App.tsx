@@ -1654,7 +1654,7 @@ export const App: React.FC = () => {
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
           const refInc = Number((w as any).totalReferralIncome ?? (w as any).total_referral_income) || ref;
-          if (refInc > 0) setReferralIncome((prev) => Math.max(prev, refInc));
+          setReferralIncome(refInc);
           const orcInc = Number((w as any).totalOrcIncome ?? (w as any).total_orc_income) || 0;
           const orcBal = Number((w as any).orcBalance ?? (w as any).orc_balance) || 0;
           if (orcInc > 0) setTotalOrcIncome((prev) => Math.max(prev, orcInc));
@@ -1749,10 +1749,7 @@ export const App: React.FC = () => {
           const mapDownline = (d: any, lvl: number): ReferredUserItem => {
             const power = Number(d.active_mining_power) || 0;
             const commissionRate = lvl === 1 ? 0.10 : lvl === 2 ? 0.05 : lvl === 3 ? 0.02 : 0;
-            const memberWithdrawable = Number(d.withdrawable_balance || 0);
-            const memberYield = Number(d.total_mined_yield || 0);
-            const memberRef = Number(d.referral_balance || 0);
-            const totalEarnings = memberWithdrawable > 0 ? memberWithdrawable : (memberYield + memberRef);
+            const commEarned = +(power * commissionRate).toFixed(2);
             return {
               id: d.id,
               name: d.name || d.id,
@@ -1760,7 +1757,7 @@ export const App: React.FC = () => {
               registeredAt: d.created_at || 'Recently',
               planName: power > 0 ? `Active Node ($${power})` : 'No Plan',
               planAmount: power,
-              commissionEarned: totalEarnings > 0 ? +totalEarnings.toFixed(2) : +(power * commissionRate).toFixed(2),
+              commissionEarned: commEarned,
               status: d.status === 'active' ? 'active' : 'inactive',
               level: lvl,
               invitedBy: lvl === 1 ? 'Direct (You)' : lvl === 2 ? 'Your L1 Referral' : lvl === 3 ? 'Your L2 Referral' : `Your L${lvl - 1} Referral`,
@@ -1812,7 +1809,7 @@ export const App: React.FC = () => {
               .filter((d: ReferredUserItem) => (d.level || 1) <= 3)
               .reduce((s: number, d: ReferredUserItem) => s + (d.commissionEarned || 0), 0);
             if (tier1to3Commission > 0) {
-              setReferralIncome((prev) => +(Math.max(prev, tier1to3Commission)).toFixed(2));
+              setReferralIncome((prev) => (prev > 0 ? prev : +(tier1to3Commission).toFixed(2)));
             }
 
             // Calculate Over-Ride Commission (ORC across all 10 tiers)
@@ -3777,7 +3774,8 @@ export const App: React.FC = () => {
       setDepositBalance(depBal);
       setAvailableWithdrawal(withBal);
       setReferralBalance(refBal);
-      setReferralIncome(refBal);
+      const refTot = Number((walletData as any)?.totalReferralIncome ?? (walletData as any)?.total_referral_income) || refBal;
+      setReferralIncome(refTot);
       setTotalOrcIncome(orcInc);
       setOrcBalance(orcBal);
     } else {
