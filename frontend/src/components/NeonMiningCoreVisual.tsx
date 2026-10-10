@@ -45,6 +45,8 @@ const NODE_COLORS = ['#00F0FF', '#F59E0B', '#10B981', '#38BDF8'];
 
 interface Props {
   isMiningActive?: boolean;
+  isCoolingDown?: boolean;
+  cooldownSecondsRemaining?: number;
   onToggleMining?: () => void;
   hashrate?: string;
   className?: string;
@@ -53,6 +55,8 @@ interface Props {
 
 export const NeonMiningCoreVisual: React.FC<Props> = ({
   isMiningActive = true,
+  isCoolingDown = false,
+  cooldownSecondsRemaining = 60,
   onToggleMining,
   hashrate = '428.5',
   className = '',
@@ -322,16 +326,20 @@ export const NeonMiningCoreVisual: React.FC<Props> = ({
         HASHRATE · {hashrate} TH/s
       </div>
 
-      {/* Central Glowing Core Sphere: 150px (Green when active, Red when inactive) */}
+      {/* Central Glowing Core Sphere: 150px (Water-Blue on Cooldown, Green when active, Red when stopped) */}
       <div
         onClick={onToggleMining}
         className={`relative z-10 w-[150px] h-[150px] rounded-full flex flex-col items-center justify-center border-2 transition-all duration-500 cursor-pointer active:scale-95 ${
-          isMiningActive
+          isCoolingDown
+            ? 'border-[#00E5FF] shadow-[0_0_35px_rgba(0,229,255,0.65)] animate-pulse'
+            : isMiningActive
             ? 'border-[#10B981] shadow-[0_0_35px_rgba(16,185,129,0.5)] animate-pulse-slow'
             : 'border-[#EF4444] shadow-[0_0_35px_rgba(239,68,68,0.5)]'
         }`}
         style={{
-          background: isMiningActive
+          background: isCoolingDown
+            ? 'radial-gradient(circle, #083344 0%, #062635 60%, #021420 100%)'
+            : isMiningActive
             ? 'radial-gradient(circle, #064E3B 0%, #06281E 60%, #02120C 100%)'
             : 'radial-gradient(circle, #450A0A 0%, #260505 60%, #100202 100%)',
           transform: 'translateY(6px)'
@@ -343,7 +351,11 @@ export const NeonMiningCoreVisual: React.FC<Props> = ({
             viewBox="0 0 28 28"
             fill="none"
             className={`w-7 h-7 transition-colors ${
-              isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'
+              isCoolingDown
+                ? 'text-[#00E5FF]'
+                : isMiningActive
+                ? 'text-[#10B981]'
+                : 'text-[#EF4444]'
             }`}
           >
             {/* Top Diamond */}
@@ -355,31 +367,47 @@ export const NeonMiningCoreVisual: React.FC<Props> = ({
           </svg>
         </div>
 
-        <span
-          className={`text-[11px] font-bold tracking-[2px] transition-colors mt-1.5 ${
-            isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'
-          }`}
-        >
-          {activePlanName ? 'ACTIVE NODE' : 'NEON'}
-        </span>
-        <span
-          className={`font-black tracking-wide text-white leading-none mt-0.5 text-center px-1 ${
-            activePlanName && activePlanName.length > 8
-              ? 'text-[13px]'
-              : 'text-[18px]'
-          }`}
-        >
-          {activePlanName || 'MINING'}
-        </span>
-        <span
-          className={`text-[9px] font-bold tracking-wider mt-1 px-2 py-0.5 rounded-full ${
-            isMiningActive
-              ? 'bg-[#10B981]/20 text-[#10B981]'
-              : 'bg-[#EF4444]/20 text-[#EF4444]'
-          }`}
-        >
-          {isMiningActive ? 'ONLINE' : 'TAP TO START'}
-        </span>
+        {isCoolingDown ? (
+          <>
+            <span className="text-[10px] font-bold tracking-[2px] transition-colors mt-1.5 text-[#00E5FF]">
+              COOLDOWN
+            </span>
+            <span className="font-black tracking-wider text-white leading-none mt-0.5 text-center px-1 text-[17px]">
+              COOL DOWN
+            </span>
+            <span className="text-[10px] font-mono font-bold tracking-wider mt-1 px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] shadow-[0_0_10px_rgba(0,229,255,0.3)]">
+              00:{cooldownSecondsRemaining < 10 ? '0' : ''}{cooldownSecondsRemaining}
+            </span>
+          </>
+        ) : (
+          <>
+            <span
+              className={`text-[11px] font-bold tracking-[2px] transition-colors mt-1.5 ${
+                isMiningActive ? 'text-[#10B981]' : 'text-[#EF4444]'
+              }`}
+            >
+              {activePlanName ? 'ACTIVE NODE' : 'NEON'}
+            </span>
+            <span
+              className={`font-black tracking-wide text-white leading-none mt-0.5 text-center px-1 ${
+                activePlanName && activePlanName.length > 8
+                  ? 'text-[13px]'
+                  : 'text-[18px]'
+              }`}
+            >
+              {activePlanName || 'MINING'}
+            </span>
+            <span
+              className={`text-[9px] font-bold tracking-wider mt-1 px-2 py-0.5 rounded-full ${
+                isMiningActive
+                  ? 'bg-[#10B981]/20 text-[#10B981]'
+                  : 'bg-[#EF4444]/20 text-[#EF4444]'
+              }`}
+            >
+              {isMiningActive ? 'ONLINE' : 'TAP TO START'}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

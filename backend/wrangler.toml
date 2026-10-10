@@ -9,8 +9,8 @@ crons = ["0 0 * * *"]
 # Cloudflare D1 Serverless SQL Database Binding
 [[d1_databases]]
 binding = "DB"
-database_name = "nexora-production-db"
-database_id = "3158b81e-7d95-41ae-8b20-0deb9090082c"
+database_name = "nexora-prod-db-v2"
+database_id = "462fd701-d9f9-40c2-a6f2-7cd473bfb819"
 
 # Public Environment Variables
 [vars]
