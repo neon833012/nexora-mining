@@ -8,7 +8,8 @@ import {
   Lock,
   Gift,
   ArrowUpRight,
-  Repeat
+  Repeat,
+  Loader2
 } from 'lucide-react';
 import { ReferredUserItem, TeamTurnover } from '../types/mining';
 
@@ -23,6 +24,7 @@ interface Props {
   referredUsers?: ReferredUserItem[];
   myStake?: number;
   teamTurnover?: TeamTurnover;
+  isProcessing?: boolean;
 }
 
 export const ReferralNetworkSection: React.FC<Props> = ({
@@ -35,7 +37,8 @@ export const ReferralNetworkSection: React.FC<Props> = ({
   onReinvestReferralToPlan,
   referredUsers = [],
   myStake = 0,
-  teamTurnover
+  teamTurnover,
+  isProcessing = false
 }) => {
   const [activeLevelTab, setActiveLevelTab] = useState<'all' | 1 | 2 | 3>('all');
   const [shareLockWarning, setShareLockWarning] = useState<string | null>(null);
@@ -163,28 +166,48 @@ export const ReferralNetworkSection: React.FC<Props> = ({
             <button
               type="button"
               onClick={onSendReferralToWallet}
-              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 ${
-                referralBalance > 0
-                  ? 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#021020] shadow-[0_0_20px_rgba(0,240,255,0.35)] border border-[#00F0FF]'
-                  : 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] hover:text-[#94A3B8]'
+              disabled={isProcessing || referralBalance <= 0}
+              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all ${
+                isProcessing || referralBalance <= 0
+                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-60'
+                  : 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#021020] shadow-[0_0_20px_rgba(0,240,255,0.35)] border border-[#00F0FF] cursor-pointer active:scale-95'
               }`}
             >
-              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-              <span>Send to Wallet</span>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#00F0FF]" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                  <span>Send to Wallet</span>
+                </>
+              )}
             </button>
 
             {/* Button 2: Re-invest into Plan */}
             <button
               type="button"
               onClick={onReinvestReferralToPlan}
-              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 ${
-                referralBalance > 0 && myStake > 0
-                  ? 'bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-110 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-[#10B981]'
-                  : 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] hover:text-[#94A3B8]'
+              disabled={isProcessing || referralBalance <= 0 || myStake <= 0}
+              className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all ${
+                isProcessing || referralBalance <= 0 || myStake <= 0
+                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-60'
+                  : 'bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-110 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-[#10B981] cursor-pointer active:scale-95'
               }`}
             >
-              <Repeat className="w-4 h-4 stroke-[2.5]" />
-              <span>Re-invest in Plan</span>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#10B981]" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <Repeat className="w-4 h-4 stroke-[2.5]" />
+                  <span>Re-invest in Plan</span>
+                </>
+              )}
             </button>
           </div>
         </div>

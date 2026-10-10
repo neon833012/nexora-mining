@@ -665,6 +665,7 @@ export const App: React.FC = () => {
   const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(0.0);
   const [serverTotalWithdrawn, setServerTotalWithdrawn] = useState<number>(0.0);
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
+  const [isProcessingWalletAction, setIsProcessingWalletAction] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'mining' | 'deposit' | 'referral' | 'orc' | 'withdraw'>('all');
   const [referredUsers, setReferredUsers] = useState<ReferredUserItem[]>(() => {
@@ -2554,52 +2555,61 @@ export const App: React.FC = () => {
 
   // Transfer referral income to main wallet (Withdrawable Balance for Instant Cashout)
   const handleTransferReferralToMainWallet = async () => {
+    if (isProcessingWalletAction) return;
     if (referralBalance <= 0) {
       showToast('⚠️ No referral balance available to send to wallet!');
       return;
     }
-    const transferAmt = referralBalance;
 
-    const res = await nexoraApi.transferReferralToWallet(userName);
-    if (res && res.success) {
-      if (res.updatedWallet) {
-        const w = res.updatedWallet;
-        const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
-        const newRef = Number(w.referral_balance ?? w.referralBalance) || 0;
-        setAvailableWithdrawal(newWithdr);
-        setReferralBalance(newRef);
-        setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+    setIsProcessingWalletAction(true);
+    try {
+      const transferAmt = referralBalance;
+      const res = await nexoraApi.transferReferralToWallet(userName);
+      if (res && res.success) {
+        if (res.updatedWallet) {
+          const w = res.updatedWallet;
+          const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
+          const newRef = Number(w.referral_balance ?? w.referralBalance) || 0;
+          setAvailableWithdrawal(newWithdr);
+          setReferralBalance(newRef);
+          setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+        } else {
+          const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+          setAvailableWithdrawal(newWithdrawable);
+          setReferralBalance(0.0);
+          setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+        }
+
+        try {
+          localStorage.setItem('neon_referral_balance', '0');
+          localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
+        } catch (e) {}
+
+        const newTx: TransactionRecord = {
+          id: `tx_${Date.now()}_ref_transfer`,
+          type: 'Referral Balance Sent to Withdrawable Balance',
+          amount: transferAmt,
+          date: 'Just now',
+          status: 'Settled',
+          txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..trans'
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+        fetchWalletHistory();
+
+        showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from Referral Balance to Withdrawable Wallet!`);
       } else {
-        const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
-        setAvailableWithdrawal(newWithdrawable);
-        setReferralBalance(0.0);
-        setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+        showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
       }
-
-      try {
-        localStorage.setItem('neon_referral_balance', '0');
-        localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
-      } catch (e) {}
-
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}_ref_transfer`,
-        type: 'Referral Balance Sent to Withdrawable Balance',
-        amount: transferAmt,
-        date: 'Just now',
-        status: 'Settled',
-        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..trans'
-      };
-      setTransactions((prev) => [newTx, ...prev]);
-      fetchWalletHistory();
-
-      showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from Referral Balance to Withdrawable Wallet!`);
-    } else {
-      showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
+    } catch (e: any) {
+      showToast(`⚠️ Transfer error: ${e?.message || 'Network error'}`);
+    } finally {
+      setIsProcessingWalletAction(false);
     }
   };
 
   // Re-invest Referral balance directly into current active plan / mining power
   const handleReinvestReferralToPlan = async () => {
+    if (isProcessingWalletAction) return;
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first to re-invest your referral earnings.');
       return;
@@ -2610,135 +2620,151 @@ export const App: React.FC = () => {
       return;
     }
 
-    const amountToReinvest = referralBalance;
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
-    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+    setIsProcessingWalletAction(true);
+    try {
+      const amountToReinvest = referralBalance;
+      const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+      const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+      const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    const res = await nexoraApi.reinvestUpgradePlan({
-      userId: userName,
-      newPower: updatedPlanPower,
-      upgradedPlanName: newPlanName,
-      yieldAmount: amountToReinvest,
-      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-      source: 'referral'
-    });
-
-    if (res && res.success) {
-      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
-      const finalRef = res.updatedWallet ? (Number(res.updatedWallet.referral_balance ?? res.updatedWallet.referralBalance) || 0) : 0;
-
-      setActiveMiningPower(finalPower);
-      setReferralBalance(finalRef);
-      try {
-        localStorage.setItem('neon_referral_balance', String(finalRef));
-        localStorage.setItem('neon_mining_power', String(finalPower));
-      } catch (e) {}
-
-      // Update personal stake in team turnover
-      setTeamTurnover((prev) => {
-        const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
-        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-        return {
-          ...prev,
-          personalStaked: newPersonal,
-          totalVolume: newTotal,
-          boostedRate: newRate
-        };
+      const res = await nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: amountToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'referral'
       });
 
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}_ref_reinvest`,
-        type: `Referral Commission Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-        amount: amountToReinvest,
-        date: 'Just now',
-        status: 'Compounded',
-        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..ref_cmp'
-      };
-      setTransactions((prev) => [newTx, ...prev]);
+      if (res && res.success) {
+        const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+        const finalRef = res.updatedWallet ? (Number(res.updatedWallet.referral_balance ?? res.updatedWallet.referralBalance) || 0) : 0;
 
-      if (userName) {
-        const cleanId = userName.toUpperCase();
-        setAdminUsers((prev) =>
-          prev.map((u) => {
-            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-              return {
-                ...u,
-                stakedAmount: finalPower,
-                currentPlanName: newPlanName,
-                status: 'active'
-              };
-            }
-            return u;
-          })
-        );
-      }
+        setActiveMiningPower(finalPower);
+        setReferralBalance(finalRef);
+        try {
+          localStorage.setItem('neon_referral_balance', String(finalRef));
+          localStorage.setItem('neon_mining_power', String(finalPower));
+        } catch (e) {}
 
-      fetchWalletHistory();
-      fetchLiveAdminUsers();
+        // Update personal stake in team turnover
+        setTeamTurnover((prev) => {
+          const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+          const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+          const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+          return {
+            ...prev,
+            personalStaked: newPersonal,
+            totalVolume: newTotal,
+            boostedRate: newRate
+          };
+        });
 
-      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-        showToast(
-          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested referral earnings reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-        );
+        const newTx: TransactionRecord = {
+          id: `tx_${Date.now()}_ref_reinvest`,
+          type: `Referral Commission Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+          amount: amountToReinvest,
+          date: 'Just now',
+          status: 'Compounded',
+          txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..ref_cmp'
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+
+        if (userName) {
+          const cleanId = userName.toUpperCase();
+          setAdminUsers((prev) =>
+            prev.map((u) => {
+              if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+                return {
+                  ...u,
+                  stakedAmount: finalPower,
+                  currentPlanName: newPlanName,
+                  status: 'active'
+                };
+              }
+              return u;
+            })
+          );
+        }
+
+        fetchWalletHistory();
+        fetchLiveAdminUsers();
+
+        if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+          showToast(
+            `🚀 AUTO-UPGRADE TRIGGERED! Reinvested referral earnings reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+          );
+        } else {
+          showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from Referral Balance into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+        }
       } else {
-        showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from Referral Balance into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+        showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
       }
-    } else {
-      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
+    } catch (e: any) {
+      showToast(`⚠️ Re-invest error: ${e?.message || 'Network error'}`);
+    } finally {
+      setIsProcessingWalletAction(false);
     }
   };
 
   // Transfer ORC income to main wallet (Withdrawable Balance for Instant Cashout)
   const handleTransferOrcToMainWallet = async () => {
+    if (isProcessingWalletAction) return;
     if (orcBalance <= 0) {
       showToast('⚠️ No ORC balance available to send to wallet!');
       return;
     }
-    const transferAmt = orcBalance;
 
-    const res = await nexoraApi.transferOrcToWallet(userName);
-    if (res && res.success) {
-      if (res.updatedWallet) {
-        const w = res.updatedWallet;
-        const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
-        const newOrc = Number(w.orc_balance ?? w.orcBalance) || 0;
-        setAvailableWithdrawal(newWithdr);
-        setOrcBalance(newOrc);
-        setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+    setIsProcessingWalletAction(true);
+    try {
+      const transferAmt = orcBalance;
+      const res = await nexoraApi.transferOrcToWallet(userName);
+      if (res && res.success) {
+        if (res.updatedWallet) {
+          const w = res.updatedWallet;
+          const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
+          const newOrc = Number(w.orc_balance ?? w.orcBalance) || 0;
+          setAvailableWithdrawal(newWithdr);
+          setOrcBalance(newOrc);
+          setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
+        } else {
+          const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
+          setAvailableWithdrawal(newWithdrawable);
+          setOrcBalance(0.0);
+          setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+        }
+
+        try {
+          localStorage.setItem('neon_orc_balance', '0');
+          localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
+        } catch (e) {}
+
+        const newTx: TransactionRecord = {
+          id: `tx_${Date.now()}_orc_transfer`,
+          type: '10-Tier ORC Balance Sent to Withdrawable Balance',
+          amount: transferAmt,
+          date: 'Just now',
+          status: 'Settled',
+          txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc'
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+        fetchWalletHistory();
+
+        showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from ORC Balance to Withdrawable Wallet!`);
       } else {
-        const newWithdrawable = +(availableWithdrawal + transferAmt).toFixed(2);
-        setAvailableWithdrawal(newWithdrawable);
-        setOrcBalance(0.0);
-        setTotalBalance(+(depositBalance + newWithdrawable).toFixed(2));
+        showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
       }
-
-      try {
-        localStorage.setItem('neon_orc_balance', '0');
-        localStorage.setItem('neon_available_withdrawal', String(availableWithdrawal + transferAmt));
-      } catch (e) {}
-
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}_orc_transfer`,
-        type: '10-Tier ORC Balance Sent to Withdrawable Balance',
-        amount: transferAmt,
-        date: 'Just now',
-        status: 'Settled',
-        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc'
-      };
-      setTransactions((prev) => [newTx, ...prev]);
-      fetchWalletHistory();
-
-      showToast(`🎉 Sent $${transferAmt.toFixed(2)} USDT from ORC Balance to Withdrawable Wallet!`);
-    } else {
-      showToast(`⚠️ Transfer failed: ${res?.message || 'Please try again'}`);
+    } catch (e: any) {
+      showToast(`⚠️ Transfer error: ${e?.message || 'Network error'}`);
+    } finally {
+      setIsProcessingWalletAction(false);
     }
   };
 
   // Re-invest ORC balance directly into current active plan / mining power
   const handleReinvestOrcToPlan = async () => {
+    if (isProcessingWalletAction) return;
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first to re-invest your ORC.');
       return;
@@ -2749,84 +2775,91 @@ export const App: React.FC = () => {
       return;
     }
 
-    const amountToReinvest = orcBalance;
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
-    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+    setIsProcessingWalletAction(true);
+    try {
+      const amountToReinvest = orcBalance;
+      const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+      const updatedPlanPower = +(activeMiningPower + amountToReinvest).toFixed(2);
+      const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    const res = await nexoraApi.reinvestUpgradePlan({
-      userId: userName,
-      newPower: updatedPlanPower,
-      upgradedPlanName: newPlanName,
-      yieldAmount: amountToReinvest,
-      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-      source: 'orc'
-    });
-
-    if (res && res.success) {
-      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
-      const finalOrc = res.updatedWallet ? (Number(res.updatedWallet.orc_balance ?? res.updatedWallet.orcBalance) || 0) : 0;
-
-      setActiveMiningPower(finalPower);
-      setOrcBalance(finalOrc);
-      try {
-        localStorage.setItem('neon_orc_balance', String(finalOrc));
-        localStorage.setItem('neon_mining_power', String(finalPower));
-      } catch (e) {}
-
-      // Update personal stake in team turnover
-      setTeamTurnover((prev) => {
-        const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
-        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-        return {
-          ...prev,
-          personalStaked: newPersonal,
-          totalVolume: newTotal,
-          boostedRate: newRate
-        };
+      const res = await nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: amountToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'orc'
       });
 
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}_orc_reinvest`,
-        type: `ORC Royalty Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-        amount: amountToReinvest,
-        date: 'Just now',
-        status: 'Compounded',
-        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc_cmp'
-      };
-      setTransactions((prev) => [newTx, ...prev]);
+      if (res && res.success) {
+        const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+        const finalOrc = res.updatedWallet ? (Number(res.updatedWallet.orc_balance ?? res.updatedWallet.orcBalance) || 0) : 0;
 
-      if (userName) {
-        const cleanId = userName.toUpperCase();
-        setAdminUsers((prev) =>
-          prev.map((u) => {
-            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-              return {
-                ...u,
-                stakedAmount: finalPower,
-                currentPlanName: newPlanName,
-                status: 'active'
-              };
-            }
-            return u;
-          })
-        );
-      }
+        setActiveMiningPower(finalPower);
+        setOrcBalance(finalOrc);
+        try {
+          localStorage.setItem('neon_orc_balance', String(finalOrc));
+          localStorage.setItem('neon_mining_power', String(finalPower));
+        } catch (e) {}
 
-      fetchWalletHistory();
-      fetchLiveAdminUsers();
+        // Update personal stake in team turnover
+        setTeamTurnover((prev) => {
+          const newPersonal = +(prev.personalStaked + amountToReinvest).toFixed(2);
+          const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+          const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+          return {
+            ...prev,
+            personalStaked: newPersonal,
+            totalVolume: newTotal,
+            boostedRate: newRate
+          };
+        });
 
-      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-        showToast(
-          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested ORC reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-        );
+        const newTx: TransactionRecord = {
+          id: `tx_${Date.now()}_orc_reinvest`,
+          type: `ORC Royalty Re-invested (+${amountToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+          amount: amountToReinvest,
+          date: 'Just now',
+          status: 'Compounded',
+          txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..orc_cmp'
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+
+        if (userName) {
+          const cleanId = userName.toUpperCase();
+          setAdminUsers((prev) =>
+            prev.map((u) => {
+              if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+                return {
+                  ...u,
+                  stakedAmount: finalPower,
+                  currentPlanName: newPlanName,
+                  status: 'active'
+                };
+              }
+              return u;
+            })
+          );
+        }
+
+        fetchWalletHistory();
+        fetchLiveAdminUsers();
+
+        if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+          showToast(
+            `🚀 AUTO-UPGRADE TRIGGERED! Reinvested ORC reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+          );
+        } else {
+          showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from ORC into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+        }
       } else {
-        showToast(`🎉 Re-invested +$${amountToReinvest.toFixed(2)} USDT from ORC into plan! Active Plan Capital is now $${finalPower.toFixed(2)} USD.`);
+        showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
       }
-    } else {
-      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
+    } catch (e: any) {
+      showToast(`⚠️ Re-invest error: ${e?.message || 'Network error'}`);
+    } finally {
+      setIsProcessingWalletAction(false);
     }
   };
 
@@ -2848,6 +2881,7 @@ export const App: React.FC = () => {
 
   // Daily Plan Interest Re-invest (Directly adds 1% daily interest to plan capital, e.g. $20 -> $20.20 USD, no fees)
   const handleCompoundSingleDay = async () => {
+    if (isCompoundingActive) return;
     if (activeMiningPower <= 0) {
       showToast('⚠️ No active plan found! Please buy a plan first.');
       return;
@@ -2858,83 +2892,90 @@ export const App: React.FC = () => {
       return;
     }
 
-    const yieldToReinvest = unclaimedYield;
-    const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
-    const updatedPlanPower = +(activeMiningPower + yieldToReinvest).toFixed(2);
-    const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
-    const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
+    setIsCompoundingActive(true);
+    try {
+      const yieldToReinvest = unclaimedYield;
+      const previousPlan = getPlanForAmount(activeMiningPower, miningPlans);
+      const updatedPlanPower = +(activeMiningPower + yieldToReinvest).toFixed(2);
+      const upgradedPlan = getPlanForAmount(updatedPlanPower, miningPlans);
+      const newPlanName = upgradedPlan ? `${upgradedPlan.planNumber} ($${upgradedPlan.amount} USD)` : `Active Plan ($${updatedPlanPower})`;
 
-    const res = await nexoraApi.reinvestUpgradePlan({
-      userId: userName,
-      newPower: updatedPlanPower,
-      upgradedPlanName: newPlanName,
-      yieldAmount: yieldToReinvest,
-      dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
-      source: 'yield'
-    });
-
-    if (res && res.success) {
-      const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
-      const finalUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
-
-      setActiveMiningPower(finalPower);
-      setUnclaimedYield(finalUnclaimed);
-      try {
-        localStorage.setItem('neon_unclaimed_yield', String(finalUnclaimed));
-        localStorage.setItem('neon_mining_power', String(finalPower));
-      } catch (e) {}
-
-      setTeamTurnover((prev) => {
-        const newPersonal = +(prev.personalStaked + yieldToReinvest).toFixed(2);
-        const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
-        const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
-        return {
-          ...prev,
-          personalStaked: newPersonal,
-          totalVolume: newTotal,
-          boostedRate: newRate
-        };
+      const res = await nexoraApi.reinvestUpgradePlan({
+        userId: userName,
+        newPower: updatedPlanPower,
+        upgradedPlanName: newPlanName,
+        yieldAmount: yieldToReinvest,
+        dailyRatePercent: upgradedPlan?.dailyRatePercent || 1.0,
+        source: 'yield'
       });
 
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}_cmp`,
-        type: `Plan Interest Re-invested (+${yieldToReinvest.toFixed(2)} USD Added to Plan Capital)`,
-        amount: yieldToReinvest,
-        date: 'Just now',
-        status: 'Compounded',
-        txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..cmp'
-      };
-      setTransactions((prev) => [newTx, ...prev]);
+      if (res && res.success) {
+        const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
+        const finalUnclaimed = res.updatedWallet ? (Number(res.updatedWallet.unclaimed_yield ?? res.updatedWallet.unclaimedYield) || 0) : 0;
 
-      if (userName) {
-        const cleanId = userName.toUpperCase();
-        setAdminUsers((prev) =>
-          prev.map((u) => {
-            if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
-              return {
-                ...u,
-                stakedAmount: finalPower,
-                currentPlanName: newPlanName,
-                status: 'active'
-              };
-            }
-            return u;
-          })
-        );
-      }
+        setActiveMiningPower(finalPower);
+        setUnclaimedYield(finalUnclaimed);
+        try {
+          localStorage.setItem('neon_unclaimed_yield', String(finalUnclaimed));
+          localStorage.setItem('neon_mining_power', String(finalPower));
+        } catch (e) {}
 
-      fetchWalletHistory();
-      fetchLiveAdminUsers();
+        setTeamTurnover((prev) => {
+          const newPersonal = +(prev.personalStaked + yieldToReinvest).toFixed(2);
+          const newTotal = +(newPersonal + prev.downlineL1 + prev.downlineL2 + prev.downlineL3).toFixed(2);
+          const newRate = newTotal >= 2500 ? 2.5 : newTotal >= 1000 ? 1.5 : 1.0;
+          return {
+            ...prev,
+            personalStaked: newPersonal,
+            totalVolume: newTotal,
+            boostedRate: newRate
+          };
+        });
 
-      if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
-        showToast(
-          `🚀 AUTO-UPGRADE TRIGGERED! Reinvested balance reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
-        );
+        const newTx: TransactionRecord = {
+          id: `tx_${Date.now()}_cmp`,
+          type: `Plan Interest Re-invested (+${yieldToReinvest.toFixed(2)} USD Added to Plan Capital)`,
+          amount: yieldToReinvest,
+          date: 'Just now',
+          status: 'Compounded',
+          txHash: '0x' + Math.random().toString(16).substring(2, 10) + '..cmp'
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+
+        if (userName) {
+          const cleanId = userName.toUpperCase();
+          setAdminUsers((prev) =>
+            prev.map((u) => {
+              if (u.id.toUpperCase() === cleanId || u.name.toUpperCase() === cleanId || (userMobile && u.mobile === userMobile)) {
+                return {
+                  ...u,
+                  stakedAmount: finalPower,
+                  currentPlanName: newPlanName,
+                  status: 'active'
+                };
+              }
+              return u;
+            })
+          );
+        }
+
+        fetchWalletHistory();
+        fetchLiveAdminUsers();
+
+        if (upgradedPlan && previousPlan && upgradedPlan.amount > previousPlan.amount) {
+          showToast(
+            `🚀 AUTO-UPGRADE TRIGGERED! Reinvested balance reached $${finalPower.toFixed(2)} USD! Plan automatically upgraded to ${upgradedPlan.planName} ($${upgradedPlan.amount} Tier) hashing at higher ${upgradedPlan.dailyRatePercent}% daily!`
+          );
+        } else {
+          showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${finalPower.toFixed(2)} USD (${previousPlan?.planName || 'Active Node'}).`);
+        }
       } else {
-        showToast(`🎉 Re-invested +$${yieldToReinvest.toFixed(2)} USD into plan! Active Plan Value is now $${finalPower.toFixed(2)} USD (${previousPlan?.planName || 'Active Node'}).`);
+        showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
       }
-    } else {
-      showToast(`⚠️ Re-invest failed: ${res?.message || 'Please try again'}`);
+    } catch (e: any) {
+      showToast(`⚠️ Re-invest error: ${e?.message || 'Network error'}`);
+    } finally {
+      setIsCompoundingActive(false);
     }
   };
 
@@ -4754,6 +4795,7 @@ export const App: React.FC = () => {
                   referredUsers={referredUsers}
                   myStake={activeMiningPower}
                   teamTurnover={teamTurnover}
+                  isProcessing={isProcessingWalletAction}
                 />
               </div>
             ) : (
@@ -4775,6 +4817,7 @@ export const App: React.FC = () => {
                   totalOrcIncome={totalOrcIncome}
                   onSendOrcToWallet={handleTransferOrcToMainWallet}
                   onReinvestOrcToPlan={handleReinvestOrcToPlan}
+                  isProcessing={isProcessingWalletAction}
                 />
               </div>
             )}
