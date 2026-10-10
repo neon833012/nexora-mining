@@ -36,6 +36,7 @@ interface Props {
   yesterdaysIncome: number;
   todaysIncome: number;
   totalIncome: number;
+  totalRewards?: number;
   unclaimedYield?: number;
 
   // Plan & Power
@@ -83,6 +84,7 @@ export const DashboardPreviewSection: React.FC<Props> = ({
   yesterdaysIncome,
   todaysIncome,
   totalIncome,
+  totalRewards,
   unclaimedYield = 0,
   activeMiningPower,
   activePlanName = 'No Active Plan',
@@ -155,7 +157,7 @@ export const DashboardPreviewSection: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, []);
 
-  const pureMinedYield = +(totalIncome - totalReferralIncome).toFixed(2);
+  const pureMinedYield = totalRewards !== undefined ? +totalRewards.toFixed(2) : +(totalIncome - totalReferralIncome).toFixed(2);
 
   // Fallback and robust active plan resolution (Strictly ensures plan name is never "No Active Plan" when money is staked)
   const isPlanActive = Number(activeMiningPower || 0) > 0;

@@ -313,7 +313,9 @@ app.post('/api/auth/login', async (c) => {
       orcBalance: Number(walletRecord.orc_balance) || 0,
       orc_balance: Number(walletRecord.orc_balance) || 0,
       totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
-      total_orc_income: Number(walletRecord.total_orc_income) || 0
+      total_orc_income: Number(walletRecord.total_orc_income) || 0,
+      totalReferralIncome: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0,
+      total_referral_income: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0
     } : {
       depositBalance: 0,
       withdrawableBalance: 0,
@@ -336,7 +338,9 @@ app.post('/api/auth/login', async (c) => {
       orcBalance: 0,
       orc_balance: 0,
       totalOrcIncome: 0,
-      total_orc_income: 0
+      total_orc_income: 0,
+      totalReferralIncome: 0,
+      total_referral_income: 0
     };
 
     // Generate new unique session token to enforce SINGLE ACTIVE SESSION
@@ -435,7 +439,9 @@ app.get('/api/auth/me', async (c) => {
       orcBalance: Number(walletRecord.orc_balance) || 0,
       orc_balance: Number(walletRecord.orc_balance) || 0,
       totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
-      total_orc_income: Number(walletRecord.total_orc_income) || 0
+      total_orc_income: Number(walletRecord.total_orc_income) || 0,
+      totalReferralIncome: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0,
+      total_referral_income: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0
     } : {
       depositBalance: 0,
       withdrawableBalance: 0,
@@ -458,7 +464,9 @@ app.get('/api/auth/me', async (c) => {
       orcBalance: 0,
       orc_balance: 0,
       totalOrcIncome: 0,
-      total_orc_income: 0
+      total_orc_income: 0,
+      totalReferralIncome: 0,
+      total_referral_income: 0
     };
 
     return c.json({
@@ -1456,9 +1464,10 @@ app.post('/api/deposit/verify-tx', async (c) => {
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
+                   total_referral_income = total_referral_income + ?,
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(commission, uplineUser.id),
+            ).bind(commission, commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 
@@ -1724,9 +1733,10 @@ app.post('/api/plans/subscribe', async (c) => {
             c.env.DB.prepare(
               `UPDATE wallets 
                SET referral_balance = referral_balance + ?, 
+                   total_referral_income = total_referral_income + ?,
                    updated_at = CURRENT_TIMESTAMP 
                WHERE user_id = ?`
-            ).bind(commission, uplineUser.id),
+            ).bind(commission, commission, uplineUser.id),
 
             c.env.DB.prepare(
               `INSERT INTO transactions (id, user_id, type, amount, status, tx_hash) 

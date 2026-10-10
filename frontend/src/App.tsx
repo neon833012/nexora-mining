@@ -97,7 +97,8 @@ import {
   History,
   Copy,
   ExternalLink,
-  Coins
+  Coins,
+  Cpu
 } from 'lucide-react';
 
 // Known development/testing user accounts to exclude from production admin directories
@@ -922,8 +923,8 @@ export const App: React.FC = () => {
   ).toFixed(2);
   const totalWithdrawn = Math.max(serverTotalWithdrawn, settledFromRequests);
 
-  // Total Cumulative Income (Total Mined + Total Referral Earned)
-  const totalCumulativeIncome = +(totalRewards + referralIncome).toFixed(2);
+  // Total Cumulative Income (Total Mined + Total Referral Earned + Total ORC Earned)
+  const totalCumulativeIncome = +(totalRewards + referralIncome + totalOrcIncome).toFixed(2);
 
   // Active Plan Name calculation (Tiered Threshold System: 20-49.99 = Neon Lite, 50-149.99 = Cryptera, etc.)
   const activePlanObj = getPlanForAmount(activeMiningPower, miningPlans) || getPlanForAmount(activeMiningPower, MINING_PLANS);
@@ -1652,7 +1653,8 @@ export const App: React.FC = () => {
           setDepositBalance(dep);
           setAvailableWithdrawal(withdr);
           setReferralBalance(ref);
-          setReferralIncome((prev) => Math.max(prev, ref));
+          const refInc = Number((w as any).totalReferralIncome ?? (w as any).total_referral_income) || ref;
+          if (refInc > 0) setReferralIncome((prev) => Math.max(prev, refInc));
           const orcInc = Number((w as any).totalOrcIncome ?? (w as any).total_orc_income) || 0;
           const orcBal = Number((w as any).orcBalance ?? (w as any).orc_balance) || 0;
           if (orcInc > 0) setTotalOrcIncome((prev) => Math.max(prev, orcInc));
@@ -4185,6 +4187,7 @@ export const App: React.FC = () => {
                 todaysIncome={unclaimedYield}
                 unclaimedYield={unclaimedYield}
                 totalIncome={totalCumulativeIncome}
+                totalRewards={totalRewards}
                 activeMiningPower={activeMiningPower}
                 activePlanName={activePlanName}
                 activePlanDailyRate={activePlanObj?.dailyRatePercent || 1.0}
@@ -4335,7 +4338,7 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Box 2: Total Earning (Mined Yield + Referral Income) */}
+                    {/* Box 2: Total Earning (All-Time Mined Yield + Referral Income + 10-Tier ORC) */}
                     <div className="p-4 rounded-2xl bg-[#081220] border border-[#A855F7]/30 shadow-md hover:border-[#A855F7]/60 transition-all">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#C084FC]">
@@ -4347,13 +4350,13 @@ export const App: React.FC = () => {
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-[20px] lg:text-[22px] font-black text-[#C084FC] font-mono">
-                          ${(totalRewards + referralIncome).toFixed(2)}
+                          ${(totalRewards + referralIncome + totalOrcIncome).toFixed(2)}
                         </span>
                         <span className="text-[11px] font-bold text-[#C084FC]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">Lifetime</span>
-                        <span className="text-[10px] text-[#C084FC] font-mono font-bold">Accumulated</span>
+                        <span className="text-[10px] text-[#94A3B8]">Yield + Ref + ORC</span>
+                        <span className="text-[10px] text-[#C084FC] font-mono font-bold">Lifetime Total</span>
                       </div>
                     </div>
 
@@ -4379,11 +4382,11 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Box 4: Total Referral Income / Available Balance */}
+                    {/* Box 4: Total Referral (All-Time Lifetime Referral Commissions) */}
                     <div className="p-4 rounded-2xl bg-[#081220] border border-[#10B981]/40 shadow-md hover:border-[#10B981]/70 transition-all">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#94A3B8]">
-                          Referral Balance
+                          Total Referral
                         </span>
                         <div className="w-7 h-7 rounded-lg bg-[#10B981]/15 flex items-center justify-center text-[#10B981]">
                           <Gift className="w-3.5 h-3.5" />
@@ -4391,13 +4394,13 @@ export const App: React.FC = () => {
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-[20px] lg:text-[22px] font-black text-[#10B981] font-mono">
-                          ${referralBalance.toFixed(2)}
+                          ${referralIncome.toFixed(2)}
                         </span>
                         <span className="text-[11px] font-bold text-[#10B981]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">Tier 1-3</span>
-                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Earned</span>
+                        <span className="text-[10px] text-[#94A3B8]">All-Time</span>
+                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Tier 1-3 Earned</span>
                       </div>
                     </div>
 
@@ -4482,30 +4485,30 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Box 2: ORC Balance */}
+                    {/* Box 2: Total Yield (All-time claimed mining yield, whether reinvested or withdrawn) */}
                     <div className="p-4 rounded-2xl bg-[#081220] border border-[#10B981]/30 shadow-md hover:border-[#10B981]/60 transition-all">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#10B981] truncate">
-                            ORC Balance
+                            Total Yield
                           </span>
                           <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/25">
-                            Claimable
+                            All-Time
                           </span>
                         </div>
                         <div className="w-7 h-7 rounded-lg bg-[#10B981]/10 flex items-center justify-center text-[#10B981] shrink-0">
-                          <Coins className="w-3.5 h-3.5" />
+                          <Cpu className="w-3.5 h-3.5" />
                         </div>
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-[20px] lg:text-[22px] font-black text-[#10B981] font-mono">
-                          ${orcBalance.toFixed(2)}
+                          ${totalRewards.toFixed(2)}
                         </span>
                         <span className="text-[11px] font-bold text-[#10B981]">USDT</span>
                       </div>
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#122034]">
-                        <span className="text-[10px] text-[#94A3B8]">10 Tiers</span>
-                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Earned</span>
+                        <span className="text-[10px] text-[#94A3B8]">Lifetime Mined</span>
+                        <span className="text-[10px] text-[#10B981] font-mono font-bold">Claimed Yield</span>
                       </div>
                     </div>
                   </div>
