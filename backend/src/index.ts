@@ -2045,28 +2045,28 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
     if (source === 'referral') {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
-         SET active_mining_power = ?, 
+         SET active_mining_power = ROUND(active_mining_power + ?, 2), 
              referral_balance = CASE WHEN referral_balance - ? < 0.01 THEN 0.0 ELSE ROUND(referral_balance - ?, 4) END,
              updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?) AND referral_balance >= ?`
-      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
+         WHERE UPPER(user_id) = UPPER(?) AND referral_balance >= (? - 0.005)`
+      ).bind(numReinvest, numReinvest, numReinvest, userId, numReinvest);
     } else if (source === 'orc') {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
-         SET active_mining_power = ?, 
+         SET active_mining_power = ROUND(active_mining_power + ?, 2), 
              orc_balance = CASE WHEN orc_balance - ? < 0.01 THEN 0.0 ELSE ROUND(orc_balance - ?, 4) END,
              updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?) AND orc_balance >= ?`
-      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
+         WHERE UPPER(user_id) = UPPER(?) AND orc_balance >= (? - 0.005)`
+      ).bind(numReinvest, numReinvest, numReinvest, userId, numReinvest);
     } else {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
-         SET active_mining_power = ?, 
+         SET active_mining_power = ROUND(active_mining_power + ?, 2), 
              unclaimed_yield = CASE WHEN unclaimed_yield - ? < 0.01 THEN 0.0 ELSE ROUND(unclaimed_yield - ?, 4) END,
              total_mined_yield = total_mined_yield + ?,
              updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?) AND unclaimed_yield >= ?`
-      ).bind(finalPower, numReinvest, numReinvest, numReinvest, userId, numReinvest);
+         WHERE UPPER(user_id) = UPPER(?) AND unclaimed_yield >= (? - 0.005)`
+      ).bind(numReinvest, numReinvest, numReinvest, numReinvest, userId, numReinvest);
     }
 
     const txType = source === 'referral'

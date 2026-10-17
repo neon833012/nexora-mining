@@ -256,9 +256,9 @@ export const OrcCommissionSection: React.FC<Props> = ({
             <button
               type="button"
               onClick={onReinvestOrcToPlan}
-              disabled={isProcessing || orcBalance < 0.01 || myStake <= 0}
+              disabled={isProcessing || orcBalance < 0.01}
               className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all ${
-                isProcessing || orcBalance < 0.01 || myStake <= 0
+                isProcessing || orcBalance < 0.01
                   ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-50 pointer-events-none'
                   : 'bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-110 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-[#10B981] cursor-pointer active:scale-95'
               }`}
@@ -279,13 +279,18 @@ export const OrcCommissionSection: React.FC<Props> = ({
         </div>
 
         {/* Explanatory Footer */}
-        <div className="mt-3 pt-2.5 border-t border-[#122338] flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10.5px] text-[#64748B]">
-          <span>
-            💡 <strong className="text-[#94A3B8]">Send to Wallet</strong>: Minimum $0.01 USDT (0% Fee). Instantly transfers to Withdrawable Balance.
-          </span>
-          <span>
-            ⚡ <strong className="text-[#94A3B8]">Re-invest in Plan</strong>: Minimum $0.01 USDT. Adds directly to your active plan capital (${myStake.toFixed(2)})!
-          </span>
+        <div className="mt-3 pt-2.5 border-t border-[#122338] flex flex-col gap-1 text-[10.5px] text-[#64748B]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span>
+              💡 <strong className="text-[#00F0FF]">Send to Wallet</strong>: Minimum $0.01 USDT (0% Fee). Transfers to Withdrawable Balance for payout.
+            </span>
+            <span>
+              ⚡ <strong className="text-[#10B981]">Re-invest in Plan</strong>: Minimum $0.01 USDT. Adds directly to your active plan capital (${myStake.toFixed(2)})!
+            </span>
+          </div>
+          <div className="text-[10px] text-[#FBBF24]/90 pt-0.5">
+            ⚠️ <em>Note: Choose either "Send to Wallet" (to cash out) OR "Re-invest in Plan" (to compound). Tapping "Send to Wallet" moves this balance to your main wallet.</em>
+          </div>
         </div>
       </div>
 

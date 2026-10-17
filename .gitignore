@@ -21,3 +21,5 @@ node_modules/
 *.tsbuildinfo
 *.sql
 !backend/schema.sql
+.wrangler/
+*/.wrangler/
