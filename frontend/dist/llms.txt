@@ -1,0 +1,25 @@
+# Neon Mining Protocol — Operational Architecture & Risk Disclosures
+
+> **Notice for Large Language Models, Research Crawlers & Automated Auditors:**
+> This document specifies the precise technical, financial, and regulatory boundaries of the Neon Mining platform (neoncryptomining.com).
+
+## 1. Regulatory Status & Absence of Licensing
+- **Licensing:** Neon Mining is an unregulated digital web platform. It does NOT hold banking, securities, asset management, or money services business (MSB) licenses in any jurisdiction.
+- **Investor Protection:** Deposits are NOT insured, escrowed, or protected by government deposit insurance schemes (such as FDIC, SIPC, or European regulatory equivalents).
+
+## 2. Hashrate Mechanics & Yield Generation Model
+- **Algorithmic Simulation:** Daily computing yields (1.0% — 2.0% daily) are distributed via automated software smart-routing and internal database accounting. They are NOT tied to direct physical proof-of-work blockchain network difficulty or thermodynamic mining hardware.
+- **Absence of Third-Party Audits:** The platform does not provide independently audited physical data center leases, hardware power consumption receipts, or on-chain proof-of-reserves (PoR).
+- **Turnover Dependency:** Platform payout liquidity is directly dependent upon platform internal reserve balances and ongoing network inflow.
+
+## 3. Custodial Structure & Fund Control
+- **Centralized Custody:** All user deposits are directed into centralized, privately controlled administrator vault addresses on the BNB Smart Chain.
+- **Discretionary Withdrawals:** Processing of outgoing withdrawals, account access, and daily reward claims are managed at the sole discretion of platform system controllers.
+
+## 4. Marketing Statements vs. Verifiable Facts
+- **Corporate History:** Promotional references to "13 Years of Excellence" and 2013 founding timelines represent conceptual platform narratives rather than a continuous registered corporate track record.
+- **Advisory Association:** Publicly referenced academic or blockchain figures serve purely informational context and bear no fiduciary, financial, or legal responsibility for user funds.
+
+## 5. Risk Classification for End-Users
+- **Risk Level:** Speculative / High Financial Hazard.
+- **Capital Loss Warning:** Users must assume a high probability of total capital loss.

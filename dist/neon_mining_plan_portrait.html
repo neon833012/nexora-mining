@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEON MINING — Official Business Plan (Portrait Edition)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #030712;
+      --card-bg: #070E1E;
+      --card-border: #14233C;
+      --cyan: #00F0FF;
+      --blue: #0284C7;
+      --emerald: #10B981;
+      --amber: #F59E0B;
+      --purple: #8B5CF6;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      background-color: #0b0f19;
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+      padding: 30px 0;
+    }
+
+    .top-actions {
+      position: fixed;
+      top: 20px;
+      right: 30px;
+      z-index: 1000;
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-download {
+      background: linear-gradient(135deg, #00F0FF 0%, #0284C7 100%);
+      color: #021326;
+      font-weight: 800;
+      font-size: 14px;
+      padding: 12px 24px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0, 240, 255, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* A4 Portrait Scale: 1240px x 1754px */
+    .page {
+      width: 1240px;
+      height: 1754px;
+      min-width: 1240px;
+      min-height: 1754px;
+      max-width: 1240px;
+      max-height: 1754px;
+      background: radial-gradient(circle at 85% 10%, rgba(0, 240, 255, 0.08) 0%, transparent 45%),
+                  radial-gradient(circle at 15% 90%, rgba(16, 185, 129, 0.06) 0%, transparent 45%),
+                  #040914;
+      border: 2px solid var(--card-border);
+      border-radius: 20px;
+      padding: 60px 70px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+      break-after: page;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+    }
+
+    .page::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(to right, rgba(20, 35, 60, 0.15) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(20, 35, 60, 0.15) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid rgba(20, 35, 60, 0.8);
+      padding-bottom: 20px;
+    }
+
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(2, 132, 199, 0.3));
+      border: 1.5px solid var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+    }
+
+    .logo-text {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      background: linear-gradient(90deg, #FFFFFF 0%, #00F0FF 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .portal-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      padding: 6px 16px;
+      border-radius: 100px;
+    }
+
+    /* Title Area */
+    .title-area {
+      margin-top: 20px;
+      margin-bottom: 25px;
+    }
+
+    .tagline {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tagline::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    .title {
+      font-size: 38px;
+      font-weight: 900;
+      color: #FFFFFF;
+      letter-spacing: -0.5px;
+      line-height: 1.2;
+    }
+
+    .title span {
+      background: linear-gradient(90deg, #00F0FF, #10B981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Footer */
+    .page-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 2px solid rgba(20, 35, 60, 0.8);
+      padding-top: 16px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .page-footer-left {
+      display: flex;
+      gap: 20px;
+    }
+
+    .page-number {
+      font-weight: 800;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      padding: 3px 12px;
+      border-radius: 6px;
+    }
+
+    /* Cards */
+    .card {
+      background: rgba(7, 14, 30, 0.75);
+      border: 1.5px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card.highlight {
+      border-color: rgba(0, 240, 255, 0.4);
+      background: linear-gradient(145deg, rgba(0, 240, 255, 0.06) 0%, rgba(7, 14, 30, 0.85) 100%);
+    }
+
+    /* Tables */
+    .portrait-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px;
+    }
+
+    .portrait-table th {
+      background: #060B16;
+      color: #64748B;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 2px solid var(--card-border);
+    }
+
+    .portrait-table th:first-child { border-radius: 10px 0 0 10px; }
+    .portrait-table th:last-child { border-radius: 0 10px 10px 0; text-align: right; }
+
+    .portrait-table td {
+      background: #081022;
+      padding: 14px 14px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #FFFFFF;
+      border-top: 1px solid #101E33;
+      border-bottom: 1px solid #101E33;
+    }
+
+    .portrait-table td:first-child {
+      border-left: 1px solid #101E33;
+      border-radius: 12px 0 0 12px;
+    }
+
+    .portrait-table td:last-child {
+      border-right: 1px solid #101E33;
+      border-radius: 0 12px 12px 0;
+      text-align: right;
+    }
+
+    .rate-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 100px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 800;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--emerald);
+    }
+
+    .price-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--cyan);
+    }
+
+    @media print {
+      body {
+        background: none;
+        padding: 0;
+        gap: 0;
+      }
+      .top-actions {
+        display: none !important;
+      }
+      .page {
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        margin: 0;
+        width: 100vw;
+        height: 100vh;
+        page-break-after: always;
+      }
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-actions">
+    <button class="btn-download" onclick="window.print()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Print / Save Portrait PDF
+    </button>
+  </div>
+
+  <!-- ==================== PAGE 01: COVER ==================== -->
+  <div class="page" style="justify-content: center; align-items: center; text-align: center; background: radial-gradient(circle at center, rgba(0, 240, 255, 0.12) 0%, transparent 65%), #030712;">
+    <div style="max-width: 950px; display: flex; flex-direction: column; align-items: center; gap: 34px;">
+      
+      <div style="width: 100px; height: 100px; border-radius: 28px; background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(2, 132, 199, 0.35)); border: 2.5px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-size: 50px; box-shadow: 0 0 50px rgba(0, 240, 255, 0.45);">
+        ⚡
+      </div>
+
+      <div style="display: inline-flex; align-items: center; gap: 10px; padding: 10px 24px; background: rgba(0, 240, 255, 0.08); border: 1.5px solid var(--cyan); border-radius: 100px;">
+        <span style="font-family: 'JetBrains Mono'; font-size: 14px; font-weight: 800; color: var(--cyan); letter-spacing: 2px;">OFFICIAL BUSINESS PLAN & REVENUE MODEL</span>
+      </div>
+
+      <h1 style="font-size: 64px; font-weight: 900; line-height: 1.1; color: #FFFFFF;">
+        NEON MINING<br>
+        <span style="background: linear-gradient(90deg, #00F0FF, #10B981); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">CORPORATION</span>
+      </h1>
+
+      <p style="font-size: 20px; color: #94A3B8; max-width: 780px; line-height: 1.6; font-weight: 500;">
+        Decentralized Web3 Cloud Hashrate Architecture • Automated Daily USDT Yield • Binance Smart Chain Smart Contract Integration
+      </p>
+
+      <div style="width: 100%; max-width: 800px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px;">
+        <div style="background: #081124; border: 1.5px solid var(--card-border); padding: 18px 24px; border-radius: 14px; text-align: left;">
+          <span style="font-size: 11px; color: #64748B; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 700; display: block;">Official Portal</span>
+          <span style="font-size: 18px; font-weight: 800; color: #00F0FF;">www.neoncryptomining.com</span>
+        </div>
+        <div style="background: #081124; border: 1.5px solid var(--card-border); padding: 18px 24px; border-radius: 14px; text-align: left;">
+          <span style="font-size: 11px; color: #64748B; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 700; display: block;">Settlement Currency</span>
+          <span style="font-size: 18px; font-weight: 800; color: #10B981;">Tether USD (USDT BEP-20)</span>
+        </div>
+        <div style="background: #081124; border: 1.5px solid var(--card-border); padding: 18px 24px; border-radius: 14px; text-align: left;">
+          <span style="font-size: 11px; color: #64748B; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 700; display: block;">Mining Yield Range</span>
+          <span style="font-size: 18px; font-weight: 800; color: #F59E0B;">1.00% to 2.00% Daily</span>
+        </div>
+        <div style="background: #081124; border: 1.5px solid var(--card-border); padding: 18px 24px; border-radius: 14px; text-align: left;">
+          <span style="font-size: 11px; color: #64748B; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 700; display: block;">Minimum Cashout</span>
+          <span style="font-size: 18px; font-weight: 800; color: #38BDF8;">$2.00 USDT (Instant)</span>
+        </div>
+      </div>
+    </div>
+    <div style="position: absolute; bottom: 35px; font-family: 'JetBrains Mono'; font-size: 12px; color: #475569;">
+      CONFIDENTIAL & PROPRIETARY • 2026 GLOBAL PORTRAIT EDITION
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 02: ABOUT & 5 INCOME STREAMS ==================== -->
+  <div class="page">
+    <div class="page-header">
+      <div class="logo-badge">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">NEON MINING</div>
+      </div>
+      <div class="portal-tag">neoncryptomining.com</div>
+    </div>
+
+    <div class="title-area">
+      <div class="tagline">Ecosystem Overview</div>
+      <h2 class="title">Enterprise Hashrate & <span>5 Income Streams</span></h2>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 18px; flex: 1;">
+      <div class="card highlight">
+        <h3 style="font-size: 20px; font-weight: 800; color: #FFFFFF;">What is Neon Mining Corporation?</h3>
+        <p style="font-size: 14.5px; line-height: 1.65; color: #CBD5E1;">
+          <strong>NEON MINING</strong> is a high-throughput institutional Web3 cloud mining platform. We operate high-efficiency ASIC server clusters globally, providing digital investors with automated daily USDT returns without the friction of physical mining equipment, maintenance, or high power bills.
+        </p>
+      </div>
+
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF; margin-top: 8px;">5 Streams of Earning & Profit:</h3>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #081022; border: 1.5px solid var(--card-border); padding: 16px 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 900; color: var(--cyan);">01</span>
+            <div>
+              <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">Daily Proof-of-Activity Hash Yield</h4>
+              <p style="font-size: 12.5px; color: var(--text-muted);">Earn 1.00% to 2.00% daily interest for 365 days on your active mining node.</p>
+            </div>
+          </div>
+          <span class="rate-badge">1.0% – 2.0% Daily</span>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #081022; border: 1.5px solid var(--card-border); padding: 16px 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 900; color: var(--emerald);">02</span>
+            <div>
+              <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">Auto-Compounding APY Multipliers</h4>
+              <p style="font-size: 12.5px; color: var(--text-muted);">Reinvest daily earnings into principal to unlock automatic tier upgrades.</p>
+            </div>
+          </div>
+          <span class="rate-badge" style="color: var(--cyan); border-color: var(--cyan); background: rgba(0,240,255,0.1);">Compound APY</span>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #081022; border: 1.5px solid var(--card-border); padding: 16px 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 900; color: var(--amber);">03</span>
+            <div>
+              <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">3-Tier Direct & Downline Referrals</h4>
+              <p style="font-size: 12.5px; color: var(--text-muted);">Instant affiliate bonuses: 10% (Level 1), 5% (Level 2), 2% (Level 3).</p>
+            </div>
+          </div>
+          <span class="rate-badge" style="color: var(--amber); border-color: var(--amber); background: rgba(245,158,11,0.1);">10% - 5% - 2%</span>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #081022; border: 1.5px solid var(--card-border); padding: 16px 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 900; color: var(--purple);">04</span>
+            <div>
+              <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">Institutional Turnover Volume Boosters</h4>
+              <p style="font-size: 12.5px; color: var(--text-muted);">Unlock 1.10x up to 2.00x daily mining multipliers based on team volume.</p>
+            </div>
+          </div>
+          <span class="rate-badge" style="color: var(--purple); border-color: var(--purple); background: rgba(139,92,246,0.1);">Up to 2.0x Boost</span>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #081022; border: 1.5px solid var(--card-border); padding: 16px 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 900; color: #38BDF8;">05</span>
+            <div>
+              <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">Zero-Fee P2P Internal Transfers</h4>
+              <p style="font-size: 12.5px; color: var(--text-muted);">Transfer USDT between members with 0% fees for instant ID activation.</p>
+            </div>
+          </div>
+          <span class="rate-badge" style="color: #38BDF8; border-color: #38BDF8; background: rgba(56,189,248,0.1);">0% Fee P2P</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-footer">
+      <div class="page-footer-left">
+        <span>🌐 Global Tier-3 Mining Network</span>
+        <span>•</span>
+        <span>⚡ Binance Smart Chain</span>
+      </div>
+      <div class="page-number">02 / 06</div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 03: ALL 7 MINING PLANS (FULL HD TABLE) ==================== -->
+  <div class="page">
+    <div class="page-header">
+      <div class="logo-badge">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">NEON MINING</div>
+      </div>
+      <div class="portal-tag">neoncryptomining.com</div>
+    </div>
+
+    <div class="title-area">
+      <div class="tagline">Official Pricing & ROI Matrix</div>
+      <h2 class="title">All <span>7 Mining Node Plans</span> (365 Days)</h2>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 16px; flex: 1;">
+      <table class="portrait-table">
+        <thead>
+          <tr>
+            <th>Plan Tier</th>
+            <th>Capital</th>
+            <th>Daily Rate</th>
+            <th>Daily USDT</th>
+            <th>Monthly (30D)</th>
+            <th>Annual (365D)</th>
+            <th>Hashrate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong style="color: #38BDF8;">Plan 01 — Neon Lite</strong></td>
+            <td class="price-tag">$20.00</td>
+            <td><span class="rate-badge">1.00% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$0.20</td>
+            <td style="font-family: 'JetBrains Mono';">$6.00</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$73.00</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">16 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #38BDF8;">Plan 02 — Cryptera</strong></td>
+            <td class="price-tag">$50.00</td>
+            <td><span class="rate-badge">1.10% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$0.55</td>
+            <td style="font-family: 'JetBrains Mono';">$16.50</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$200.75</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">42.5 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #38BDF8;">Plan 03 — Novacore</strong></td>
+            <td class="price-tag">$150.00</td>
+            <td><span class="rate-badge">1.20% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$1.80</td>
+            <td style="font-family: 'JetBrains Mono';">$54.00</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$657.00</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">135 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #38BDF8;">Plan 04 — Hypervex</strong></td>
+            <td class="price-tag">$350.00</td>
+            <td><span class="rate-badge">1.35% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$4.73</td>
+            <td style="font-family: 'JetBrains Mono';">$141.90</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$1,724.63</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">332.5 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #38BDF8;">Plan 05 — Vantamine</strong></td>
+            <td class="price-tag">$700.00</td>
+            <td><span class="rate-badge">1.50% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$10.50</td>
+            <td style="font-family: 'JetBrains Mono';">$315.00</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$3,832.50</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">700 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #8B5CF6;">Plan 06 — Nexhash (VIP)</strong></td>
+            <td class="price-tag">$1,500.00</td>
+            <td><span class="rate-badge" style="color: var(--purple); border-color: rgba(139,92,246,0.4); background: rgba(139,92,246,0.15);">1.70% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$25.50</td>
+            <td style="font-family: 'JetBrains Mono';">$765.00</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$9,307.50</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">1,575 TH/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color: #F59E0B;">Plan 07 — OmegaVIP (Elite)</strong></td>
+            <td class="price-tag" style="color: var(--amber);">$3,000.00</td>
+            <td><span class="rate-badge" style="color: var(--amber); border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.15);">2.00% / D</span></td>
+            <td style="color: var(--emerald); font-family: 'JetBrains Mono'; font-weight: 800;">$60.00</td>
+            <td style="font-family: 'JetBrains Mono';">$1,800.00</td>
+            <td style="font-family: 'JetBrains Mono'; color: #00F0FF;">$21,900.00</td>
+            <td style="color: var(--cyan); font-family: 'JetBrains Mono';">3,300 TH/s</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="card highlight" style="margin-top: 10px;">
+        <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF;">⚡ Key Node Highlights:</h4>
+        <ul style="font-size: 13.5px; color: #CBD5E1; line-height: 1.8; margin-left: 20px;">
+          <li><strong>Contract Runtime</strong>: All nodes remain active for <strong>365 continuous days</strong> from purchase date.</li>
+          <li><strong>Daily Payouts</strong>: Yields are calculated in 100% USDT and settled every 24 hours directly to available wallet balance.</li>
+          <li><strong>Capital Multipliers</strong>: Up to <strong>730% annual return</strong> on elite institutional nodes.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="page-footer">
+      <div class="page-footer-left">
+        <span>⚡ 100% Guaranteed Payout Matrix</span>
+        <span>•</span>
+        <span>🔒 Zero Hardware Risk</span>
+      </div>
+      <div class="page-number">03 / 06</div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 04: 24H MINING & DIFFERENCE UPGRADES ==================== -->
+  <div class="page">
+    <div class="page-header">
+      <div class="logo-badge">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">NEON MINING</div>
+      </div>
+      <div class="portal-tag">neoncryptomining.com</div>
+    </div>
+
+    <div class="title-area">
+      <div class="tagline">Mining Engine & Capital Upgrades</div>
+      <h2 class="title"><span>24H Proof-of-Activity</span> & Upgrade Policy</h2>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px; flex: 1;">
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF;">The 24-Hour Mining Engine Workflow:</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+        <div class="card" style="border-top: 4px solid #EF4444; padding: 20px;">
+          <span style="font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 800; color: #EF4444;">STEP 1: STOPPED</span>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 6px 0;">Purchase State</h4>
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5;">
+            Node starts in STOPPED (Red) state. 0 yield credited until daily manual activation.
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid #10B981; padding: 20px;">
+          <span style="font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 800; color: #10B981;">STEP 2: ACTIVE</span>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 6px 0;">Emerald Core</h4>
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5;">
+            Tap 'Start Mining'. Core glows EMERALD GREEN with active 24-hour countdown timer.
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid #00F0FF; padding: 20px;">
+          <span style="font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 800; color: #00F0FF;">STEP 3: SETTLED</span>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 6px 0;">Wallet Credit</h4>
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5;">
+            At 24:00:00, daily earnings settle to your wallet, core resets to Red for next cycle.
+          </p>
+        </div>
+      </div>
+
+      <div style="background: rgba(239, 68, 68, 0.08); border: 1.5px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 14px 20px; display: flex; align-items: center; gap: 14px;">
+        <span style="font-size: 24px;">⚠️</span>
+        <p style="font-size: 13px; color: #FCA5A5; line-height: 1.5;">
+          <strong>Missed Days Rule:</strong> You must activate your mining core daily. If you miss activating on any day, zero (0) yield is credited for that missed cycle.
+        </p>
+      </div>
+
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF; margin-top: 10px;">Difference-Only Plan Upgrade Architecture:</h3>
+
+      <div class="card highlight">
+        <h4 style="font-size: 17px; font-weight: 800; color: #FFFFFF;">Never Pay Full Price to Upgrade!</h4>
+        <p style="font-size: 13.5px; color: #CBD5E1; line-height: 1.6;">
+          When upgrading to a higher node tier, your existing active plan capital is deducted from the new tier price, and you pay <strong>ONLY the exact difference</strong>:
+        </p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div style="background: #081022; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--card-border);">
+            <div style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">$20 ➔ $50 (Cryptera)</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--cyan); margin-top: 2px;">Pay $30 Only</div>
+          </div>
+          <div style="background: #081022; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--card-border);">
+            <div style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">$50 ➔ $150 (Novacore)</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--cyan); margin-top: 2px;">Pay $100 Only</div>
+          </div>
+          <div style="background: #081022; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--card-border);">
+            <div style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">$150 ➔ $350 (Hypervex)</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--cyan); margin-top: 2px;">Pay $200 Only</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-footer">
+      <div class="page-footer-left">
+        <span>⏱️ 24H Proof-of-Activity Engine</span>
+        <span>•</span>
+        <span>⚡ Difference-Only Upgrades</span>
+      </div>
+      <div class="page-number">04 / 06</div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 05: REFERRALS & TURNOVER BOOSTERS ==================== -->
+  <div class="page">
+    <div class="page-header">
+      <div class="logo-badge">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">NEON MINING</div>
+      </div>
+      <div class="portal-tag">neoncryptomining.com</div>
+    </div>
+
+    <div class="title-area">
+      <div class="tagline">Affiliate Network & Boosters</div>
+      <h2 class="title"><span>3-Tier Referral</span> & Turnover Multipliers</h2>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px; flex: 1;">
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF;">3-Tier Direct & Downline Referral Commissions:</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+        <div class="card highlight" style="text-align: center; padding: 24px 18px;">
+          <div style="font-size: 32px; margin-bottom: 4px;">🥇</div>
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--cyan);">LEVEL 1 (DIRECT)</div>
+          <div style="font-size: 40px; font-weight: 900; color: #FFFFFF; font-family: 'JetBrains Mono'; margin: 4px 0;">10.0%</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Instant direct referral cash bonus credited immediately.</p>
+        </div>
+
+        <div class="card" style="text-align: center; padding: 24px 18px;">
+          <div style="font-size: 32px; margin-bottom: 4px;">🥈</div>
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--emerald);">LEVEL 2 (INDIRECT)</div>
+          <div style="font-size: 40px; font-weight: 900; color: #FFFFFF; font-family: 'JetBrains Mono'; margin: 4px 0;">5.0%</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Bonus from 2nd generation downline node purchases.</p>
+        </div>
+
+        <div class="card" style="text-align: center; padding: 24px 18px;">
+          <div style="font-size: 32px; margin-bottom: 4px;">🥉</div>
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--amber);">LEVEL 3 (EXPANDED)</div>
+          <div style="font-size: 40px; font-weight: 900; color: #FFFFFF; font-family: 'JetBrains Mono'; margin: 4px 0;">2.0%</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Passive income from 3rd generation community network.</p>
+        </div>
+      </div>
+
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF; margin-top: 10px;">Institutional Team Turnover Boosters:</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+        <div class="card" style="border-left: 4px solid #38BDF8; padding: 18px 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: #38BDF8;">TIER 1 BOOSTER</span>
+            <span style="font-family: 'JetBrains Mono'; font-size: 22px; font-weight: 900; color: #FFFFFF;">1.10x</span>
+          </div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin: 4px 0;">$1,000 Team Volume</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Boosts personal daily mining yield by <strong>+10% extra return</strong> every day.</p>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--emerald); padding: 18px 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--emerald);">TIER 2 BOOSTER</span>
+            <span style="font-family: 'JetBrains Mono'; font-size: 22px; font-weight: 900; color: #FFFFFF;">1.25x</span>
+          </div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin: 4px 0;">$5,000 Team Volume</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Boosts personal daily mining yield by <strong>+25% extra return</strong> every day.</p>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--purple); padding: 18px 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--purple);">TIER 3 BOOSTER</span>
+            <span style="font-family: 'JetBrains Mono'; font-size: 22px; font-weight: 900; color: #FFFFFF;">1.50x</span>
+          </div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin: 4px 0;">$15,000 Team Volume</div>
+          <p style="font-size: 12px; color: var(--text-muted);">Boosts personal daily mining yield by <strong>+50% extra return</strong> every day.</p>
+        </div>
+
+        <div class="card highlight" style="border-left: 4px solid var(--amber); padding: 18px 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--amber);">TIER 4 ELITE</span>
+            <span style="font-family: 'JetBrains Mono'; font-size: 22px; font-weight: 900; color: var(--amber);">2.00x</span>
+          </div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin: 4px 0;">$50,000 Team Volume</div>
+          <p style="font-size: 12px; color: var(--text-muted);"><strong>DOUBLES (200%)</strong> your total daily mining yield with flagship VIP priority!</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-footer">
+      <div class="page-footer-left">
+        <span>👥 Instant Referral Commission</span>
+        <span>•</span>
+        <span>🚀 Up to 2.0x Yield Boosters</span>
+      </div>
+      <div class="page-number">05 / 06</div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 06: FINANCIAL RULES & GETTING STARTED ==================== -->
+  <div class="page">
+    <div class="page-header">
+      <div class="logo-badge">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">NEON MINING</div>
+      </div>
+      <div class="portal-tag">neoncryptomining.com</div>
+    </div>
+
+    <div class="title-area">
+      <div class="tagline">Financial Governance & Launch</div>
+      <h2 class="title">Platform Rules & <span>Getting Started</span></h2>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 18px; flex: 1;">
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF;">Official Financial Rules & Limits:</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="background: #081022; border: 1.5px solid var(--card-border); padding: 14px 18px; border-radius: 12px;">
+          <span style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">MINIMUM DEPOSIT</span>
+          <div style="font-size: 18px; font-weight: 800; color: #00F0FF; margin-top: 2px;">$10.00 USDT (0% Fee)</div>
+        </div>
+        <div style="background: #081022; border: 1.5px solid var(--card-border); padding: 14px 18px; border-radius: 12px;">
+          <span style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">MINIMUM WITHDRAWAL</span>
+          <div style="font-size: 18px; font-weight: 800; color: #10B981; margin-top: 2px;">$2.00 USDT (Instant)</div>
+        </div>
+        <div style="background: #081022; border: 1.5px solid var(--card-border); padding: 14px 18px; border-radius: 12px;">
+          <span style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">WITHDRAWAL GAS FEE</span>
+          <div style="font-size: 18px; font-weight: 800; color: #F59E0B; margin-top: 2px;">Flat 5.0% Validator Fee</div>
+        </div>
+        <div style="background: #081022; border: 1.5px solid var(--card-border); padding: 14px 18px; border-radius: 12px;">
+          <span style="font-size: 11px; color: #64748B; font-family: 'JetBrains Mono';">RATE LIMIT & SECURITY</span>
+          <div style="font-size: 18px; font-weight: 800; color: #8B5CF6; margin-top: 2px;">1 Req / 24H • 6-Digit PIN</div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF; margin-top: 8px;">Quick 4-Step Start Guide:</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="card" style="padding: 16px 20px;">
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--cyan);">STEP 01</div>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 2px 0;">Create Free Account</h4>
+          <p style="font-size: 12px; color: var(--text-muted);">Sign up at neoncryptomining.com with email and alphanumeric password.</p>
+        </div>
+
+        <div class="card" style="padding: 16px 20px;">
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--emerald);">STEP 02</div>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 2px 0;">Deposit USDT BEP-20</h4>
+          <p style="font-size: 12px; color: var(--text-muted);">Transfer USDT over Binance Smart Chain with 0% platform deposit fee.</p>
+        </div>
+
+        <div class="card" style="padding: 16px 20px;">
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: var(--amber);">STEP 03</div>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 2px 0;">Activate Mining Node</h4>
+          <p style="font-size: 12px; color: var(--text-muted);">Choose a node tier ($20 to $3,000) and tap 'Start Mining' to begin 24H cycle.</p>
+        </div>
+
+        <div class="card highlight" style="padding: 16px 20px;">
+          <div style="font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 800; color: #10B981;">STEP 04</div>
+          <h4 style="font-size: 16px; font-weight: 800; color: #FFFFFF; margin: 2px 0;">Withdraw Profits</h4>
+          <p style="font-size: 12px; color: var(--text-muted);">Receive daily USDT payouts and withdraw anytime with $2.00 low minimum.</p>
+        </div>
+      </div>
+
+      <div style="background: linear-gradient(135deg, rgba(0,240,255,0.1), rgba(16,185,129,0.15)); border: 2px solid var(--cyan); border-radius: 16px; padding: 24px; text-align: center; margin-top: 8px;">
+        <span style="font-size: 12px; color: #64748B; font-family: 'JetBrains Mono'; font-weight: 800; text-transform: uppercase;">Official Portal</span>
+        <h2 style="font-size: 30px; font-weight: 900; color: #FFFFFF; letter-spacing: 1px; margin: 4px 0;">www.neoncryptomining.com</h2>
+        <span style="font-family: 'JetBrains Mono'; font-size: 13px; color: var(--text-muted);">24/7 AI Copilot • Live Support Desk • 100% USDT Settlement</span>
+      </div>
+    </div>
+
+    <div class="page-footer">
+      <div class="page-footer-left">
+        <span>🔒 Binance Smart Chain (BEP-20)</span>
+        <span>•</span>
+        <span>© 2026 Neon Mining Corporation</span>
+      </div>
+      <div class="page-number">06 / 06</div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Shield,
   ShieldCheck,
+  ShieldAlert,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -416,8 +417,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
     events.forEach(ev => window.addEventListener(ev, updateActivity, { passive: true }));
 
-    // Session verification heartbeat every 3.5 seconds
+    // Session verification heartbeat every 30 seconds
     const heartbeatInterval = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
       const adminId = localStorage.getItem('neon_admin_id') || '';
       const sessionToken = localStorage.getItem('neon_admin_session_token') || '';
 
@@ -724,6 +726,60 @@ export const AdminSystemPortal: React.FC<Props> = ({
     cycleDurationHours: 24,
     maintenanceMode: false,
     emergencyBroadcast: 'NEON MINING Enterprise Hash Engine v4.2 Running Normally. Zero Latency.'
+  };
+
+  // Cloudflare D1 Quota Guard & 2.5M Circuit Breaker Telemetry
+  const [d1Stats, setD1Stats] = useState<{
+    todayRowsRead: number;
+    todayReadQueries: number;
+    todayRowsWritten: number;
+    todayWriteQueries: number;
+    safeLimit: number;
+    hardLimit: number;
+    percentSafe: number;
+    percentHard: number;
+    isSafeLocked: boolean;
+    isManualLocked: boolean;
+    status: string;
+    reserveRemaining: number;
+    lastCheckedTimestamp: number;
+    lastCheckedDate: string;
+  } | null>(null);
+  const [isD1Loading, setIsD1Loading] = useState(false);
+  const [isTogglingSafeLock, setIsTogglingSafeLock] = useState(false);
+
+  const fetchD1Telemetry = useCallback(async (force = false) => {
+    setIsD1Loading(true);
+    try {
+      const res = await nexoraApi.getCircuitBreakerStatus(force);
+      if (res && res.success && res.stats) {
+        setD1Stats(res.stats);
+      }
+    } catch (e) {
+    } finally {
+      setIsD1Loading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchD1Telemetry();
+    }
+  }, [activeTab, fetchD1Telemetry]);
+
+  const handleToggleManualLock = async () => {
+    setIsTogglingSafeLock(true);
+    try {
+      const res = await nexoraApi.toggleCircuitBreaker();
+      if (res && res.success) {
+        triggerNotice(res.isManualLocked ? '⚠️ Manual Safe-Lock Engaged: Non-critical DB reads locked.' : '✓ Safe-Lock Released: Platform operating normally.');
+        await fetchD1Telemetry(true);
+      }
+    } catch (e) {
+      triggerNotice('Failed to toggle Safe-Lock');
+    } finally {
+      setIsTogglingSafeLock(false);
+    }
   };
 
   // DYNAMIC CALCULATIONS - STRICTLY DERIVED FROM REAL CLOUDFLARE D1 DATA
@@ -1327,12 +1383,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
         }
       } catch (e) {}
     };
-    fetchAdminTickets();
+    if (activeTab === 'support' || activeTab === 'overview') {
+      fetchAdminTickets();
+    }
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchAdminTickets();
-    }, 30000);
+      if (document.visibilityState === 'visible' && (activeTab === 'support' || activeTab === 'overview')) {
+        fetchAdminTickets();
+      }
+    }, 45000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   // Sync Broadcasts directly from Cloudflare D1 Database & local events
   useEffect(() => {
@@ -1350,7 +1410,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
     fetchBroadcastsFromD1();
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchBroadcastsFromD1();
-    }, 30000);
+    }, 120000);
 
     const syncBroadcasts = () => {
       fetchBroadcastsFromD1();
@@ -1406,7 +1466,9 @@ export const AdminSystemPortal: React.FC<Props> = ({
       }
 
       setTicketReplyText((prev) => ({ ...prev, [ticketId]: '' }));
-      triggerNotice('✓ Response dispatched directly to user Inbox!');
+      // Set filter to 'all' so the ticket stays visible right in front of the admin
+      setTicketFilter('all');
+      triggerNotice('✓ Response dispatched! Ticket marked as Replied & visible in ledger.');
     } catch (e: any) {
       triggerNotice('⚠️ Error replying to ticket');
     } finally {
@@ -1503,12 +1565,16 @@ export const AdminSystemPortal: React.FC<Props> = ({
       } catch (e) {}
     };
 
-    fetchChatsFromD1();
+    if (activeTab === 'support') {
+      fetchChatsFromD1();
+    }
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchChatsFromD1();
-    }, 15000);
+      if (document.visibilityState === 'visible' && activeTab === 'support') {
+        fetchChatsFromD1();
+      }
+    }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   // Sync sessions with localStorage and cross-window/tab events
   useEffect(() => {
@@ -2670,6 +2736,115 @@ export const AdminSystemPortal: React.FC<Props> = ({
                   >
                     Solve →
                   </button>
+                </div>
+              </div>
+
+              {/* Cloudflare D1 Quota Guard & 2.5M Circuit Breaker */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#070E1B] border border-cyan-500/20 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-2xl pointer-events-none" />
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#14233C]">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-3 h-3 rounded-full ${d1Stats?.isSafeLocked || d1Stats?.isManualLocked ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-pulse'}`} />
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-black text-white tracking-wide font-mono">D1 CLOUD QUOTA GUARD</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                          d1Stats?.isManualLocked
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            : d1Stats?.isSafeLocked
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        }`}>
+                          {d1Stats?.isManualLocked ? 'MANUAL LOCK ENGAGED' : d1Stats?.isSafeLocked ? 'CIRCUIT BREAKER TRIPPED' : 'PROTECTED (2.5M SAFE-LOCK)'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                        Autonomous fuse engages at 25 Lakh (2.5M) reads, preserving 25 Lakh emergency reserve before Cloudflare 5M limit is touched.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <button
+                      onClick={() => fetchD1Telemetry(true)}
+                      disabled={isD1Loading}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#0F1E36] hover:bg-[#1A3158] text-[#94A3B8] hover:text-white text-xs font-mono transition flex items-center gap-1 border border-[#1E3A66] cursor-pointer"
+                      title="Refresh Cloudflare Telemetry"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isD1Loading ? 'animate-spin text-cyan-400' : ''}`} />
+                      <span>Sync</span>
+                    </button>
+                    <button
+                      onClick={handleToggleManualLock}
+                      disabled={isTogglingSafeLock}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition border flex items-center gap-1.5 cursor-pointer ${
+                        d1Stats?.isManualLocked
+                          ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                          : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                      }`}
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>{d1Stats?.isManualLocked ? 'Release Safe-Lock' : 'Engage Safe-Lock'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+                  <div className="bg-[#0B1527] p-3 rounded-xl border border-[#14233C]">
+                    <span className="text-[10px] text-[#94A3B8] font-mono block">TODAY'S ROWS READ</span>
+                    <span className="text-lg font-black text-white font-mono mt-0.5 block">
+                      {d1Stats ? d1Stats.todayRowsRead.toLocaleString() : '...'}
+                    </span>
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      {d1Stats ? `${d1Stats.percentSafe}% of Safe Limit` : ''}
+                    </span>
+                  </div>
+
+                  <div className="bg-[#0B1527] p-3 rounded-xl border border-[#14233C]">
+                    <span className="text-[10px] text-[#94A3B8] font-mono block">SAFE-LOCK THRESHOLD</span>
+                    <span className="text-lg font-black text-amber-400 font-mono mt-0.5 block">
+                      2,500,000
+                    </span>
+                    <span className="text-[10px] text-[#64748B] font-mono">25 Lakh Circuit Breaker</span>
+                  </div>
+
+                  <div className="bg-[#0B1527] p-3 rounded-xl border border-[#14233C]">
+                    <span className="text-[10px] text-[#94A3B8] font-mono block">EMERGENCY RESERVE</span>
+                    <span className="text-lg font-black text-emerald-400 font-mono mt-0.5 block">
+                      {d1Stats ? d1Stats.reserveRemaining.toLocaleString() : '2,500,000+'}
+                    </span>
+                    <span className="text-[10px] text-emerald-500/80 font-mono">Untouchable Buffer</span>
+                  </div>
+
+                  <div className="bg-[#0B1527] p-3 rounded-xl border border-[#14233C]">
+                    <span className="text-[10px] text-[#94A3B8] font-mono block">CLOUDFLARE HARD LIMIT</span>
+                    <span className="text-lg font-black text-[#94A3B8] font-mono mt-0.5 block">
+                      5,000,000
+                    </span>
+                    <span className="text-[10px] text-[#64748B] font-mono">50 Lakh Hard Max</span>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mt-4 pt-3 border-t border-[#14233C]">
+                  <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
+                    <span className="text-[#94A3B8]">Safe Budget Consumption</span>
+                    <span className="text-cyan-400 font-bold">{d1Stats ? `${d1Stats.todayRowsRead.toLocaleString()} / 2,500,000 (${d1Stats.percentSafe}%)` : '0%'}</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-[#0B1527] rounded-full overflow-hidden border border-[#14233C] relative">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        (d1Stats?.percentSafe || 0) > 90
+                          ? 'bg-gradient-to-r from-amber-500 to-red-500'
+                          : (d1Stats?.percentSafe || 0) > 70
+                          ? 'bg-gradient-to-r from-cyan-500 to-amber-400'
+                          : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(2, d1Stats?.percentSafe || 0))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -4471,7 +4646,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                           : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                       }`}
                                     >
-                                      {isPending ? '⏳ Awaiting Reply' : '✓ Replied'}
+                                      {isPending ? '⏳ Awaiting Reply' : '✓ Replied & Resolved'}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2 text-[10.5px] text-gray-500 mt-0.5">
@@ -4512,14 +4687,39 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                 </div>
                               </div>
 
-                              {/* User Query Description Card */}
-                              <div className="p-3 rounded-xl bg-[#03060E] border border-[#0F1C30] text-xs text-gray-300 space-y-1 mb-3">
-                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">
-                                  Miner's Inquiry / Issue Description:
-                                </span>
-                                <p className="whitespace-pre-line text-[12px] text-gray-100 leading-relaxed font-sans">
-                                  {tkt.queryText || tkt.details}
-                                </p>
+                              {/* User Query Description Card - Complete Full Inquiry */}
+                              <div className="p-3.5 sm:p-4 rounded-xl bg-[#03060E] border border-[#0F1C30] text-xs text-gray-300 space-y-2.5 mb-3">
+                                <div className="flex items-center justify-between text-[10.5px] text-gray-400 font-bold uppercase tracking-wider border-b border-[#0D1829] pb-2">
+                                  <span className="flex items-center gap-1.5 text-cyan-400 font-bold">
+                                    <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+                                    <span>📝 Miner's Complete Inquiry & Submitted Message:</span>
+                                  </span>
+                                  <span className="font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">
+                                    {tkt.userName}
+                                  </span>
+                                </div>
+
+                                {/* Subject Row (Always clearly shown if present) */}
+                                {tkt.subject && (
+                                  <div className="p-2.5 rounded-lg bg-[#061020] border border-[#132540]">
+                                    <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block mb-0.5">
+                                      📌 Subject / Title:
+                                    </span>
+                                    <p className="text-white font-bold text-xs sm:text-sm select-text">
+                                      {tkt.subject}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Message Body / Query Details */}
+                                <div className="p-2.5 rounded-lg bg-[#050C18] border border-[#101E33]">
+                                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">
+                                    💬 Message Body / Query Details:
+                                  </span>
+                                  <p className="whitespace-pre-line text-xs sm:text-[13px] text-gray-100 font-medium leading-relaxed font-sans select-text">
+                                    {tkt.queryText || tkt.details || tkt.subject || 'No query body provided.'}
+                                  </p>
+                                </div>
                               </div>
 
                               {/* Previous Dispatched Reply if present */}
@@ -4528,15 +4728,15 @@ export const AdminSystemPortal: React.FC<Props> = ({
                                   <div className="flex items-center justify-between text-[10.5px] text-cyan-300">
                                     <span className="font-bold flex items-center gap-1.5">
                                       <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                                      <span>Official Admin Response Dispatched ({tkt.adminName || 'Admin'}):</span>
+                                      <span>Official Admin Response Sent to Miner ({tkt.adminName || 'Support Desk'}):</span>
                                     </span>
-                                    <span className="text-gray-500 text-[9.5px]">
+                                    <span className="text-gray-400 text-[10px] font-mono">
                                       {tkt.repliedAt
                                         ? new Date(tkt.repliedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                                         : 'Delivered to User Inbox'}
                                     </span>
                                   </div>
-                                  <p className="whitespace-pre-line text-[12px] text-gray-200 leading-relaxed">
+                                  <p className="whitespace-pre-line text-[12.5px] text-emerald-200 leading-relaxed bg-[#030D17] p-2.5 rounded-lg border border-cyan-500/20">
                                     {tkt.adminReply}
                                   </p>
                                 </div>
@@ -4909,7 +5109,7 @@ export const AdminSystemPortal: React.FC<Props> = ({
                               <span className="text-[10px] text-gray-500">{tkt.timestamp}</span>
                             </div>
                             <p className="text-xs text-gray-300 bg-[#070E1B] p-2.5 rounded-lg border border-[#14233C]">
-                              "{tkt.details}"
+                              "{tkt.queryText || tkt.details || tkt.subject || 'PIN Reset Request'}"
                             </p>
                             <button
                               onClick={() => {

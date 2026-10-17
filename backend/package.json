@@ -9,11 +9,18 @@
     "db:init-local": "wrangler d1 execute nexora-production-db --local --file=schema.sql",
     "db:init-remote": "wrangler d1 execute nexora-production-db --remote --file=schema.sql"
   },
-  "keywords": ["cloudflare", "workers", "d1", "crypto", "bep20"],
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "crypto",
+    "bep20"
+  ],
   "author": "Nexora Development Team",
   "license": "MIT",
   "dependencies": {
-    "hono": "^4.6.14"
+    "hono": "^4.6.14",
+    "nexora-mining": "file:.."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",

@@ -34,6 +34,7 @@ import { NeonAIChatAssistant } from './components/NeonAIChatAssistant';
 import { SupportInboxModal } from './components/SupportInboxModal';
 import { AdminSystemPortal } from './components/AdminSystemPortal';
 import { BottomNavBar, NavRoute } from './components/BottomNavBar';
+import { MaintenanceNoticeModal, MaintenanceTopBanner } from './components/MaintenanceNoticeModal';
 import { Smartphone, Download } from 'lucide-react';
 import { nexoraApi } from './services/api';
 import { formatUsaDateTime, parseUtcMs } from './utils/dateUtils';
@@ -183,32 +184,7 @@ export const getUserStorageKey = (uid: string) => `neon_user_${uid.toUpperCase()
 export const loadUserSavedData = (uid?: string): UserPersistentData | null => {
   if (!uid) return null;
   const clean = uid.toUpperCase();
-  const data = loadStorage<UserPersistentData | null>(getUserStorageKey(clean), null);
-  if (clean === 'NEON10770' || clean.includes('10770')) {
-    return {
-      ...(data || {}),
-      activeMiningPower: 21.87,
-      totalWithdrawn: 4.6,
-      totalRewards: 2.62,
-      orcBalance: 0.07,
-      totalOrcIncome: 0.07,
-      unclaimedYield: 0.22,
-      isMiningActive: true
-    };
-  }
-  if (clean === 'NEON17255' || clean.includes('17255')) {
-    return {
-      ...(data || {}),
-      activeMiningPower: 21.23,
-      totalWithdrawn: 7.4,
-      totalRewards: 2.66,
-      orcBalance: 0.0,
-      totalOrcIncome: 0.09,
-      unclaimedYield: 0.21,
-      isMiningActive: true
-    };
-  }
-  return data;
+  return loadStorage<UserPersistentData | null>(getUserStorageKey(clean), null);
 };
 
 export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>) => {
@@ -217,9 +193,6 @@ export const saveUserSavedData = (uid: string, data: Partial<UserPersistentData>
     const key = getUserStorageKey(uid);
     const existing = loadStorage<UserPersistentData | null>(key, null) || {};
     localStorage.setItem(key, JSON.stringify({ ...existing, ...data }));
-  } catch (e) {}
-  try {
-    nexoraApi.syncUserData(uid, data).catch(() => {});
   } catch (e) {}
 };
 
@@ -575,7 +548,7 @@ export const App: React.FC = () => {
     return h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.') || h.includes('.local') || Boolean((import.meta as any).env?.DEV);
   }, []);
 
-  // Maintenance mode completely disabled - System live on production database
+  // Maintenance mode disabled - Platform live & fully operational
   const [showMaintenanceModal, setShowMaintenanceModal] = useState<boolean>(false);
   const handleDismissMaintenance = () => setShowMaintenanceModal(false);
 
@@ -629,9 +602,25 @@ export const App: React.FC = () => {
     showToast('✓ Mining plans configuration updated across platform!');
   };
 
-  // Financial Dashboard State - Authenticated Live Database Driven (Initializes clean, instantly hydrated by D1)
-  const [totalBalance, setTotalBalance] = useState<number>(0.0);
-  const [depositBalance, setDepositBalance] = useState<number>(0.0);
+  // Financial Dashboard State - Authenticated Live Database Driven (Initializes with stored state, instantly hydrated by D1)
+  const [totalBalance, setTotalBalance] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.totalBalance ?? loadStorageNum('neon_total_balance', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
+  const [depositBalance, setDepositBalance] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.depositBalance ?? loadStorageNum('neon_deposit_balance', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
   const [activeMiningPower, setActiveMiningPower] = useState<number>(() => {
     try {
       const u = loadStorageStr('neon_user_name', '');
@@ -641,9 +630,33 @@ export const App: React.FC = () => {
       return 0.0;
     }
   });
-  const [totalRewards, setTotalRewards] = useState<number>(0.0);
-  const [referralIncome, setReferralIncome] = useState<number>(0.0);
-  const [referralBalance, setReferralBalance] = useState<number>(0.0);
+  const [totalRewards, setTotalRewards] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.totalRewards ?? loadStorageNum('neon_total_rewards', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
+  const [referralIncome, setReferralIncome] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.referralIncome ?? loadStorageNum('neon_referral_income', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
+  const [referralBalance, setReferralBalance] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.referralBalance ?? loadStorageNum('neon_referral_balance', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
   const [totalOrcIncome, setTotalOrcIncome] = useState<number>(() => {
     try {
       const u = loadStorageStr('neon_user_name', '');
@@ -663,8 +676,24 @@ export const App: React.FC = () => {
     }
   });
   const [yesterdaysIncome, setYesterdaysIncome] = useState<number>(0.0);
-  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(0.0);
-  const [serverTotalWithdrawn, setServerTotalWithdrawn] = useState<number>(0.0);
+  const [availableWithdrawal, setAvailableWithdrawal] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.availableWithdrawal ?? loadStorageNum('neon_available_withdrawal', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
+  const [serverTotalWithdrawn, setServerTotalWithdrawn] = useState<number>(() => {
+    try {
+      const u = loadStorageStr('neon_user_name', '');
+      const ud = loadUserSavedData(u);
+      return ud?.totalWithdrawn ?? loadStorageNum('neon_total_withdrawn', 0.0);
+    } catch {
+      return 0.0;
+    }
+  });
   const [isCompoundingActive, setIsCompoundingActive] = useState(false);
   const [isProcessingWalletAction, setIsProcessingWalletAction] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -911,7 +940,6 @@ export const App: React.FC = () => {
     yesterdaysIncome,
     availableWithdrawal,
     isMiningActive,
-    secondsRemaining,
     unclaimedYield
   ]);
 
@@ -955,7 +983,7 @@ export const App: React.FC = () => {
   }, [isLoggedIn, userName]);
 
   const [showSupportInboxModal, setShowSupportInboxModal] = useState(false);
-  const [inboxInitialTab, setInboxInitialTab] = useState<'new' | 'inbox' | 'broadcasts'>('new');
+  const [inboxInitialTab, setInboxInitialTab] = useState<'new' | 'inbox' | 'broadcasts'>('inbox');
 
   const hasUnreadTicketReply = useMemo(() => {
     return supportTickets.some(
@@ -979,7 +1007,8 @@ export const App: React.FC = () => {
       } catch (e) {}
     };
     fetchBroadcastsFromD1();
-    const interval = setInterval(fetchBroadcastsFromD1, 60000);
+    // Poll broadcasts every 5 minutes (saves D1 row reads)
+    const interval = setInterval(fetchBroadcastsFromD1, 300000);
 
     const handleBroadcastSync = () => {
       setBroadcastVersion((v) => v + 1);
@@ -1016,10 +1045,35 @@ export const App: React.FC = () => {
 
   const hasUnreadInboxNotification = hasUnreadTicketReply || hasUnreadBroadcast;
 
+  // Sync user tickets with Cloudflare D1 backend strictly scoped to active user
+  const fetchLiveTickets = useCallback(async () => {
+    try {
+      const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
+      const res = await nexoraApi.getUserTickets({
+        userId: ownerId,
+        email: isLoggedIn && userEmail ? userEmail : undefined,
+        mobile: isLoggedIn && userMobile ? userMobile : undefined
+      });
+      if (res && res.success && Array.isArray(res.tickets)) {
+        setSupportTickets(res.tickets);
+        try {
+          localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(res.tickets));
+        } catch {}
+      }
+    } catch (e) {}
+  }, [isLoggedIn, userName, userEmail, userMobile]);
+
+  useEffect(() => {
+    fetchLiveTickets();
+    if (!showSupportInboxModal) return;
+    const interval = setInterval(fetchLiveTickets, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLiveTickets, showSupportInboxModal]);
+
   const handleOpenSupportInbox = (tab?: 'new' | 'inbox' | 'broadcasts') => {
     let targetTab: 'new' | 'inbox' | 'broadcasts' = tab || 'inbox';
     if (!tab) {
-      if (hasUnreadBroadcast && !hasUnreadTicketReply) {
+      if (hasUnreadBroadcast && !hasUnreadTicketReply && supportTickets.length === 0) {
         targetTab = 'broadcasts';
       } else {
         targetTab = 'inbox';
@@ -1027,31 +1081,8 @@ export const App: React.FC = () => {
     }
     setInboxInitialTab(targetTab);
     setShowSupportInboxModal(true);
-  };
-
-  // Sync user tickets with Cloudflare D1 backend strictly scoped to active user
-  useEffect(() => {
-    const fetchLiveTickets = async () => {
-      try {
-        const ownerId = (isLoggedIn && userName ? userName : getDeviceGuestId()).toLowerCase();
-        const res = await nexoraApi.getUserTickets({
-          userId: ownerId,
-          email: isLoggedIn && userEmail ? userEmail : undefined,
-          mobile: isLoggedIn && userMobile ? userMobile : undefined
-        });
-        if (res && res.success && Array.isArray(res.tickets)) {
-          setSupportTickets(res.tickets);
-          try {
-            localStorage.setItem(`neon_tickets_${ownerId}`, JSON.stringify(res.tickets));
-          } catch {}
-        }
-      } catch (e) {}
-    };
-
     fetchLiveTickets();
-    const interval = setInterval(fetchLiveTickets, 45000);
-    return () => clearInterval(interval);
-  }, [isLoggedIn, userName, userEmail, userMobile]);
+  };
 
   // Checkout Modal State
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<MiningPlan | null>(null);
@@ -1336,17 +1367,23 @@ export const App: React.FC = () => {
 
   // Live Cloudflare D1 Backend Data Synchronization
   useEffect(() => {
-    // 1. Initial fetch & periodic background polling every 12 seconds
+    // Platform settings only needed once on mount
+    fetchPlatformSettings();
+  }, [fetchPlatformSettings]);
+
+  // Synchronize admin data ONLY when Admin Portal is actively opened by admin
+  useEffect(() => {
+    if (!showAdminPortal) return;
     fetchLiveAdminUsers();
     fetchLiveAdminWithdrawals();
-    fetchPlatformSettings();
     const syncInterval = setInterval(() => {
-      fetchLiveAdminUsers();
-      fetchLiveAdminWithdrawals();
-      fetchPlatformSettings();
-    }, 12000);
+      if (document.visibilityState === 'visible') {
+        fetchLiveAdminUsers();
+        fetchLiveAdminWithdrawals();
+      }
+    }, 60000); // 60s instead of 12s, saving 95%+ D1 row reads
     return () => clearInterval(syncInterval);
-  }, [fetchLiveAdminUsers, fetchLiveAdminWithdrawals, fetchPlatformSettings]);
+  }, [showAdminPortal, fetchLiveAdminUsers, fetchLiveAdminWithdrawals]);
 
   // Helper to perform full clean session logout
   const performLogout = useCallback((reasonMessage?: string) => {
@@ -1660,9 +1697,12 @@ export const App: React.FC = () => {
           if (orcInc > 0) setTotalOrcIncome((prev) => Math.max(prev, orcInc));
           setOrcBalance(orcBal);
           try {
+            localStorage.setItem('neon_deposit_balance', String(dep));
             localStorage.setItem('neon_referral_balance', String(ref));
+            localStorage.setItem('neon_referral_income', String(refInc));
             localStorage.setItem('neon_orc_balance', String(orcBal));
             localStorage.setItem('neon_available_withdrawal', String(withdr));
+            localStorage.setItem('neon_total_balance', String(+(dep + withdr).toFixed(2)));
           } catch (e) {}
           if (mined > 0) setTotalRewards(mined);
           const settled = Number(w.totalWithdrawn ?? w.total_withdrawn) || 0;
@@ -1671,6 +1711,22 @@ export const App: React.FC = () => {
             localStorage.setItem('neon_total_withdrawn', String(settled));
           } catch (e) {}
           setTotalBalance(+(dep + withdr).toFixed(2));
+
+          // Also save to UserSavedData so profile is never desynchronized on refresh or network lapse
+          if (userName) {
+            saveUserSavedData(userName.toUpperCase(), {
+              depositBalance: dep,
+              availableWithdrawal: withdr,
+              referralBalance: ref,
+              referralIncome: refInc,
+              totalBalance: +(dep + withdr).toFixed(2),
+              activeMiningPower: power,
+              totalRewards: mined,
+              orcBalance: orcBal,
+              totalOrcIncome: orcInc,
+              totalWithdrawn: settled
+            });
+          }
 
           // Sync Unclaimed Mining Yield from Server (Cloudflare D1 is single source of truth)
           const unc = Number(w.unclaimedYield ?? w.unclaimed_yield) || 0;
@@ -1735,12 +1791,11 @@ export const App: React.FC = () => {
 
     fetchWalletHistory();
 
-    // Periodic sync every 30 seconds when tab is active (pauses when minimized to save D1 reads)
+    // Periodic sync every 60 seconds when tab is active (pauses when minimized to save D1 reads)
     const sessionInterval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       verifyAndSyncSession();
-      fetchWalletHistory();
-    }, 30000);
+    }, 60000);
 
       // 4. Fetch real referred downlines (L1 + L2 + L3) from Cloudflare D1
       nexoraApi.getDownlines(userName).then((res) => {
@@ -2552,8 +2607,8 @@ export const App: React.FC = () => {
   // Transfer referral income to main wallet (Withdrawable Balance for Instant Cashout)
   const handleTransferReferralToMainWallet = async () => {
     if (isProcessingWalletAction) return;
-    if (referralBalance <= 0) {
-      showToast('⚠️ No referral balance available to send to wallet!');
+    if (referralBalance < 0.01) {
+      showToast('⚠️ Minimum $0.01 USDT required to send to wallet!');
       return;
     }
 
@@ -2565,7 +2620,8 @@ export const App: React.FC = () => {
         if (res.updatedWallet) {
           const w = res.updatedWallet;
           const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
-          const newRef = Number(w.referral_balance ?? w.referralBalance) || 0;
+          const rawRef = Number(w.referral_balance ?? w.referralBalance) || 0;
+          const newRef = rawRef < 0.01 ? 0.0 : rawRef;
           setAvailableWithdrawal(newWithdr);
           setReferralBalance(newRef);
           setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
@@ -2611,8 +2667,8 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (referralBalance <= 0) {
-      showToast('⚠️ No referral balance available to re-invest!');
+    if (referralBalance < 0.01) {
+      showToast('⚠️ Minimum $0.01 USDT required to re-invest!');
       return;
     }
 
@@ -2635,7 +2691,8 @@ export const App: React.FC = () => {
 
       if (res && res.success) {
         const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
-        const finalRef = res.updatedWallet ? (Number(res.updatedWallet.referral_balance ?? res.updatedWallet.referralBalance) || 0) : 0;
+        const rawRef = res.updatedWallet ? (Number(res.updatedWallet.referral_balance ?? res.updatedWallet.referralBalance) || 0) : 0;
+        const finalRef = rawRef < 0.01 ? 0.0 : rawRef;
 
         setActiveMiningPower(finalPower);
         setReferralBalance(finalRef);
@@ -2707,8 +2764,8 @@ export const App: React.FC = () => {
   // Transfer ORC income to main wallet (Withdrawable Balance for Instant Cashout)
   const handleTransferOrcToMainWallet = async () => {
     if (isProcessingWalletAction) return;
-    if (orcBalance <= 0) {
-      showToast('⚠️ No ORC balance available to send to wallet!');
+    if (orcBalance < 0.01) {
+      showToast('⚠️ Minimum $0.01 USDT required to send to wallet!');
       return;
     }
 
@@ -2720,7 +2777,8 @@ export const App: React.FC = () => {
         if (res.updatedWallet) {
           const w = res.updatedWallet;
           const newWithdr = Number(w.withdrawable_balance ?? w.withdrawableBalance) || +(availableWithdrawal + transferAmt).toFixed(2);
-          const newOrc = Number(w.orc_balance ?? w.orcBalance) || 0;
+          const rawOrc = Number(w.orc_balance ?? w.orcBalance) || 0;
+          const newOrc = rawOrc < 0.01 ? 0.0 : rawOrc;
           setAvailableWithdrawal(newWithdr);
           setOrcBalance(newOrc);
           setTotalBalance(+(depositBalance + newWithdr).toFixed(2));
@@ -2766,8 +2824,8 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (orcBalance <= 0) {
-      showToast('⚠️ No ORC balance available to re-invest!');
+    if (orcBalance < 0.01) {
+      showToast('⚠️ Minimum $0.01 USDT required to re-invest!');
       return;
     }
 
@@ -2790,7 +2848,8 @@ export const App: React.FC = () => {
 
       if (res && res.success) {
         const finalPower = res.updatedWallet ? (Number(res.updatedWallet.active_mining_power ?? res.updatedWallet.activeMiningPower) || updatedPlanPower) : updatedPlanPower;
-        const finalOrc = res.updatedWallet ? (Number(res.updatedWallet.orc_balance ?? res.updatedWallet.orcBalance) || 0) : 0;
+        const rawOrc = res.updatedWallet ? (Number(res.updatedWallet.orc_balance ?? res.updatedWallet.orcBalance) || 0) : 0;
+        const finalOrc = rawOrc < 0.01 ? 0.0 : rawOrc;
 
         setActiveMiningPower(finalPower);
         setOrcBalance(finalOrc);
@@ -3270,8 +3329,25 @@ export const App: React.FC = () => {
       prev.map((r) => (r.id === id ? { ...r, status: 'approved', txHash: finalTx } : r))
     );
 
-    // Deduct from total balance
-    setTotalBalance((prev) => Math.max(0, prev - req.amount));
+    // Refresh live D1 data
+    fetchLiveAdminWithdrawals();
+    fetchLiveAdminUsers();
+
+    // Only update personal ledger if the withdrawal belongs to the current logged-in user
+    const isCurrentAccount = Boolean(
+      (userName && req.userId && req.userId.toUpperCase() === userName.toUpperCase()) ||
+      (userName && req.userName && req.userName.toUpperCase() === userName.toUpperCase())
+    );
+
+    if (isCurrentAccount) {
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.type?.toLowerCase().includes('payout') && t.status === 'Pending'
+            ? { ...t, status: 'Settled' as any, txHash: finalTx }
+            : t
+        )
+      );
+    }
 
     // Update admin telemetry
     setAdminTelemetry((prev) => ({
@@ -3282,27 +3358,7 @@ export const App: React.FC = () => {
       platformNetReserves: +(prev.platformNetReserves - req.netAmount).toFixed(2)
     }));
 
-    setTransactions((prev) => {
-      const hasPending = prev.some((t) => t.type?.toLowerCase().includes('payout') && t.status === 'Pending');
-      if (hasPending) {
-        return prev.map((t) =>
-          t.type?.toLowerCase().includes('payout') && t.status === 'Pending'
-            ? { ...t, status: 'Settled' as any, txHash: finalTx }
-            : t
-        );
-      }
-      const newTx: TransactionRecord = {
-        id: `tx_${Date.now()}`,
-        type: 'BEP-20 Withdrawal Approved',
-        amount: -req.amount,
-        date: getFormattedTimestamp(),
-        status: 'Settled',
-        txHash: finalTx
-      };
-      return [newTx, ...prev];
-    });
-
-    showToast(`✓ Approved withdrawal of ${req.amount.toFixed(2)} USDT for ${req.userName}! Reference: ${finalTx.slice(0, 10)}...`);
+    showToast(`✓ Approved withdrawal of $${req.amount.toFixed(2)} USDT for ${req.userName}! Reference: ${finalTx.slice(0, 10)}...`);
   };
 
   // Admin rejects withdrawal
@@ -3325,30 +3381,40 @@ export const App: React.FC = () => {
       prev.map((r) => (r.id === id ? { ...r, status: 'rejected', rejectionReason: reason } : r))
     );
 
-    // 1. Refund back to available withdrawal & total balance
-    setAvailableWithdrawal((prev) => +(prev + req.amount).toFixed(2));
-    setTotalBalance((prev) => +(prev + req.amount).toFixed(2));
+    // Refresh live D1 data
+    fetchLiveAdminWithdrawals();
+    fetchLiveAdminUsers();
 
-    // 2. Update transactions ledger: mark pending payout as Rejected and insert refund entry
-    setTransactions((prev) => {
-      const updated = prev.map((t) => {
-        if (t.type?.toLowerCase().includes('payout') && t.status === 'Pending') {
-          return { ...t, status: 'Rejected' as any };
-        }
-        return t;
+    // Only refund to personal state if the withdrawal belongs to the current logged-in user
+    const isCurrentAccount = Boolean(
+      (userName && req.userId && req.userId.toUpperCase() === userName.toUpperCase()) ||
+      (userName && req.userName && req.userName.toUpperCase() === userName.toUpperCase())
+    );
+
+    if (isCurrentAccount) {
+      setAvailableWithdrawal((prev) => +(prev + req.amount).toFixed(2));
+      setTotalBalance((prev) => +(prev + req.amount).toFixed(2));
+
+      setTransactions((prev) => {
+        const updated = prev.map((t) => {
+          if (t.type?.toLowerCase().includes('payout') && t.status === 'Pending') {
+            return { ...t, status: 'Rejected' as any };
+          }
+          return t;
+        });
+        const refundTx: TransactionRecord = {
+          id: `REF-${Date.now().toString().slice(-6)}`,
+          type: 'Withdrawal Refund',
+          amount: req.amount,
+          date: getFormattedTimestamp(),
+          status: 'Settled',
+          txHash: 'N/A'
+        };
+        return [refundTx, ...updated];
       });
-      const refundTx: TransactionRecord = {
-        id: `REF-${Date.now().toString().slice(-6)}`,
-        type: 'Withdrawal Refund',
-        amount: req.amount,
-        date: getFormattedTimestamp(),
-        status: 'Settled',
-        txHash: 'N/A'
-      };
-      return [refundTx, ...updated];
-    });
+    }
 
-    // 3. Update admin user record if available
+    // Update admin user record in local state
     setAdminUsers((prev) =>
       prev.map((u) => {
         if (u.id === req.userId || u.name === req.userName) {
@@ -3728,7 +3794,7 @@ export const App: React.FC = () => {
       walletData?.depositBalance ??
       walletData?.deposit_balance ??
       savedData?.depositBalance ??
-      existing?.availableBalance ??
+      existing?.depositBalance ??
       0
     );
 
@@ -3736,6 +3802,7 @@ export const App: React.FC = () => {
       walletData?.withdrawableBalance ??
       walletData?.withdrawable_balance ??
       savedData?.availableWithdrawal ??
+      existing?.availableBalance ??
       0
     );
 
@@ -4046,6 +4113,11 @@ export const App: React.FC = () => {
 
       {/* Main Responsive Container: 100% on mobile, up to max-w-7xl on desktop */}
       <main className="w-full max-w-7xl mx-auto bg-[#030712] min-h-screen relative flex flex-col transition-all duration-300">
+
+        {/* Scheduled Infrastructure Maintenance Top Banner (Visible only during maintenance mode) */}
+        {showMaintenanceModal && (
+          <MaintenanceTopBanner onOpenNotice={() => setShowMaintenanceModal(true)} />
+        )}
 
         {/* Top App Bar with Desktop Navigation & 25-Language Switcher */}
         <NeonTopAppBar
@@ -5154,7 +5226,7 @@ export const App: React.FC = () => {
               setSupportTickets((prev) => [ticket, ...prev]);
               showToast('🚨 Emergency ticket dispatched to Admin On-Call Desk!');
             }}
-            onOpenInbox={() => handleOpenSupportInbox('new')}
+            onOpenInbox={() => handleOpenSupportInbox()}
           />
         )}
 
@@ -5192,6 +5264,7 @@ export const App: React.FC = () => {
           }}
           initialTab={inboxInitialTab}
           userHasActivePlan={activeMiningPower > 0}
+          onRefreshTickets={fetchLiveTickets}
         />
 
         {/* Auth Modal with Mobile + Country Flag + Random Username + Google Auth */}
@@ -5210,6 +5283,12 @@ export const App: React.FC = () => {
           onSwitchAuthMode={() => setIsSignUpMode(!isSignUpMode)}
         />
 
+
+        {/* Scheduled Infrastructure Maintenance Notice Modal */}
+        <MaintenanceNoticeModal
+          isOpen={showMaintenanceModal}
+          onDismiss={handleDismissMaintenance}
+        />
 
         {/* Welcome Promotional Showcase / Featured Mining Plans Popup Modal - USER SIDE ONLY */}
         {!showAdminPortal && (

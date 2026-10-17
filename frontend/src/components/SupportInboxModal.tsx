@@ -31,6 +31,7 @@ interface SupportInboxModalProps {
   onMarkTicketRead: (ticketId: string) => void;
   initialTab?: 'new' | 'inbox' | 'broadcasts';
   userHasActivePlan?: boolean;
+  onRefreshTickets?: () => void;
 }
 
 export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
@@ -43,8 +44,9 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
   tickets,
   onTicketCreated,
   onMarkTicketRead,
-  initialTab = 'new',
-  userHasActivePlan = false
+  initialTab = 'inbox',
+  userHasActivePlan = false,
+  onRefreshTickets
 }) => {
   const [activeTab, setActiveTab] = useState<'new' | 'inbox' | 'broadcasts'>(initialTab);
   const [subject, setSubject] = useState('');
@@ -54,12 +56,21 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
-  // Sync activeTab with initialTab whenever modal opens
+  // Sync activeTab with initialTab and refresh live tickets whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      if (initialTab && initialTab !== 'new') {
+        setActiveTab(initialTab);
+      } else if (tickets && tickets.length > 0) {
+        setActiveTab('inbox');
+      } else {
+        setActiveTab(initialTab || 'inbox');
+      }
+      if (onRefreshTickets) {
+        onRefreshTickets();
+      }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, onRefreshTickets, tickets.length]);
 
   // Broadcasts State
   const [broadcasts, setBroadcasts] = useState<AdminBroadcastMessage[]>(() => {
@@ -190,14 +201,18 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subject.trim() || !queryText.trim()) {
-      setSubmitError('Please enter both subject and your query description.');
+    const cleanQuery = queryText.trim();
+    if (!cleanQuery) {
+      setSubmitError('Please enter your query or message.');
       return;
     }
 
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
+
+    // Auto-generate clean subject if not explicitly specified
+    const cleanSubject = subject.trim() || (cleanQuery.length > 50 ? `${cleanQuery.slice(0, 47)}...` : cleanQuery);
 
     const ticketId = `tkt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newTicket: SupportTicket = {
@@ -206,9 +221,9 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
       userName: userName || 'Guest Miner',
       mobile: userMobile || '',
       email: userEmail || '',
-      subject: subject.trim(),
-      queryText: queryText.trim(),
-      details: queryText.trim(),
+      subject: cleanSubject,
+      queryText: cleanQuery,
+      details: cleanQuery,
       status: 'pending',
       timestamp: 'Just now',
       createdAt: new Date().toISOString(),
@@ -222,8 +237,8 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
         userName: userName || 'Guest Miner',
         userMobile: userMobile || '',
         userEmail: userEmail || '',
-        subject: subject.trim(),
-        queryText: queryText.trim()
+        subject: cleanSubject,
+        queryText: cleanQuery
       });
 
       if (res && res.success && res.ticket) {
@@ -238,7 +253,7 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
       setTimeout(() => {
         setActiveTab('inbox');
         setSubmitSuccess(null);
-      }, 1400);
+      }, 1200);
     } catch (err: any) {
       onTicketCreated(newTicket);
       setSubmitSuccess('✓ Support ticket submitted. Admin desk will review and reply.');
@@ -247,7 +262,7 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
       setTimeout(() => {
         setActiveTab('inbox');
         setSubmitSuccess(null);
-      }, 1400);
+      }, 1200);
     } finally {
       setIsSubmitting(false);
     }
@@ -291,19 +306,7 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
         {/* Tab Navigation - Sleek Modern 3-Segment Control with Guaranteed Single-Line Fit */}
         <div className="px-3 sm:px-5 pt-3 pb-2 border-b border-[#14233C] bg-[#070E1B]/60 shrink-0">
           <div className="grid grid-cols-3 p-1 rounded-xl bg-[#050C18] border border-[#122238] gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('new')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'new'
-                  ? 'bg-gradient-to-r from-[#0C223B] to-[#0A1A2E] text-[#00F0FF] border border-cyan-500/40 shadow-sm shadow-cyan-500/20'
-                  : 'text-gray-400 hover:text-white hover:bg-[#0A1628]'
-              }`}
-            >
-              <PlusCircle className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
-              <span>New Ticket</span>
-            </button>
-
+            {/* TAB 1: MY TICKETS (DEFAULT) */}
             <button
               type="button"
               onClick={() => setActiveTab('inbox')}
@@ -315,11 +318,27 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
             >
               <MessageSquare className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
               <span>My Tickets</span>
-              {unreadCount > 0 && (
-                <span className="flex items-center justify-center px-1.5 py-0.5 rounded-full bg-cyan-400 text-black text-[9px] font-black leading-none animate-pulse">
-                  {unreadCount}
+              {tickets.length > 0 && (
+                <span className={`flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-none ${
+                  unreadCount > 0 ? 'bg-cyan-400 text-black animate-pulse' : 'bg-[#142642] text-gray-300'
+                }`}>
+                  {unreadCount > 0 ? unreadCount : tickets.length}
                 </span>
               )}
+            </button>
+
+            {/* TAB 2: RAISE NEW TICKET */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('new')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'new'
+                  ? 'bg-gradient-to-r from-[#0C223B] to-[#0A1A2E] text-[#00F0FF] border border-cyan-500/40 shadow-sm shadow-cyan-500/20'
+                  : 'text-gray-400 hover:text-white hover:bg-[#0A1628]'
+              }`}
+            >
+              <PlusCircle className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+              <span>+ New Ticket</span>
             </button>
 
             {/* TAB 3: ANNOUNCEMENTS */}
@@ -369,27 +388,10 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                 </div>
               )}
 
-              {/* Subject */}
+              {/* Query / Message Details (Primary Required Field) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-300 flex items-center justify-between">
-                  <span>Ticket Subject <span className="text-cyan-400">*</span></span>
-                  <span className="text-[10px] text-gray-500 font-normal">e.g. Deposit / Withdrawal / Plan Inquiry</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Enter query subject..."
-                  maxLength={120}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050C18] border border-[#172A45] text-xs sm:text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-[#00F0FF] transition-all"
-                />
-              </div>
-
-              {/* Query Details */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-300 flex items-center justify-between">
-                  <span>Detailed Query / Message <span className="text-cyan-400">*</span></span>
+                <label className="text-xs font-bold text-gray-200 flex items-center justify-between">
+                  <span>Your Inquiry / Message <span className="text-cyan-400">*</span></span>
                   <span className="text-[10px] text-gray-500 font-normal">{queryText.length}/1000</span>
                 </label>
                 <textarea
@@ -397,9 +399,25 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                   rows={4}
                   value={queryText}
                   onChange={(e) => setQueryText(e.target.value)}
-                  placeholder="Explain your question or issue in detail here..."
+                  placeholder="Explain your question, issue, or request here in detail..."
                   maxLength={1000}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#050C18] border border-[#172A45] text-xs sm:text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-[#00F0FF] transition-all resize-none"
+                />
+              </div>
+
+              {/* Optional Subject / Topic */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-400 flex items-center justify-between">
+                  <span>Subject / Category <span className="text-gray-500 font-normal text-[10px]">(Optional)</span></span>
+                  <span className="text-[10px] text-gray-500 font-normal">Auto-detected if left empty</span>
+                </label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g. Deposit, Withdrawal, Plan Inquiry..."
+                  maxLength={120}
+                  className="w-full px-3.5 py-2 rounded-xl bg-[#050C18] border border-[#172A45] text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-[#00F0FF] transition-all"
                 />
               </div>
 
@@ -417,7 +435,7 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isSubmitting || !subject.trim() || !queryText.trim()}
+                disabled={isSubmitting || !queryText.trim()}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-[#0284C7] via-[#00F0FF] to-[#0284C7] text-black font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.35)] hover:brightness-110 active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer uppercase tracking-wider"
               >
                 {isSubmitting ? (
@@ -459,13 +477,17 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                   {tickets.map((tkt) => {
                     const hasAdminReply = !!tkt.adminReply || tkt.status === 'replied' || tkt.status === 'resolved';
                     const isUnread = hasAdminReply && tkt.userRead === false;
-                    const isExpanded = selectedTicketId === tkt.id;
+
+                    // Unify inquiry message: If subject & query are identical or nearly identical, display as one clean message
+                    const mainMessage = (tkt.queryText || tkt.details || tkt.subject || '').trim();
+                    const hasDistinctSubject = tkt.subject && 
+                      tkt.subject.trim().toLowerCase() !== mainMessage.toLowerCase() &&
+                      !mainMessage.toLowerCase().startsWith(tkt.subject.trim().toLowerCase().slice(0, 15));
 
                     return (
                       <div
                         key={tkt.id}
                         onClick={() => {
-                          setSelectedTicketId(isExpanded ? null : tkt.id);
                           if (isUnread) onMarkTicketRead(tkt.id);
                         }}
                         className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
@@ -475,12 +497,17 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                         }`}
                       >
                         {/* Ticket Header Row */}
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2 border-b border-[#0F1D33] pb-2.5">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="text-xs sm:text-sm font-bold text-white">
-                                {tkt.subject}
-                              </h4>
+                              <span className="text-[11px] font-mono font-bold text-cyan-400 bg-cyan-950/70 px-2 py-0.5 rounded border border-cyan-800/60">
+                                TICKET #{tkt.id.substring(0, 14)}
+                              </span>
+                              {hasDistinctSubject && (
+                                <span className="text-xs font-bold text-gray-200">
+                                  {tkt.subject}
+                                </span>
+                              )}
                               {isUnread && (
                                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500 text-black text-[9px] font-black animate-pulse">
                                   <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
@@ -489,9 +516,7 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                               )}
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                              <span>ID: {tkt.id.substring(0, 14)}</span>
-                              <span>•</span>
-                              <span>{tkt.timestamp || tkt.createdAt || 'Recent'}</span>
+                              <span>Submitted: {tkt.timestamp || tkt.createdAt || 'Recent'}</span>
                             </div>
                           </div>
 
@@ -504,39 +529,50 @@ export const SupportInboxModal: React.FC<SupportInboxModalProps> = ({
                               </span>
                             )}
                             {(tkt.status === 'replied' || hasAdminReply) && (
-                              <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 text-[10px] font-bold flex items-center gap-1 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
-                                <CheckCircle2 className="w-3 h-3 text-cyan-400" />
-                                <span>Support Desk</span>
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>✓ Query Resolved & Replied</span>
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {/* User's Original Query */}
-                        <div className="mt-3 p-3 rounded-xl bg-[#030710] border border-[#0F1B2E] text-xs text-gray-300">
-                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
-                            Your Query:
-                          </span>
-                          <p className="whitespace-pre-line text-[11.5px] leading-relaxed">
-                            {tkt.queryText || tkt.details}
+                        {/* User's Inquiry Message (Clean Front-and-Center Display) */}
+                        <div className="mt-3 p-3 sm:p-3.5 rounded-xl bg-[#040A15] border border-[#102038] space-y-1.5">
+                          <div className="flex items-center justify-between text-[10.5px]">
+                            <div className="flex items-center gap-1.5 text-cyan-400 font-bold">
+                              <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>Your Inquiry Message:</span>
+                            </div>
+                            <span className="text-gray-500 font-mono text-[9.5px]">
+                              {tkt.userName || 'Miner'}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-line text-xs sm:text-[13px] text-white leading-relaxed font-sans bg-[#070F1E] p-3 rounded-lg border border-[#142642]">
+                            {mainMessage}
                           </p>
                         </div>
 
                         {/* Support Desk Official Response Card */}
-                        {tkt.adminReply && (
-                          <div className="mt-2.5 p-3 sm:p-3.5 rounded-xl bg-gradient-to-br from-[#061A2B] via-[#041322] to-[#061A2B] border border-[#00F0FF]/50 shadow-[0_0_15px_rgba(0,240,255,0.1)] space-y-1.5 animate-fadeIn">
+                        {tkt.adminReply ? (
+                          <div className="mt-2.5 p-3 sm:p-3.5 rounded-xl bg-gradient-to-br from-[#061A2B] via-[#041322] to-[#061A2B] border border-[#00F0FF]/60 shadow-[0_0_15px_rgba(0,240,255,0.12)] space-y-1.5 animate-fadeIn">
                             <div className="flex items-center justify-between text-[10.5px]">
-                              <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                                <span>Support Desk Response:</span>
+                              <div className="flex items-center gap-1.5 text-cyan-300 font-black">
+                                <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                                <span>Official Support Desk Response:</span>
                               </div>
-                              <span className="text-gray-500 text-[9.5px]">
+                              <span className="text-emerald-400 text-[10px] font-mono font-bold">
                                 {tkt.repliedAt ? new Date(tkt.repliedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Verified'}
                               </span>
                             </div>
-                            <div className="p-2.5 rounded-lg bg-[#020914] border border-cyan-500/30 text-white text-xs sm:text-[12.5px] font-medium leading-relaxed whitespace-pre-line">
+                            <div className="p-3 rounded-lg bg-[#020914] border border-cyan-500/30 text-emerald-200 text-xs sm:text-[13px] font-medium leading-relaxed whitespace-pre-line shadow-inner">
                               {tkt.adminReply}
                             </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-[#081220] border border-[#14233C] text-[11px] text-amber-300/90 flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span>Your inquiry is queued with company administration. Admin reply will appear directly in this box.</span>
                           </div>
                         )}
                       </div>

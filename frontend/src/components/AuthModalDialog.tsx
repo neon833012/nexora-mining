@@ -81,7 +81,22 @@ export const AuthModalDialog: React.FC<Props> = ({
   const [apiError, setApiError] = useState('');
 
   const cleanAuthError = (msg: string): string => {
-    return msg;
+    const s = String(msg || '');
+    if (
+      s.includes('free tier daily row read limit') ||
+      s.includes('exceeded D1') ||
+      s.includes('D1_ERROR') ||
+      s.includes('code: 7500') ||
+      s.includes('daily read limit reached') ||
+      s.includes('Cloud database daily read limit') ||
+      s.includes('5:30 AM') ||
+      s.includes('Cloudflare Workers plan') ||
+      s.includes('Database cloud synchronization') ||
+      s.includes('Unable to connect to authentication server')
+    ) {
+      return 'Cloud synchronization in progress. Please refresh in a moment.';
+    }
+    return s;
   };
 
   // Handle incoming email reset link

@@ -142,9 +142,15 @@ export const ReferralNetworkSection: React.FC<Props> = ({
                     ${referralBalance.toFixed(2)}
                   </span>
                   <span className="text-[12px] font-bold text-[#10B981]">USDT</span>
-                  <span className="ml-2 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 font-bold">
-                    Claimable
-                  </span>
+                  {referralBalance >= 0.01 ? (
+                    <span className="ml-2 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 font-bold">
+                      Claimable
+                    </span>
+                  ) : (
+                    <span className="ml-2 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#64748B]/15 text-[#64748B] border border-[#64748B]/30 font-bold">
+                      Zero Balance
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -166,10 +172,10 @@ export const ReferralNetworkSection: React.FC<Props> = ({
             <button
               type="button"
               onClick={onSendReferralToWallet}
-              disabled={isProcessing || referralBalance <= 0}
+              disabled={isProcessing || referralBalance < 0.01}
               className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all ${
-                isProcessing || referralBalance <= 0
-                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-60'
+                isProcessing || referralBalance < 0.01
+                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-50 pointer-events-none'
                   : 'bg-gradient-to-r from-[#0284C7] to-[#00F0FF] hover:brightness-110 text-[#021020] shadow-[0_0_20px_rgba(0,240,255,0.35)] border border-[#00F0FF] cursor-pointer active:scale-95'
               }`}
             >
@@ -190,10 +196,10 @@ export const ReferralNetworkSection: React.FC<Props> = ({
             <button
               type="button"
               onClick={onReinvestReferralToPlan}
-              disabled={isProcessing || referralBalance <= 0 || myStake <= 0}
+              disabled={isProcessing || referralBalance < 0.01 || myStake <= 0}
               className={`py-2.5 px-4 rounded-xl font-black text-[12px] sm:text-[13px] flex items-center justify-center gap-2 shadow-lg transition-all ${
-                isProcessing || referralBalance <= 0 || myStake <= 0
-                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-60'
+                isProcessing || referralBalance < 0.01 || myStake <= 0
+                  ? 'bg-[#0E1F35] text-[#64748B] border border-[#192D47] cursor-not-allowed opacity-50 pointer-events-none'
                   : 'bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-110 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-[#10B981] cursor-pointer active:scale-95'
               }`}
             >

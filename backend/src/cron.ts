@@ -11,6 +11,10 @@ export interface Env {
   BSC_RPC_URL: string;
   CHAIN_ID: string;
   RESEND_API_KEY?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_EMAIL?: string;
+  CLOUDFLARE_API_KEY?: string;
+  D1_DATABASE_ID?: string;
 }
 
 export interface CronYieldResult {

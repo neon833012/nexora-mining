@@ -22,7 +22,7 @@ interface RegionalSchedule {
   flag: string;
   city: string;
   zone: string;
-  time: string;
+  status: string;
   isPrimary?: boolean;
 }
 
@@ -32,7 +32,7 @@ const REGIONAL_SCHEDULES: RegionalSchedule[] = [
     flag: '🇺🇸',
     city: 'New York / HQ',
     zone: 'EDT',
-    time: 'Oct 9, 09:00 PM',
+    status: 'Back in a few hours',
     isPrimary: true
   },
   {
@@ -40,42 +40,42 @@ const REGIONAL_SCHEDULES: RegionalSchedule[] = [
     flag: '🇺🇸',
     city: 'California',
     zone: 'PDT',
-    time: 'Oct 9, 06:00 PM'
+    status: 'Back in a few hours'
   },
   {
     country: 'India',
     flag: '🇮🇳',
     city: 'New Delhi / Mumbai',
     zone: 'IST',
-    time: 'Oct 10, 06:30 AM'
+    status: 'Back in a few hours'
   },
   {
     country: 'UAE / Middle East',
     flag: '🇦🇪',
     city: 'Dubai',
     zone: 'GST',
-    time: 'Oct 10, 05:00 AM'
+    status: 'Back in a few hours'
   },
   {
     country: 'United Kingdom',
     flag: '🇬🇧',
     city: 'London',
     zone: 'BST',
-    time: 'Oct 10, 02:00 AM'
+    status: 'Back in a few hours'
   },
   {
     country: 'Germany / Europe',
     flag: '🇩🇪',
     city: 'Frankfurt',
     zone: 'CEST',
-    time: 'Oct 10, 03:00 AM'
+    status: 'Back in a few hours'
   },
   {
     country: 'Singapore / Asia',
     flag: '🇸🇬',
     city: 'Singapore',
     zone: 'SGT',
-    time: 'Oct 10, 09:00 AM'
+    status: 'Back in a few hours'
   }
 ];
 
@@ -101,7 +101,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div>
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                <span>USA HEADQUARTERS · GLOBAL NODE UPGRADE</span>
+                <span>GLOBAL NODE UPGRADE · INFRASTRUCTURE MAINTENANCE</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">
                 Neon Cloud Mining Infrastructure Maintenance
@@ -125,18 +125,18 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-[12.5px] sm:text-[13.5px]">
                 <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>USA Primary HQ Schedule: Tonight, Oct 9 · 09:00 PM EDT</span>
+                <span>System Optimization in Progress · Resuming in a few hours</span>
               </div>
               <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">
-                US Eastern Time (HQ)
+                Live Upgrade
               </span>
             </div>
             <div className="text-gray-300 leading-relaxed text-[11.5px] sm:text-[12.5px] space-y-1">
               <p>
-                Neon Mining USA Headquarters engineering operations are performing a scheduled database optimization and global ASIC cloud mining node synchronization.
+                Neon Mining engineering operations are currently performing a scheduled database optimization and global ASIC cloud mining node synchronization to ensure maximum speed and stability.
               </p>
-              <p className="text-emerald-400 font-medium text-[11px]">
-                🇮🇳 India Regional Operations will resume at: <strong>Tomorrow, Oct 10 · 06:30 AM IST</strong>
+              <p className="text-emerald-400 font-semibold text-[11.5px]">
+                ⚡ We will be back online in a few hours. All member wallets, balances, and active node yields are 100% protected.
               </p>
             </div>
           </div>
@@ -146,7 +146,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
             <div className="flex items-center justify-between text-xs font-bold text-gray-200">
               <span className="flex items-center gap-1.5 text-[#00F0FF]">
                 <Globe className="w-3.5 h-3.5" />
-                Global Resumption Timetable (USA HQ & Regional Nodes):
+                Global Node Synchronization Status:
               </span>
               <span className="text-[10.5px] text-gray-400 font-normal">Auto-resets per region</span>
             </div>
@@ -176,7 +176,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
                     </div>
                   </div>
                   <div className={`text-right shrink-0 font-mono font-bold text-[11px] ${reg.isPrimary ? 'text-amber-300' : 'text-cyan-300'}`}>
-                    {reg.time}
+                    {reg.status}
                   </div>
                 </div>
               ))}
@@ -210,7 +210,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
               <div>
                 <div className="text-cyan-300 font-bold text-[11px] sm:text-[12px]">Automatic Resumption</div>
                 <div className="text-gray-400 text-[10.5px] sm:text-[11px] mt-0.5 leading-snug">
-                  Real-time database queries, downlines, and ledger sync automatically restore at schedule.
+                  Real-time database queries, downlines, and ledger sync automatically restore once maintenance completes.
                 </div>
               </div>
             </div>
@@ -233,12 +233,12 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceModalProps> = ({ isOpen
                 <Activity className="w-3 h-3 text-[#00F0FF] animate-pulse" />
                 Infrastructure Node Synchronization
               </span>
-              <span className="text-amber-400 font-mono font-bold">88% Completed</span>
+              <span className="text-amber-400 font-mono font-bold">92% Completed</span>
             </div>
             <div className="w-full h-2 rounded-full bg-[#0D1A30] overflow-hidden p-0.5">
               <div 
                 className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-[#00F0FF] transition-all duration-500" 
-                style={{ width: '88%' }}
+                style={{ width: '92%' }}
               />
             </div>
           </div>
@@ -277,13 +277,13 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
         </span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-[11px] sm:text-xs">
           <span className="font-extrabold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
-            <span>🇺🇸</span> System Notice:
+            <span>⚡</span> System Notice:
           </span>
           <span className="text-gray-200 truncate">
-            Scheduled US Node Upgrade until <strong className="text-amber-300">Oct 9, 09:00 PM EDT (USA HQ) / Oct 10, 06:30 AM IST (India)</strong>.
+            Scheduled Global Node Upgrade & Performance Optimization in progress. <strong className="text-amber-300">We will be back online in a few hours.</strong>
           </span>
           <span className="hidden md:inline-block text-emerald-400 font-medium">
-            (All funds & mining yields are 100% secure)
+            (All member funds & mining yields are 100% secure)
           </span>
         </div>
       </div>
@@ -292,7 +292,7 @@ export const MaintenanceTopBanner: React.FC<MaintenanceBannerProps> = ({ onOpenN
         onClick={onOpenNotice}
         className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-[11px] font-bold tracking-tight shrink-0 transition-colors cursor-pointer whitespace-nowrap shadow-[0_0_10px_rgba(245,158,11,0.2)]"
       >
-        View Global Schedule
+        View Details
       </button>
     </div>
   );

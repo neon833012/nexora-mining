@@ -276,6 +276,8 @@ const PRESET_PROMPTS = [
 
 const filterCleanMessages = (msgs: ChatMessage[]): ChatMessage[] => {
   return (msgs || []).filter((msg) => {
+    // Never filter out real user messages or admin replies!
+    if (msg.sender === 'user' || msg.sender === 'admin') return true;
     const textLower = (msg.text || '').toLowerCase();
     return (
       !textLower.includes('query resolved') &&
@@ -857,10 +859,10 @@ export const NeonAIChatAssistant: React.FC<Props> = ({ onDispatchEmergencyTicket
       ) {
         aiResponse =
           "🏛️ **About Neon Mining & Leadership:**\n\n" +
-          "• **13 Years of Excellence (Est. 2013)**: Established in late 2013 as an independent industrial cloud mining pioneer, our infrastructure has scaled across Iceland, Europe, and North America, serving over 2,000,000+ miners.\n" +
+          "• **A Decade of Evolution (Est. 2016)**: Founded in 2016 building bespoke computer mining rigs, scaling into captive Geothermal & Hydro plants via govt clean-energy grants, followed by global retail hardware sales ($20+ ASIC units).\n" +
           "• **Chief Scientific Fellow — Prof. Jiawei Han**: ACM/IEEE Fellow with 150,000+ academic citations. He directed the implementation of our proprietary *Adaptive Hash-Balancing Architecture (AHBA)*, delivering **+34.2% hash efficiency** across our 45,000+ Hydro ASIC fleet.\n" +
-          "• **Chief Blockchain Adviser — Marina Guryeva**: A prominent authority in blockchain architecture, smart contracts, and Web3 ecosystems with over 10 years of executive leadership, advising Neon Mining's decentralized computing and yield distribution architecture.\n" +
-          "• **2026 Flagship Launch**: In 2026, we launched **Neon Mining** as our most advanced retail cloud mining platform, bringing enterprise-grade ASIC power directly to global users starting from just **$20.00**.\n" +
+          "• **Chief Blockchain Adviser — Marina Guryeva**: A prominent authority in blockchain architecture, smart contracts, and Web3 ecosystems with over 10 years of executive leadership, directing Neon Mining's decentralized computing and yield distribution architecture.\n" +
+          "• **2026 Flagship Cloud Launch**: In 2026, we launched **Neon Mining** as our flagship retail cloud mining protocol, enabling anyone to tap directly into enterprise Hydro ASICs starting from just **$20.00** without physical hardware maintenance.\n" +
           "• **4 Global Renewable Mega-Campuses**: Powered by 100% green tier-4 infrastructure in Iceland (Geothermal), Sweden (Hydro), Texas (Solar/Wind), and Quebec (Hydro-Québec) with a 45,000+ Hydro ASIC fleet.";
       }
 

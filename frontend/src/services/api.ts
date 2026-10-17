@@ -9,72 +9,6 @@ import { localStore } from './localDataStore';
 const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'https://nexora-mining-api.neon-moning.workers.dev';
 
 export function normalizeUserAccount(u: any) {
-  if (!u) return u;
-  const uid = String(u.id || u.user_id || u.userId || '').toUpperCase();
-  if (uid === 'NEON10770' || uid.includes('10770')) {
-    return {
-      ...u,
-      active_mining_power: 21.87,
-      activeMiningPower: 21.87,
-      amount: 21.87,
-      active_contract_plan: 'PLAN 01 ($20 USD)',
-      plan_name: 'PLAN 01 ($20 USD)',
-      plan_id: 'plan_20',
-      daily_rate_percent: 1.0,
-      dailyRatePercent: 1.0,
-      daily_yield_usdt: 0.22,
-      dailyYieldUsdt: 0.22,
-      withdrawable_balance: 0.52,
-      withdrawableBalance: 0.52,
-      referral_balance: 0.80,
-      referralBalance: 0.80,
-      deposit_balance: 2.60,
-      depositBalance: 2.60,
-      total_withdrawn: 4.60,
-      totalWithdrawn: 4.60,
-      total_mined_yield: 2.62,
-      totalMinedYield: 2.62,
-      orc_balance: 0.07,
-      orcBalance: 0.07,
-      total_orc_income: 0.07,
-      totalOrcIncome: 0.07,
-      unclaimed_yield: 0.22,
-      unclaimedYield: 0.22,
-      is_mining_active: 1
-    };
-  }
-  if (uid === 'NEON17255' || uid.includes('17255')) {
-    return {
-      ...u,
-      active_mining_power: 21.23,
-      activeMiningPower: 21.23,
-      amount: 21.23,
-      active_contract_plan: 'PLAN 01 ($20 USD)',
-      plan_name: 'PLAN 01 ($20 USD)',
-      plan_id: 'plan_20',
-      daily_rate_percent: 1.0,
-      dailyRatePercent: 1.0,
-      daily_yield_usdt: 0.21,
-      dailyYieldUsdt: 0.21,
-      withdrawable_balance: 0.24,
-      withdrawableBalance: 0.24,
-      referral_balance: 0.00,
-      referralBalance: 0.00,
-      deposit_balance: 0.00,
-      depositBalance: 0.00,
-      total_withdrawn: 7.40,
-      totalWithdrawn: 7.40,
-      total_mined_yield: 2.66,
-      totalMinedYield: 2.66,
-      orc_balance: 0.00,
-      orcBalance: 0.00,
-      total_orc_income: 0.09,
-      totalOrcIncome: 0.09,
-      unclaimed_yield: 0.21,
-      unclaimedYield: 0.21,
-      is_mining_active: 1
-    };
-  }
   return u;
 }
 
@@ -172,7 +106,21 @@ class NeonApiService {
   // Authentication
   // ==========================================================================
   public sanitizeApiErrorMessage(msg: any): string {
-    return String(msg || '');
+    const s = String(msg || '');
+    if (
+      s.includes('free tier daily row read limit') ||
+      s.includes('exceeded D1') ||
+      s.includes('D1_ERROR') ||
+      s.includes('code: 7500') ||
+      s.includes('daily read limit reached') ||
+      s.includes('Cloud database daily read limit') ||
+      s.includes('5:30 AM') ||
+      s.includes('Cloudflare Workers plan') ||
+      s.includes('Database cloud synchronization')
+    ) {
+      return 'Cloud synchronization in progress. Please refresh in a moment.';
+    }
+    return s;
   }
 
   async register(params: {
@@ -325,12 +273,6 @@ class NeonApiService {
       if (!res.ok) {
         return { success: false, message: this.sanitizeApiErrorMessage(data.message || `Login failed (${res.status})`) };
       }
-      if (data && data.user && String(data.user.id || '').toUpperCase().includes('10770')) {
-        data.user = normalizeUserAccount(data.user);
-        if (data.wallet) {
-          data.wallet = normalizeUserAccount(data.wallet);
-        }
-      }
       return data;
     } catch (err: any) {
       return { success: false, message: this.sanitizeApiErrorMessage(err.message) };
@@ -390,12 +332,6 @@ class NeonApiService {
       const data = await res.json();
       if (res.status === 404 || data?.message === 'User not found' || data?.error === 'User not found') {
         data.userNotFound = true;
-      }
-      if (data && data.user && String(data.user.id || '').toUpperCase().includes('10770')) {
-        data.user = normalizeUserAccount(data.user);
-        if (data.wallet) {
-          data.wallet = normalizeUserAccount(data.wallet);
-        }
       }
       return data;
     } catch (err: any) {
@@ -1685,6 +1621,28 @@ class NeonApiService {
     try {
       const res = await fetch(`${this.baseUrl}/api/admin/broadcasts/${id}`, {
         method: 'DELETE'
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getCircuitBreakerStatus(force = false) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/circuit-breaker?force=${force}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  async toggleCircuitBreaker(params?: { action?: string; manualLocked?: boolean }) {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/admin/circuit-breaker/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params || {})
       });
       return await res.json();
     } catch (err: any) {

@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS admins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_name ON users(name);
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_upline_code ON users(upline_code);
 
@@ -67,6 +69,7 @@ CREATE TABLE IF NOT EXISTS deposit_orders (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_deposit_user ON deposit_orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_deposit_tx_hash ON deposit_orders(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_deposit_status ON deposit_orders(status);
 
@@ -123,6 +126,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_time ON transactions(user_id, created_at DESC);
 
 -- 7. Platform Settings Table
 CREATE TABLE IF NOT EXISTS platform_settings (

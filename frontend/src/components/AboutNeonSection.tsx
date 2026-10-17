@@ -34,7 +34,7 @@ export const AboutNeonSection: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-cyan-400 text-[10.5px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
               <Clock className="w-3.5 h-3.5" />
-              ESTABLISHED 2013 • 13 YEARS OF CLOUD MINING EXCELLENCE
+              FOUNDED 2016 • A DECADE OF MINING INNOVATION & COMPUTING EXCELLENCE
             </span>
             <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-400 text-[10.5px] font-black uppercase tracking-wider flex items-center gap-1.5">
               <Leaf className="w-3.5 h-3.5" />
@@ -43,11 +43,11 @@ export const AboutNeonSection: React.FC = () => {
           </div>
 
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight leading-snug">
-            13 Years of Industrial Mining Excellence & Next-Gen Innovation: <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-cyan-200">Neon Mining</span>
+            A Decade of Mining Evolution (2016 — 2026): From Custom Computer Rigs to Global Cloud Infrastructure: <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-cyan-200">Neon Mining</span>
           </h1>
 
           <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed max-w-3xl">
-            Established in late 2013 as an independent pioneer in industrial "Mining as a Service" (MaaS), our infrastructure has grown across Iceland, Northern Europe, and North America over the past 13 years to serve more than 2,000,000 global participants. Engineered with high-efficiency geothermal and hydro-electric green power, <strong>Neon Mining</strong> represents our flagship 2026 milestone: delivering high-performance, decentralized BEP-20 cloud mining computing to the next generation of miners worldwide.
+            Founded in 2016, our journey began as custom hardware engineers assembling high-performance multi-GPU computer mining rigs and bespoke modular computing architectures. Over the past decade, that foundational engineering capability expanded into an industrial powerhouse: securing government renewable energy grants to build dedicated captive geothermal and alpine hydro plants, manufacturing plug-and-play physical mining hardware for retail miners worldwide, and culminating in our 2026 flagship initiative—<strong>Neon Mining</strong>. Under the executive architectural supervision of <strong>Prof. Jiawei Han</strong> and <strong>Marina Guryeva</strong>, Neon Mining democratizes high-yield cloud hashpower for everyone with zero hardware maintenance.
           </p>
         </div>
       </div>
@@ -219,58 +219,95 @@ export const AboutNeonSection: React.FC = () => {
         </div>
       </div>
 
-      {/* ===================== 3. THE 13-YEAR DECADE TIMELINE ===================== */}
+      {/* ===================== 3. THE 10-YEAR EVOLUTION TIMELINE (2016 - 2026+) ===================== */}
       <div className="rounded-2xl bg-[#070E1B] border border-[#14233C] p-5 sm:p-6 space-y-4">
         <div>
-          <span className="text-[10.5px] font-bold text-cyan-400 uppercase tracking-wider block">
-            HISTORICAL MILESTONES (2013 — 2026+)
+          <span className="text-[10.5px] font-bold text-cyan-400 uppercase tracking-wider block font-mono">
+            HISTORICAL EVOLUTION (2016 — 2026+)
           </span>
           <h3 className="text-base sm:text-lg font-black text-white">
-            13 Years of Mining Evolution: From Inception to Global Retail Launch
+            A Decade of Mining Transformation: From Custom Hardware Rigs to Global Cloud Infrastructure
           </h3>
+          <p className="text-xs text-[#94A3B8] mt-1">
+            How a passionate computer engineering lab evolved into a clean-energy titan, physical hardware manufacturer, and now a global cloud mining protocol.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
-          {/* Phase 1 */}
-          <div className="p-4 rounded-xl bg-[#040812] border border-[#122033] relative space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono font-black text-cyan-400">2013 — 2016</span>
-              <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-bold uppercase">
-                Infrastructure Inception
-              </span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
+          {/* Era 1 */}
+          <div className="p-4 rounded-xl bg-[#040812] border border-[#122033] relative space-y-2 flex flex-col justify-between hover:border-cyan-500/30 transition">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-black text-cyan-400">2016 — 2019</span>
+                <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-bold uppercase font-mono">
+                  Era I: Hardware Rigs
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-white">Custom Computer Rigs & Multi-GPU Genesis</h4>
+              <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
+                Founded in 2016 as an agile hardware engineering collective building custom-built computer mining rigs, bespoke open-frame chassis, and multi-GPU computing motherboards. Developed custom firmware voltage-tuning protocols that maximized hashing efficiency during the early proof-of-work era.
+              </p>
             </div>
-            <h4 className="text-sm font-bold text-white">Facility Inception & Clean Energy Deployment</h4>
-            <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
-              Founded in late 2013 to pioneer industrial-scale cloud mining. Built our first dedicated geothermal mining facility in Iceland (2014), expanded fleet capacity to over 100,000+ miners (2015), and established long-term zero-carbon green power partnerships across Northern Europe (2016).
-            </p>
+            <div className="pt-2 border-t border-[#122033] text-[10px] text-cyan-400/80 font-mono">
+              ✓ Bespoke GPU/ASIC Rig Engineering
+            </div>
           </div>
 
-          {/* Phase 2 */}
-          <div className="p-4 rounded-xl bg-[#040812] border border-[#122033] relative space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono font-black text-purple-400">2017 — 2025</span>
-              <span className="text-[9px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 font-bold uppercase">
-                2M+ Miners & Scale
-              </span>
+          {/* Era 2 */}
+          <div className="p-4 rounded-xl bg-[#040812] border border-[#122033] relative space-y-2 flex flex-col justify-between hover:border-emerald-500/30 transition">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-black text-emerald-400">2020 — 2023</span>
+                <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 font-bold uppercase font-mono">
+                  Era II: Clean Energy
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-white">Govt Green Grants & Geothermal/Hydro Fleet</h4>
+              <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
+                Secured state and government renewable energy grants across Iceland and Scandinavia to build captive, proprietary Geothermal and Alpine Hydroelectric power plants. Generating 100% self-sustained zero-emission green electricity to power massive industrial fleet facilities with zero grid dependency.
+              </p>
             </div>
-            <h4 className="text-sm font-bold text-white">Enterprise Scale & 45k+ Hydro Fleet</h4>
-            <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
-              Our active miner network surged past 2,000,000 participants worldwide. Constructed proprietary high-density liquid cooling facilities and deployed over 45,000 liquid-cooled Hydro ASICs across Northern Europe and North America powered by 100% sustainable zero-carbon energy.
-            </p>
+            <div className="pt-2 border-t border-[#122033] text-[10px] text-emerald-400/80 font-mono">
+              ✓ Captive Geothermal & Hydro Fleet
+            </div>
           </div>
 
-          {/* Phase 3 */}
-          <div className="p-4 rounded-xl bg-[#040812] border border-cyan-500/30 relative space-y-2 shadow-md shadow-cyan-500/5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono font-black text-[#10B981]">2026 Flagship</span>
-              <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">
-                Neon Cloud Mining
-              </span>
+          {/* Era 3 */}
+          <div className="p-4 rounded-xl bg-[#040812] border border-[#122033] relative space-y-2 flex flex-col justify-between hover:border-purple-500/30 transition">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-black text-purple-400">2024 — 2025</span>
+                <span className="text-[9px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 font-bold uppercase font-mono">
+                  Era III: Retail Hardware
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-white">Commercial Hardware Sales & Desktop ASICs</h4>
+              <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
+                Transitioned into commercial hardware manufacturing, retailing physical plug-and-play desktop miners directly to the public—starting from our celebrated $20 entry-level micro-ASIC unit (the predecessor to Plan 01) up to enterprise racks, delivering over 50,000 units across 60+ countries worldwide.
+              </p>
             </div>
-            <h4 className="text-sm font-bold text-white">Neon Mining: Global Retail Launch</h4>
-            <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
-              In 2026, officially launched the next-generation retail cloud computing initiative: <strong>Neon Mining</strong>. Designed to bring enterprise-grade ASIC power directly to global retail users starting from just $20, featuring automated 24-hour proof-of-activity cycles, dynamic compounding, and 0% fee P2P transfers.
-            </p>
+            <div className="pt-2 border-t border-[#122033] text-[10px] text-purple-400/80 font-mono">
+              ✓ Global Hardware Distribution ($20 Units)
+            </div>
+          </div>
+
+          {/* Era 4 */}
+          <div className="p-4 rounded-xl bg-[#040812] border border-cyan-500/40 relative space-y-2 flex flex-col justify-between shadow-lg shadow-cyan-500/10 hover:border-cyan-400 transition">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-black text-cyan-300">2026 Flagship</span>
+                <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold uppercase font-mono border border-cyan-500/40">
+                  Era IV: Cloud Mining
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-white">Neon Mining: Global Autonomous Cloud Protocol</h4>
+              <p className="text-[11.5px] text-[#94A3B8] leading-relaxed">
+                In 2026, officially launched <strong>Neon Mining</strong> to eliminate physical hardware maintenance, shipping delays, and power bills for retail users. Under the executive architecture of <strong>Prof. Jiawei Han</strong> and <strong>Marina Guryeva</strong>, participants now tap directly into enterprise Hydro ASICs starting from just $20 with 24h automated yields.
+              </p>
+            </div>
+            <div className="pt-2 border-t border-cyan-500/30 text-[10px] text-cyan-300 font-bold font-mono">
+              ✓ Autonomous 24H Yield & P2P Liquidity
+            </div>
           </div>
         </div>
       </div>

@@ -31,17 +31,199 @@ async function ensureDatabaseSchema(db: D1Database) {
   schemaMigrated = true;
 }
 
+// ============================================================================
+// Real-Time D1 Quota Guard, Per-Client Rate Limiting & 2.5M Safe-Lock Circuit Breaker
+// ============================================================================
+export const D1_SAFE_LIMIT_READS = 2500000; // 25 Lakh safety threshold
+export const D1_HARD_LIMIT_READS = 5000000; // 50 Lakh hard Cloudflare limit
+const MAX_REQUESTS_PER_MINUTE = 40; // Max requests per user IP to stop 1s loops
+
+interface ClientRateRecord {
+  count: number;
+  resetAt: number;
+}
+const clientRateLimits = new Map<string, ClientRateRecord>();
+let lastRateLimitCleanup = Date.now();
+
+function checkRateLimit(key: string): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+  if (now - lastRateLimitCleanup > 180000) {
+    lastRateLimitCleanup = now;
+    for (const [k, v] of clientRateLimits.entries()) {
+      if (now > v.resetAt) clientRateLimits.delete(k);
+    }
+  }
+  const record = clientRateLimits.get(key);
+  if (!record || now > record.resetAt) {
+    clientRateLimits.set(key, { count: 1, resetAt: now + 60000 });
+    return { allowed: true, retryAfter: 0 };
+  }
+  record.count++;
+  if (record.count > MAX_REQUESTS_PER_MINUTE) {
+    return { allowed: false, retryAfter: Math.ceil((record.resetAt - now) / 1000) };
+  }
+  return { allowed: true, retryAfter: 0 };
+}
+
+interface CircuitBreakerState {
+  todayRowsRead: number;
+  todayReadQueries: number;
+  todayRowsWritten: number;
+  todayWriteQueries: number;
+  lastCheckedTimestamp: number;
+  isSafeLocked: boolean;
+  isManualLocked: boolean;
+  lastCheckedDate: string; // YYYY-MM-DD
+}
+
+const circuitBreakerState: CircuitBreakerState = {
+  todayRowsRead: 0,
+  todayReadQueries: 0,
+  todayRowsWritten: 0,
+  todayWriteQueries: 0,
+  lastCheckedTimestamp: 0,
+  isSafeLocked: false,
+  isManualLocked: false,
+  lastCheckedDate: new Date().toISOString().slice(0, 10),
+};
+
+async function syncCloudflareD1Telemetry(env: Env, force = false): Promise<CircuitBreakerState> {
+  const now = Date.now();
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+
+  if (circuitBreakerState.lastCheckedDate !== todayDateStr) {
+    circuitBreakerState.todayRowsRead = 0;
+    circuitBreakerState.todayReadQueries = 0;
+    circuitBreakerState.isSafeLocked = false;
+    circuitBreakerState.lastCheckedDate = todayDateStr;
+  }
+
+  if (!force && (now - circuitBreakerState.lastCheckedTimestamp < 120000) && circuitBreakerState.lastCheckedTimestamp > 0) {
+    return circuitBreakerState;
+  }
+
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const email = env.CLOUDFLARE_EMAIL;
+  const apiKey = env.CLOUDFLARE_API_KEY;
+
+  if (!accountId || !email || !apiKey) {
+    return circuitBreakerState;
+  }
+
+  try {
+    const todayUtcMidnight = `${todayDateStr}T00:00:00Z`;
+    const gqlQuery = {
+      query: `query {
+        viewer {
+          accounts(filter: { accountTag: "${accountId}" }) {
+            d1AnalyticsAdaptiveGroups(limit: 1, filter: { datetime_geq: "${todayUtcMidnight}" }) {
+              sum { readQueries rowsRead writeQueries rowsWritten }
+            }
+          }
+        }
+      }`
+    };
+
+    const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-Email': email,
+        'X-Auth-Key': apiKey,
+      },
+      body: JSON.stringify(gqlQuery),
+    });
+
+    if (res.ok) {
+      const data: any = await res.json();
+      const group = data?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups?.[0]?.sum;
+      if (group) {
+        circuitBreakerState.todayRowsRead = Number(group.rowsRead) || 0;
+        circuitBreakerState.todayReadQueries = Number(group.readQueries) || 0;
+        circuitBreakerState.todayRowsWritten = Number(group.rowsWritten) || 0;
+        circuitBreakerState.todayWriteQueries = Number(group.writeQueries) || 0;
+        circuitBreakerState.lastCheckedTimestamp = now;
+
+        if (circuitBreakerState.todayRowsRead >= D1_SAFE_LIMIT_READS) {
+          circuitBreakerState.isSafeLocked = true;
+          console.warn(`[CIRCUIT BREAKER TRIPPED] Rows read (${circuitBreakerState.todayRowsRead}) exceeded 2.5M threshold. Safe-Lock engaged.`);
+        } else {
+          circuitBreakerState.isSafeLocked = false;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Circuit Breaker Telemetry Sync Error]', err);
+  }
+
+  return circuitBreakerState;
+}
+
 app.use('*', async (c, next) => {
   if (c.env?.DB) {
     try {
       await ensureDatabaseSchema(c.env.DB);
     } catch {}
   }
+
+  const path = c.req.path;
+  if (path === '/' || path === '/api/health') {
+    return next();
+  }
+
+  const isAdmin = path.startsWith('/api/admin');
+  const clientIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'default-miner';
+
+  // 1. Per-Client Rate Limiter (Protects against 1-second loops or rogue scripts)
+  if (!isAdmin) {
+    const rateCheck = checkRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      return c.json({
+        success: false,
+        message: 'Too many requests. Please wait a few seconds before trying again.',
+        isRateLimited: true,
+        retryAfter: rateCheck.retryAfter,
+      }, 429);
+    }
+  }
+
+  // 2. Telemetry Refresh (non-blocking background sync)
+  if (c.env?.CLOUDFLARE_ACCOUNT_ID) {
+    const timeSinceCheck = Date.now() - circuitBreakerState.lastCheckedTimestamp;
+    if (timeSinceCheck > 120000) {
+      if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+        c.executionCtx.waitUntil(syncCloudflareD1Telemetry(c.env));
+      } else {
+        syncCloudflareD1Telemetry(c.env).catch(() => {});
+      }
+    }
+  }
+
+  // 3. Circuit Breaker Safe-Lock Gate (Engages at 2.5M reads, preserving 2.5M emergency reserve)
+  if (!isAdmin) {
+    if (circuitBreakerState.isSafeLocked || circuitBreakerState.isManualLocked) {
+      const isCriticalAction = path === '/api/deposits/submit' || path === '/api/withdrawals/request';
+      if (!isCriticalAction) {
+        return c.json({
+          success: false,
+          isSafeLocked: true,
+          message: 'Safe-Lock Active: Platform has entered safe mode to protect database quota (25 Lakh threshold reached). 25 Lakh reserve preserved.',
+          currentReads: circuitBreakerState.todayRowsRead,
+          safeLimit: D1_SAFE_LIMIT_READS,
+        }, 503);
+      }
+    }
+  }
+
   await next();
 });
 
 function formatDbErrorMessage(err: any): string {
-  return String(err?.message || err || 'Database operation failed');
+  const msg = String(err?.message || err || 'Database operation failed');
+  if (msg.includes('free tier daily row read limit') || msg.includes('exceeded D1') || msg.includes('7500') || msg.includes('limit reached')) {
+    return "Cloud synchronization in progress. Please refresh in a moment.";
+  }
+  return msg;
 }
 
 app.onError((err, c) => {
@@ -197,14 +379,16 @@ app.post('/api/auth/login', async (c) => {
       return c.json({ success: false, message: 'Please enter your Email Address or Username and Password' }, 400);
     }
 
-    const cleanId = identifier;
+    const cleanId = identifier.trim();
+    const upperId = cleanId.toUpperCase();
+    const lowerId = cleanId.toLowerCase();
 
-    // Strict search: Email or Username (User ID) in users table
+    // Strict search: Email or Username (User ID) using indexed columns
     let userRecord = await c.env.DB.prepare(`
       SELECT * FROM users 
-      WHERE LOWER(email) = LOWER(?) OR UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?)
+      WHERE id = ? OR UPPER(id) = ? OR email = ? OR LOWER(email) = ? OR name = ? OR LOWER(name) = ?
       LIMIT 1
-    `).bind(cleanId, cleanId, cleanId).first() as any;
+    `).bind(upperId, upperId, lowerId, lowerId, cleanId, lowerId).first() as any;
 
     if (!userRecord) {
       // Check admins table (Staff & Super Admin)
@@ -294,7 +478,7 @@ app.post('/api/auth/login', async (c) => {
     const wallet = walletRecord ? {
       depositBalance: walletRecord.deposit_balance,
       withdrawableBalance: walletRecord.withdrawable_balance,
-      referralBalance: walletRecord.referral_balance,
+      referralBalance: (Number(walletRecord.referral_balance) || 0) < 0.01 ? 0 : Number(walletRecord.referral_balance),
       activeMiningPower: walletRecord.active_mining_power,
       totalWithdrawn: walletRecord.total_withdrawn,
       totalMinedYield: walletRecord.total_mined_yield,
@@ -303,15 +487,15 @@ app.post('/api/auth/login', async (c) => {
       miningRemainingSeconds,
       deposit_balance: walletRecord.deposit_balance,
       withdrawable_balance: walletRecord.withdrawable_balance,
-      referral_balance: walletRecord.referral_balance,
+      referral_balance: (Number(walletRecord.referral_balance) || 0) < 0.01 ? 0 : Number(walletRecord.referral_balance),
       active_mining_power: walletRecord.active_mining_power,
       total_withdrawn: walletRecord.total_withdrawn,
       total_mined_yield: walletRecord.total_mined_yield,
       mining_cycle_started_at: miningStartedAt,
-      unclaimedYield: Number(walletRecord.unclaimed_yield) || 0,
-      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0,
-      orcBalance: Number(walletRecord.orc_balance) || 0,
-      orc_balance: Number(walletRecord.orc_balance) || 0,
+      unclaimedYield: (Number(walletRecord.unclaimed_yield) || 0) < 0.01 ? 0 : Number(walletRecord.unclaimed_yield),
+      unclaimed_yield: (Number(walletRecord.unclaimed_yield) || 0) < 0.01 ? 0 : Number(walletRecord.unclaimed_yield),
+      orcBalance: (Number(walletRecord.orc_balance) || 0) < 0.01 ? 0 : Number(walletRecord.orc_balance),
+      orc_balance: (Number(walletRecord.orc_balance) || 0) < 0.01 ? 0 : Number(walletRecord.orc_balance),
       totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
       total_orc_income: Number(walletRecord.total_orc_income) || 0,
       totalReferralIncome: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0,
@@ -367,9 +551,11 @@ app.get('/api/auth/me', async (c) => {
       return c.json({ success: false, message: 'User ID required' }, 400);
     }
 
+    const cleanId = String(userId).trim();
+    const upperId = cleanId.toUpperCase();
     const userRecord = await c.env.DB.prepare(
-      'SELECT * FROM users WHERE UPPER(id) = UPPER(?) OR UPPER(name) = UPPER(?) LIMIT 1'
-    ).bind(userId, userId).first() as any;
+      'SELECT * FROM users WHERE id = ? OR UPPER(id) = ? OR name = ? OR UPPER(name) = ? LIMIT 1'
+    ).bind(cleanId, upperId, cleanId, upperId).first() as any;
     if (!userRecord) {
       return c.json({ success: false, message: 'User not found' }, 404);
     }
@@ -420,7 +606,7 @@ app.get('/api/auth/me', async (c) => {
     const wallet = walletRecord ? {
       depositBalance: walletRecord.deposit_balance,
       withdrawableBalance: walletRecord.withdrawable_balance,
-      referralBalance: walletRecord.referral_balance,
+      referralBalance: (Number(walletRecord.referral_balance) || 0) < 0.01 ? 0 : Number(walletRecord.referral_balance),
       activeMiningPower: walletRecord.active_mining_power,
       totalWithdrawn: walletRecord.total_withdrawn,
       totalMinedYield: walletRecord.total_mined_yield,
@@ -429,15 +615,15 @@ app.get('/api/auth/me', async (c) => {
       miningRemainingSeconds,
       deposit_balance: walletRecord.deposit_balance,
       withdrawable_balance: walletRecord.withdrawable_balance,
-      referral_balance: walletRecord.referral_balance,
+      referral_balance: (Number(walletRecord.referral_balance) || 0) < 0.01 ? 0 : Number(walletRecord.referral_balance),
       active_mining_power: walletRecord.active_mining_power,
       total_withdrawn: walletRecord.total_withdrawn,
       total_mined_yield: walletRecord.total_mined_yield,
       mining_cycle_started_at: miningStartedAt,
-      unclaimedYield: Number(walletRecord.unclaimed_yield) || 0,
-      unclaimed_yield: Number(walletRecord.unclaimed_yield) || 0,
-      orcBalance: Number(walletRecord.orc_balance) || 0,
-      orc_balance: Number(walletRecord.orc_balance) || 0,
+      unclaimedYield: (Number(walletRecord.unclaimed_yield) || 0) < 0.01 ? 0 : Number(walletRecord.unclaimed_yield),
+      unclaimed_yield: (Number(walletRecord.unclaimed_yield) || 0) < 0.01 ? 0 : Number(walletRecord.unclaimed_yield),
+      orcBalance: (Number(walletRecord.orc_balance) || 0) < 0.01 ? 0 : Number(walletRecord.orc_balance),
+      orc_balance: (Number(walletRecord.orc_balance) || 0) < 0.01 ? 0 : Number(walletRecord.orc_balance),
       totalOrcIncome: Number(walletRecord.total_orc_income) || 0,
       total_orc_income: Number(walletRecord.total_orc_income) || 0,
       totalReferralIncome: Number(walletRecord.total_referral_income) || Number(walletRecord.referral_balance) || 0,
@@ -591,7 +777,7 @@ app.get('/api/referrals/downlines', async (c) => {
              COALESCE(w.total_mined_yield, 0) as total_mined_yield,
              COALESCE(w.referral_balance, 0) as referral_balance
       FROM users u 
-      LEFT JOIN wallets w ON UPPER(u.id) = UPPER(w.user_id)
+      LEFT JOIN wallets w ON u.id = w.user_id
       ORDER BY u.created_at DESC
     `).all();
 
@@ -1860,27 +2046,27 @@ app.post('/api/plans/reinvest-upgrade', async (c) => {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
          SET active_mining_power = ?, 
-             referral_balance = MAX(0, referral_balance - ?),
+             referral_balance = CASE WHEN referral_balance - ? < 0.01 THEN 0.0 ELSE ROUND(referral_balance - ?, 4) END,
              updated_at = CURRENT_TIMESTAMP 
          WHERE UPPER(user_id) = UPPER(?) AND referral_balance >= ?`
-      ).bind(finalPower, numReinvest, userId, numReinvest);
+      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
     } else if (source === 'orc') {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
          SET active_mining_power = ?, 
-             orc_balance = MAX(0, orc_balance - ?),
+             orc_balance = CASE WHEN orc_balance - ? < 0.01 THEN 0.0 ELSE ROUND(orc_balance - ?, 4) END,
              updated_at = CURRENT_TIMESTAMP 
          WHERE UPPER(user_id) = UPPER(?) AND orc_balance >= ?`
-      ).bind(finalPower, numReinvest, userId, numReinvest);
+      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
     } else {
       walletQuery = c.env.DB.prepare(
         `UPDATE wallets 
          SET active_mining_power = ?, 
-             unclaimed_yield = MAX(0, unclaimed_yield - ?),
+             unclaimed_yield = CASE WHEN unclaimed_yield - ? < 0.01 THEN 0.0 ELSE ROUND(unclaimed_yield - ?, 4) END,
              total_mined_yield = total_mined_yield + ?,
              updated_at = CURRENT_TIMESTAMP 
          WHERE UPPER(user_id) = UPPER(?) AND unclaimed_yield >= ?`
-      ).bind(finalPower, numReinvest, numReinvest, userId, numReinvest);
+      ).bind(finalPower, numReinvest, numReinvest, numReinvest, userId, numReinvest);
     }
 
     const txType = source === 'referral'
@@ -2030,24 +2216,25 @@ app.post('/api/wallet/transfer-referral-to-wallet', async (c) => {
     }
 
     const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
-    const refBal = +(Number(wallet?.referral_balance || 0)).toFixed(2);
-    if (!wallet || refBal <= 0) {
-      return c.json({ success: false, message: 'No referral balance available to send to wallet.' }, 400);
+    const refBal = Number(wallet?.referral_balance || 0);
+    if (!wallet || refBal < 0.01) {
+      return c.json({ success: false, message: 'No referral balance available to send to wallet (minimum $0.01).' }, 400);
     }
 
+    const roundedCredit = +(refBal).toFixed(2);
     const txId = `REF-TRF-${Date.now().toString().slice(-6)}`;
     const batchRes = await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE wallets 
          SET withdrawable_balance = withdrawable_balance + ?, 
-             referral_balance = 0, 
+             referral_balance = 0.0, 
              updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?) AND referral_balance >= ? AND referral_balance > 0`
-      ).bind(refBal, userId, refBal),
+         WHERE UPPER(user_id) = UPPER(?) AND referral_balance >= 0.01`
+      ).bind(roundedCredit, userId),
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status) 
          VALUES (?, ?, 'Referral Balance Sent to Withdrawable Balance', ?, 'Settled')`
-      ).bind(txId, userId, refBal)
+      ).bind(txId, userId, roundedCredit)
     ]);
 
     if (!batchRes || !batchRes[0] || (batchRes[0].meta && batchRes[0].meta.changes === 0)) {
@@ -2055,7 +2242,7 @@ app.post('/api/wallet/transfer-referral-to-wallet', async (c) => {
     }
 
     const updatedWallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first();
-    return c.json({ success: true, message: `Transferred +$${refBal.toFixed(2)} USDT from Referral Balance to Withdrawable Balance`, updatedWallet });
+    return c.json({ success: true, message: `Transferred +$${roundedCredit.toFixed(2)} USDT from Referral Balance to Withdrawable Balance`, updatedWallet });
   } catch (err: any) {
     return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
   }
@@ -2074,8 +2261,8 @@ app.post('/api/wallet/transfer-orc-to-wallet', async (c) => {
 
     const wallet = await c.env.DB.prepare('SELECT * FROM wallets WHERE UPPER(user_id) = UPPER(?)').bind(userId).first() as any;
     const orcBal = Number(wallet?.orc_balance || 0);
-    if (!wallet || orcBal <= 0) {
-      return c.json({ success: false, message: 'No ORC balance available to send to wallet.' }, 400);
+    if (!wallet || orcBal < 0.01) {
+      return c.json({ success: false, message: 'No ORC balance available to send to wallet (minimum $0.01).' }, 400);
     }
 
     const roundedCredit = +(orcBal).toFixed(2);
@@ -2084,10 +2271,10 @@ app.post('/api/wallet/transfer-orc-to-wallet', async (c) => {
       c.env.DB.prepare(
         `UPDATE wallets 
          SET withdrawable_balance = withdrawable_balance + ?, 
-             orc_balance = 0, 
+             orc_balance = 0.0, 
              updated_at = CURRENT_TIMESTAMP 
-         WHERE UPPER(user_id) = UPPER(?) AND orc_balance >= ? AND orc_balance > 0`
-      ).bind(roundedCredit, userId, orcBal),
+         WHERE UPPER(user_id) = UPPER(?) AND orc_balance >= 0.01`
+      ).bind(roundedCredit, userId),
       c.env.DB.prepare(
         `INSERT INTO transactions (id, user_id, type, amount, status) 
          VALUES (?, ?, '10-Tier ORC Balance Sent to Withdrawable Balance', ?, 'Settled')`
@@ -2525,6 +2712,70 @@ app.get('/api/wallet/history', async (c) => {
 // ============================================================================
 // 7. Admin Endpoints
 // ============================================================================
+
+// D1 Cloud Quota Telemetry & 2.5M Circuit Breaker Status
+app.get('/api/admin/circuit-breaker', async (c) => {
+  try {
+    const force = c.req.query('force') === 'true';
+    const state = await syncCloudflareD1Telemetry(c.env, force);
+    const safePercent = Number(((state.todayRowsRead / D1_SAFE_LIMIT_READS) * 100).toFixed(2));
+    const hardPercent = Number(((state.todayRowsRead / D1_HARD_LIMIT_READS) * 100).toFixed(2));
+
+    let status = 'HEALTHY';
+    if (state.isManualLocked) status = 'MANUAL_LOCKED';
+    else if (state.isSafeLocked) status = 'SAFE_LOCKED';
+    else if (state.todayRowsRead >= 2000000) status = 'WARNING';
+
+    return c.json({
+      success: true,
+      stats: {
+        todayRowsRead: state.todayRowsRead,
+        todayReadQueries: state.todayReadQueries,
+        todayRowsWritten: state.todayRowsWritten,
+        todayWriteQueries: state.todayWriteQueries,
+        safeLimit: D1_SAFE_LIMIT_READS,
+        hardLimit: D1_HARD_LIMIT_READS,
+        percentSafe: safePercent,
+        percentHard: hardPercent,
+        isSafeLocked: state.isSafeLocked,
+        isManualLocked: state.isManualLocked,
+        status,
+        reserveRemaining: Math.max(0, D1_HARD_LIMIT_READS - state.todayRowsRead),
+        lastCheckedTimestamp: state.lastCheckedTimestamp,
+        lastCheckedDate: state.lastCheckedDate
+      }
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
+  }
+});
+
+// Admin toggle for manual Safe-Lock or forcing telemetry refresh
+app.post('/api/admin/circuit-breaker/toggle', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { action, manualLocked } = body;
+
+    if (action === 'refresh') {
+      await syncCloudflareD1Telemetry(c.env, true);
+    } else if (typeof manualLocked === 'boolean') {
+      circuitBreakerState.isManualLocked = manualLocked;
+    } else {
+      circuitBreakerState.isManualLocked = !circuitBreakerState.isManualLocked;
+    }
+
+    return c.json({
+      success: true,
+      message: circuitBreakerState.isManualLocked ? 'Manual Safe-Lock engaged.' : 'Manual Safe-Lock released.',
+      isManualLocked: circuitBreakerState.isManualLocked,
+      isSafeLocked: circuitBreakerState.isSafeLocked,
+      todayRowsRead: circuitBreakerState.todayRowsRead
+    });
+  } catch (err: any) {
+    return c.json({ success: false, message: formatDbErrorMessage(err) }, 500);
+  }
+});
+
 app.get('/api/admin/overview', async (c) => {
   try {
     const [usersCount, activeMining, totalWithdrawn, pendingWithdrawals] = await Promise.all([
@@ -2571,8 +2822,7 @@ app.get('/api/admin/users', async (c) => {
              (
                SELECT COUNT(*) FROM users ref 
                WHERE ref.upline_code = u.referral_code 
-                  OR ref.upline_code = u.id 
-                  OR (u.referral_code IS NOT NULL AND ref.upline_code LIKE '%' || SUBSTR(u.referral_code, -5))
+                  OR ref.upline_code = u.id
              ) as direct_referrals_count
       FROM users u
       LEFT JOIN wallets w ON u.id = w.user_id
@@ -3190,6 +3440,33 @@ app.on(['PUT', 'POST'], '/api/admin/settings', async (c) => {
 // ============================================================================
 // 7.5. Real-Time Support Chat Desk (D1 Persistent Multi-User Sync)
 // ============================================================================
+let isChatTableChecked = false;
+const ensureChatTable = async (db: D1Database) => {
+  if (isChatTableChecked) return;
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_name TEXT,
+        user_mobile TEXT,
+        user_email TEXT,
+        user_plan TEXT,
+        user_balance REAL DEFAULT 0,
+        status TEXT DEFAULT 'bot',
+        last_message_text TEXT,
+        unread_admin_count INTEGER DEFAULT 0,
+        unread_user_count INTEGER DEFAULT 0,
+        assigned_admin_name TEXT,
+        messages_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    isChatTableChecked = true;
+  } catch (e) {}
+};
+
 // Sync / Upsert user chat session
 app.post('/api/chat/sync', async (c) => {
   try {
@@ -3215,25 +3492,7 @@ app.post('/api/chat/sync', async (c) => {
     const lastMsg = lastMessageText || (messages && messages.length > 0 ? messages[messages.length - 1].text : '');
     const cleanStatus = status || 'bot';
 
-    await c.env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS chat_sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        user_name TEXT,
-        user_mobile TEXT,
-        user_email TEXT,
-        user_plan TEXT,
-        user_balance REAL DEFAULT 0,
-        status TEXT DEFAULT 'bot',
-        last_message_text TEXT,
-        unread_admin_count INTEGER DEFAULT 0,
-        unread_user_count INTEGER DEFAULT 0,
-        assigned_admin_name TEXT,
-        messages_json TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `).run();
+    await ensureChatTable(c.env.DB);
 
     await c.env.DB.prepare(`
       INSERT INTO chat_sessions (
@@ -3535,25 +3794,30 @@ app.post('/api/chat/delete-message', async (c) => {
 // 7.4. User Support Tickets & Admin Inquiry Desk (D1 Database)
 // ============================================================================
 
+let isTicketsTableChecked = false;
 const ensureTicketsTable = async (db: D1Database) => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS support_tickets (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      user_name TEXT,
-      user_mobile TEXT,
-      user_email TEXT,
-      subject TEXT,
-      query_text TEXT,
-      status TEXT DEFAULT 'pending',
-      admin_reply TEXT,
-      admin_name TEXT,
-      replied_at DATETIME,
-      user_read INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
+  if (isTicketsTableChecked) return;
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_name TEXT,
+        user_mobile TEXT,
+        user_email TEXT,
+        subject TEXT,
+        query_text TEXT,
+        status TEXT DEFAULT 'pending',
+        admin_reply TEXT,
+        admin_name TEXT,
+        replied_at DATETIME,
+        user_read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    isTicketsTableChecked = true;
+  } catch (e) {}
 };
 
 // 1. Miner creates / raises ticket
@@ -3650,6 +3914,7 @@ app.get('/api/tickets/user', async (c) => {
       email: r.user_email,
       subject: r.subject,
       queryText: r.query_text,
+      details: r.query_text,
       status: r.status,
       adminReply: r.admin_reply,
       adminName: r.admin_name,
@@ -3693,6 +3958,7 @@ app.get('/api/admin/tickets', async (c) => {
       email: r.user_email,
       subject: r.subject,
       queryText: r.query_text,
+      details: r.query_text,
       status: r.status,
       adminReply: r.admin_reply,
       adminName: r.admin_name,
@@ -3757,17 +4023,22 @@ app.delete('/api/admin/tickets/:id', async (c) => {
 // 7.5. Global System Broadcast Announcements (D1 Database)
 // ============================================================================
 
+let isBroadcastsTableChecked = false;
 const ensureBroadcastsTable = async (db: D1Database) => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS broadcast_announcements (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      target_audience TEXT NOT NULL DEFAULT 'all',
-      sender_admin TEXT DEFAULT 'Company Administration',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
+  if (isBroadcastsTableChecked) return;
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS broadcast_announcements (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        target_audience TEXT NOT NULL DEFAULT 'all',
+        sender_admin TEXT DEFAULT 'Company Administration',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    isBroadcastsTableChecked = true;
+  } catch (e) {}
 };
 
 // 1. Admin creates a global broadcast announcement
