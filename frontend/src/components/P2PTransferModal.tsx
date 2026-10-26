@@ -50,8 +50,6 @@ export const P2PTransferModal: React.FC<Props> = ({
   const [liveVerifiedUser, setLiveVerifiedUser] = useState<any>(null);
   const [isCheckingLive, setIsCheckingLive] = useState(false);
 
-  if (!isOpen) return null;
-
   const safeDepositBalance = Number(depositBalance) || 0;
   const safeWithdrawableBalance = Number(availableBalance) || 0;
   const activeSourceBalance = sourceWallet === 'deposit' ? safeDepositBalance : safeWithdrawableBalance;
@@ -184,6 +182,8 @@ export const P2PTransferModal: React.FC<Props> = ({
       setTimeout(() => setIsSubmitting(false), 2000);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 animate-fadeIn">
