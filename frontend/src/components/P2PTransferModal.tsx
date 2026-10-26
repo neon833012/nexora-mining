@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Send,
@@ -13,6 +13,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import { AdminUserRecord } from '../types/mining';
+import { nexoraApi } from '../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -46,6 +47,8 @@ export const P2PTransferModal: React.FC<Props> = ({
   const [fundPin, setFundPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [liveVerifiedUser, setLiveVerifiedUser] = useState<any>(null);
+  const [isCheckingLive, setIsCheckingLive] = useState(false);
 
   if (!isOpen) return null;
 
@@ -64,6 +67,41 @@ export const P2PTransferModal: React.FC<Props> = ({
       u.name.toUpperCase() === rawRecipientInput
   );
 
+  useEffect(() => {
+    if (!cleanRecipientId || matchedUser) {
+      setLiveVerifiedUser(null);
+      setIsCheckingLive(false);
+      return;
+    }
+
+    let isMounted = true;
+    setIsCheckingLive(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await nexoraApi.getAdminUsers(cleanRecipientId);
+        if (isMounted && res?.success && Array.isArray(res.users)) {
+          const found = res.users.find(
+            (u: any) =>
+              (u.id && u.id.toUpperCase() === cleanRecipientId) ||
+              (u.name && u.name.toUpperCase() === cleanRecipientId)
+          );
+          setLiveVerifiedUser(found || null);
+        }
+      } catch (e) {
+        // live lookup fallback
+      } finally {
+        if (isMounted) setIsCheckingLive(false);
+      }
+    }, 250);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [cleanRecipientId, matchedUser]);
+
+  const effectiveUser = matchedUser || liveVerifiedUser;
+
   const numAmount = parseFloat(amount) || 0;
 
   const handleSelectSourceWallet = (wallet: 'deposit' | 'withdrawable') => {
@@ -78,7 +116,7 @@ export const P2PTransferModal: React.FC<Props> = ({
     setErrorMessage('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -87,9 +125,27 @@ export const P2PTransferModal: React.FC<Props> = ({
       return;
     }
 
-    if (!matchedUser) {
-      setErrorMessage(`Recipient User ID "${cleanRecipientId}" does not exist in the system. P2P transfers are strictly restricted to registered members only.`);
-      return;
+    let targetUser = effectiveUser;
+    if (!targetUser) {
+      setIsCheckingLive(true);
+      try {
+        const res = await nexoraApi.getAdminUsers(cleanRecipientId);
+        if (res?.success && Array.isArray(res.users)) {
+          const found = res.users.find(
+            (u: any) =>
+              (u.id && u.id.toUpperCase() === cleanRecipientId) ||
+              (u.name && u.name.toUpperCase() === cleanRecipientId)
+          );
+          if (found) {
+            targetUser = found;
+            setLiveVerifiedUser(found);
+          }
+        }
+      } catch (err) {
+        // allow server to validate
+      } finally {
+        setIsCheckingLive(false);
+      }
     }
 
     const cleanSelfId = currentUserId ? currentUserId.replace(/^@+/, '').toUpperCase() : '';
@@ -269,15 +325,20 @@ export const P2PTransferModal: React.FC<Props> = ({
             {/* Recipient Verification Feedback */}
             {cleanRecipientId && (
               <div className="mt-1 flex items-center gap-1.5 text-[11px]">
-                {matchedUser ? (
+                {effectiveUser ? (
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Verified Member: {matchedUser.id}
+                    Verified Member: {effectiveUser.id}
+                  </span>
+                ) : isCheckingLive ? (
+                  <span className="text-purple-300 font-medium flex items-center gap-1 animate-pulse">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Verifying Member ID with server...
                   </span>
                 ) : (
-                  <span className="text-red-400 font-semibold flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    User ID not found in system (P2P blocked)
+                  <span className="text-emerald-400/90 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Member ID ready (verified by server upon transfer)
                   </span>
                 )}
               </div>

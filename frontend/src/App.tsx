@@ -1367,9 +1367,10 @@ export const App: React.FC = () => {
 
   // Live Cloudflare D1 Backend Data Synchronization
   useEffect(() => {
-    // Platform settings only needed once on mount
+    // Platform settings & member directory synced on mount for seamless P2P & platform functions
     fetchPlatformSettings();
-  }, [fetchPlatformSettings]);
+    fetchLiveAdminUsers();
+  }, [fetchPlatformSettings, fetchLiveAdminUsers]);
 
   // Synchronize admin data ONLY when Admin Portal is actively opened by admin
   useEffect(() => {
